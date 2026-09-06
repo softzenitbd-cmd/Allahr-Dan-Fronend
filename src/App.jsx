@@ -20,6 +20,8 @@ import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
 import SMS from './pages/SMS';
 import Accounts from './pages/Accounts';
+import SR from './pages/SR';
+import StockLog from './pages/StockLog';
 
 // Placeholder Pages (will be extracted to separate files in later phases)
 
@@ -108,6 +110,8 @@ function App() {
           <Route path="/customers" element={<Customers />} />
           <Route path="/sms" element={<SMS />} />
           <Route path="/expenses" element={<Expenses />} />
+          <Route path="/sr" element={<SR />} />
+          <Route path="/stock-log" element={<StockLog />} />
           
           {/* Admin Only Routes */}
           <Route path="accounts" element={<ProtectedRoute requiredRole="Admin"><Accounts /></ProtectedRoute>} />

@@ -22,6 +22,22 @@ export const ProductService = {
   byBarcode: (barcode) => apiClient.get(ENDPOINTS.BARCODE_SEARCH, { params: { barcode } }),
   categories: () => apiClient.get(ENDPOINTS.CATEGORIES),
   units: () => apiClient.get(ENDPOINTS.UNITS),
+
+  // Category and Unit are reference tables the product form writes to
+  // implicitly; these let a screen manage them directly.
+  createCategory: (payload) => apiClient.post(ENDPOINTS.CATEGORIES, payload),
+  updateCategory: (id, payload) => apiClient.patch(ENDPOINTS.CATEGORY(id), payload),
+  removeCategory: (id) => apiClient.delete(ENDPOINTS.CATEGORY(id)),
+  createUnit: (payload) => apiClient.post(ENDPOINTS.UNITS, payload),
+  updateUnit: (id, payload) => apiClient.patch(ENDPOINTS.UNIT(id), payload),
+  removeUnit: (id) => apiClient.delete(ENDPOINTS.UNIT(id)),
+};
+
+export const StockLogService = {
+  // The audit trail of every stock movement. Always filtered: this table only
+  // ever grows, so the server caps what it returns.
+  list: (params) => apiClient.get(ENDPOINTS.STOCK_LOGS, { params }),
+  summary: (params) => apiClient.get(ENDPOINTS.STOCK_LOGS_SUMMARY, { params }),
 };
 
 export const CustomerService = {
@@ -42,6 +58,14 @@ export const SaleService = {
   list: (params) => apiClient.get(ENDPOINTS.INVOICES, { params }),
   create: (payload) => apiClient.post(ENDPOINTS.INVOICES, payload),
   remove: (id) => apiClient.delete(ENDPOINTS.INVOICE(id)),
+};
+
+export const DraftService = {
+  // A cart parked mid-sale: the customer went to fetch more, or is waiting on
+  // a decision, and the counter needs to serve someone else meanwhile.
+  list: () => apiClient.get(ENDPOINTS.DRAFTS),
+  create: (payload) => apiClient.post(ENDPOINTS.DRAFTS, payload),
+  remove: (code) => apiClient.delete(ENDPOINTS.DRAFT(code)),
 };
 
 export const PurchaseService = {
@@ -85,6 +109,15 @@ export const HRService = {
 
   payrolls: (params) => apiClient.get(ENDPOINTS.PAYROLLS, { params }),
   generatePayslip: (payload) => apiClient.post(ENDPOINTS.PAYROLL_GENERATE, payload),
+};
+
+export const SRService = {
+  list: (params) => apiClient.get(ENDPOINTS.SR_SETTLEMENTS, { params }),
+  // Morning: hand stock to a salesman. Deducts stock and opens a Pending day.
+  issue: (payload) => apiClient.post(ENDPOINTS.SR_SETTLEMENTS, payload),
+  // Night: take unsold goods back, record the cash, raise any shortfall.
+  settle: (code, payload) => apiClient.post(ENDPOINTS.SR_SETTLE(code), payload),
+  remove: (code) => apiClient.delete(ENDPOINTS.SR_SETTLEMENT(code)),
 };
 
 export const TreasuryService = {

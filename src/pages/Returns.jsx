@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RefreshCcw, Search, PackageMinus, PackagePlus, List, Plus, Printer, Eye, Download, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Returns.css';
 
 const Returns = () => {
-  const { inventory, processReturn, deleteReturn, returns, language } = useStore();
+  const { inventory, processReturn, deleteReturn, returns, user, language } = useStore();
+  // Deleting a return undoes its stock adjustment; Admin only on the server.
+  const isAdmin = user?.role === 'Admin';
   const [activeTab, setActiveTab] = useState('New'); // 'New' or 'History'
   
   // New Return State
@@ -201,12 +203,7 @@ const Returns = () => {
                <span className="text-muted">to</span>
                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
                <button className="btn-primary flex-align-gap" onClick={() => {
-                 const printContents = document.getElementById('printable-all-returns-details').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-all-returns-details', 'Returns');
                }}>
                   <Printer size={18} /> Print All Details
                </button>
@@ -248,12 +245,16 @@ const Returns = () => {
                           <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(r)}>
                             <Eye size={16} />
                           </button>
-                          <button className="btn-icon text-info" title="Edit" onClick={() => handleEditReturn(r)}>
-                            <Edit size={16} />
-                          </button>
-                          <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeleteReturn(r.id)}>
-                            <Trash2 size={16} />
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <button className="btn-icon text-info" title="Edit" onClick={() => handleEditReturn(r)}>
+                                <Edit size={16} />
+                              </button>
+                              <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeleteReturn(r.id)}>
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
                         </div>
                      </td>
                    </tr>
@@ -342,12 +343,7 @@ const Returns = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-return').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-return', 'Returns');
               }}>
                 <Printer size={20} /> Print Receipt
               </button>

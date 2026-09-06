@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Barcode from 'react-barcode';
-import { Plus, Search, Printer, Edit, Trash2, Download } from 'lucide-react';
+import { Plus, Search, Printer, Edit, Trash2, Download, Settings2, Image as ImageIcon, Upload, X } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printBarcodeLabels } from '../utils/printLabels';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Inventory.css';
+
+const getProductImageUrl = (img) => {
+  if (!img) return null;
+  if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('blob:')) return img;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const origin = apiBase.replace(/\/api\/?$/, '');
+  return `${origin}${img.startsWith('/') ? '' : '/'}${img}`;
+};
 
 const Inventory = () => {
   const { inventory, categories, units, addInventoryItem, updateInventoryItem, deleteInventoryItem, language } = useStore();
@@ -16,10 +26,15 @@ const Inventory = () => {
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCategoriesModal, setShowCategoriesModal] = useState(false);
+  const [showReferenceDrawer, setShowReferenceDrawer] = useState(false);
   const [showUnitsModal, setShowUnitsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [printQuantity, setPrintQuantity] = useState(21); // Default to 21 (3x7 grid)
+  const [newProductImage, setNewProductImage] = useState(null);
+  const [newProductImagePreview, setNewProductImagePreview] = useState(null);
+  const [editProductImage, setEditProductImage] = useState(null);
+  const [editProductImagePreview, setEditProductImagePreview] = useState(null);
 
   const availableCategories = Array.from(new Set([
     'Panjabi', 'Shirt', 'Pant', 'T-Shirt', 'Polo', 'Pajama', 'Blazer', 'Accessories', 'Fabric',
@@ -57,19 +72,63 @@ const Inventory = () => {
       stock: 0,
       price: 0
     });
+    setNewProductImage(null);
+    setNewProductImagePreview(null);
     setShowAddModal(true);
+  };
+
+  const handleOpenEditModal = (item) => {
+    setEditingItem(item);
+    setEditProductImage(null);
+    setEditProductImagePreview(getProductImageUrl(item.image) || null);
+  };
+
+  const handleImageSelect = (file, isEdit = false) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error(language === 'bn' ? 'অনুগ্রহ করে একটি সঠিক ছবি ফাইল নির্বাচন করুন।' : 'Please select a valid image file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(language === 'bn' ? 'ছবির সাইজ সর্বোচ্চ ৫MB হতে পারবে।' : 'Image size must be less than 5MB.');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    if (isEdit) {
+      setEditProductImage(file);
+      setEditProductImagePreview(previewUrl);
+    } else {
+      setNewProductImage(file);
+      setNewProductImagePreview(previewUrl);
+    }
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    const payload = {
-      ...editingItem,
-      price: parseFloat(editingItem.price) || 0,
-      stock: parseInt(editingItem.stock) || 0,
-    };
-    const res = await updateInventoryItem(editingItem.id, payload);
+    let res;
+    if (editProductImage) {
+      const formData = new FormData();
+      formData.append('name', editingItem.name);
+      formData.append('category', editingItem.category || '');
+      formData.append('unit', editingItem.unit || 'Pcs');
+      if (editingItem.variant) formData.append('variant', editingItem.variant);
+      formData.append('stock', parseInt(editingItem.stock) || 0);
+      formData.append('price', parseFloat(editingItem.price) || 0);
+      formData.append('image', editProductImage);
+      res = await updateInventoryItem(editingItem.id, formData);
+    } else {
+      const payload = {
+        ...editingItem,
+        price: parseFloat(editingItem.price) || 0,
+        stock: parseInt(editingItem.stock) || 0,
+      };
+      res = await updateInventoryItem(editingItem.id, payload);
+    }
+
     if (res?.ok) {
       setEditingItem(null);
+      setEditProductImage(null);
+      setEditProductImagePreview(null);
       toast.success(language === 'bn' ? 'পণ্য সফলভাবে আপডেট হয়েছে!' : 'Product updated successfully!');
     }
   };
@@ -92,18 +151,34 @@ const Inventory = () => {
       return;
     }
 
-    const payload = {
-      ...newProduct,
-      id: finalId,
-      name: finalName,
-      price: parseFloat(newProduct.price) || 0,
-      stock: parseInt(newProduct.stock) || 0,
-    };
+    let res;
+    if (newProductImage) {
+      const formData = new FormData();
+      formData.append('id', finalId);
+      formData.append('name', finalName);
+      formData.append('category', newProduct.category || 'Panjabi');
+      formData.append('unit', newProduct.unit || 'Pcs');
+      if (newProduct.variant) formData.append('variant', newProduct.variant);
+      formData.append('stock', parseInt(newProduct.stock) || 0);
+      formData.append('price', parseFloat(newProduct.price) || 0);
+      formData.append('image', newProductImage);
+      res = await addInventoryItem(formData);
+    } else {
+      const payload = {
+        ...newProduct,
+        id: finalId,
+        name: finalName,
+        price: parseFloat(newProduct.price) || 0,
+        stock: parseInt(newProduct.stock) || 0,
+      };
+      res = await addInventoryItem(payload);
+    }
 
-    const res = await addInventoryItem(payload);
     if (res?.ok) {
       setShowAddModal(false);
       setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, price: 0 });
+      setNewProductImage(null);
+      setNewProductImagePreview(null);
       toast.success(language === 'bn' ? 'নতুন পণ্য সফলভাবে যুক্ত হয়েছে!' : 'Product added successfully!');
     }
   };
@@ -151,12 +226,7 @@ const Inventory = () => {
   const totalValue = filteredInventory.reduce((sum, item) => sum + (item.stock * item.price), 0);
 
   const handlePrintInventoryList = () => {
-    const printContents = document.getElementById('printable-inventory-list').innerHTML;
-    const originalContents = document.body.innerHTML;
-    document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-    window.print();
-    document.body.innerHTML = originalContents;
-    window.location.reload(); 
+    printElement('printable-inventory-list', 'Inventory');
   };
 
   return (
@@ -227,6 +297,11 @@ const Inventory = () => {
             <button className="btn-outline" onClick={() => setShowUnitsModal(true)}>
               {t(language, 'Units')} ({availableUnits.length})
             </button>
+            {/* The two buttons above summarise what is in use. This one edits
+                the underlying lists -- rename a typo, drop an unused entry. */}
+            <button className="btn-outline flex-align-gap text-info" onClick={() => setShowReferenceDrawer(true)}>
+              <Settings2 size={16} /> {t(language, 'Manage')}
+            </button>
           </div>
         </div>
 
@@ -234,6 +309,7 @@ const Inventory = () => {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: '56px', textAlign: 'center' }}>{t(language, 'Image')}</th>
                 <th>{t(language, 'ID/Barcode' || 'ID')}</th>
                 <th>{t(language, 'Item Name')}</th>
                 <th>{t(language, 'Category')}</th>
@@ -247,7 +323,21 @@ const Inventory = () => {
             <tbody>
               {filteredInventory.map(item => (
                 <tr key={item.id}>
-                  <td>{item.id}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    {item.image ? (
+                      <img 
+                        src={getProductImageUrl(item.image)} 
+                        alt={item.name} 
+                        className="product-table-thumb" 
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="product-table-thumb-placeholder">
+                        <ImageIcon size={16} />
+                      </div>
+                    )}
+                  </td>
+                  <td className="font-semibold">{item.id}</td>
                   <td>{item.name}</td>
                   <td>{item.category}</td>
                   <td>{item.variant || '-'}</td>
@@ -257,13 +347,13 @@ const Inventory = () => {
                       {item.stock}
                     </span>
                   </td>
-                  <td>৳{item.price}</td>
+                  <td className="font-semibold">৳{item.price}</td>
                   <td>
                     <div className="action-buttons">
                       <button className="btn-icon" title="Print Barcode" onClick={() => handlePrintBarcode(item)}>
                         <Printer size={16} />
                       </button>
-                      <button className="btn-icon text-info" title="Edit" onClick={() => setEditingItem(item)}>
+                      <button className="btn-icon text-info" title="Edit" onClick={() => handleOpenEditModal(item)}>
                         <Edit size={16} />
                       </button>
                       <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
@@ -369,14 +459,7 @@ const Inventory = () => {
               </div>
             </div>
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                const printContents = document.getElementById('printable-barcode').innerHTML;
-                const originalContents = document.body.innerHTML;
-                document.body.innerHTML = `<div style="background: white;">${printContents}</div>`;
-                window.print();
-                document.body.innerHTML = originalContents;
-                window.location.reload();
-              }}>
+              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => printBarcodeLabels(selectedProduct, printQuantity)}>
                 <Printer size={20} /> Print Labels ({printQuantity})
               </button>
               <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-barcode', `Barcode_${selectedProduct.name}.pdf`)}>
@@ -401,6 +484,40 @@ const Inventory = () => {
             <form id="add-product-form" onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div className="drawer-body">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                  {/* Product Image Dropzone */}
+                  <div className="product-image-upload-section">
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Product Image')}</label>
+                    {newProductImagePreview ? (
+                      <div className="product-image-preview-wrapper">
+                        <img src={newProductImagePreview} alt="Preview" className="product-image-preview-img" />
+                        <button 
+                          type="button" 
+                          className="remove-preview-btn" 
+                          onClick={() => { setNewProductImage(null); setNewProductImagePreview(null); }}
+                          title="Remove image"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="product-image-dropzone">
+                        <input 
+                          type="file" 
+                          accept="image/png, image/jpeg, image/webp" 
+                          onChange={e => handleImageSelect(e.target.files?.[0], false)} 
+                          style={{ display: 'none' }}
+                        />
+                        <div className="dropzone-content">
+                          <Upload size={22} className="text-muted" />
+                          <div className="dropzone-text">
+                            <span className="font-semibold text-primary">{language === 'bn' ? 'ছবি আপলোড করুন' : 'Click to upload image'}</span>
+                            <span className="text-xs text-muted block mt-0.5">PNG, JPG, WEBP (Max 5MB)</span>
+                          </div>
+                        </div>
+                      </label>
+                    )}
+                  </div>
+
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
                       <label className="text-muted text-sm">{t(language, 'ID/Barcode' || 'Product ID / Barcode')} *</label>
@@ -487,6 +604,51 @@ const Inventory = () => {
             <form id="edit-product-form" onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div className="drawer-body">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                  {/* Edit Product Image Dropzone */}
+                  <div className="product-image-upload-section">
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Product Image')}</label>
+                    {editProductImagePreview ? (
+                      <div className="product-image-preview-wrapper">
+                        <img src={editProductImagePreview} alt="Preview" className="product-image-preview-img" />
+                        <div className="preview-action-row">
+                          <label className="change-preview-label" title="Change image">
+                            <input 
+                              type="file" 
+                              accept="image/png, image/jpeg, image/webp" 
+                              onChange={e => handleImageSelect(e.target.files?.[0], true)} 
+                              style={{ display: 'none' }}
+                            />
+                            <Upload size={13} /> {language === 'bn' ? 'ছবি পরিবর্তন' : 'Change'}
+                          </label>
+                          <button
+                            type="button"
+                            className="remove-preview-btn"
+                            onClick={() => { setEditProductImage(null); setEditProductImagePreview(null); }}
+                            title="Remove image"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="product-image-dropzone">
+                        <input 
+                          type="file" 
+                          accept="image/png, image/jpeg, image/webp" 
+                          onChange={e => handleImageSelect(e.target.files?.[0], true)} 
+                          style={{ display: 'none' }}
+                        />
+                        <div className="dropzone-content">
+                          <Upload size={22} className="text-muted" />
+                          <div className="dropzone-text">
+                            <span className="font-semibold text-primary">{language === 'bn' ? 'ছবি যোগ করুন' : 'Click to upload image'}</span>
+                            <span className="text-xs text-muted block mt-0.5">PNG, JPG, WEBP (Max 5MB)</span>
+                          </div>
+                        </div>
+                      </label>
+                    )}
+                  </div>
+
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'ID/Barcode' || 'Product ID / Barcode')} *</label>
                     <input type="text" className="w-full" value={editingItem.id} disabled style={{ backgroundColor: '#f3f4f6' }} />
@@ -605,6 +767,7 @@ const Inventory = () => {
         </div>,
         document.body
       )}
+      {showReferenceDrawer && <ReferenceDataDrawer onClose={() => setShowReferenceDrawer(false)} />}
     </div>
   );
 };

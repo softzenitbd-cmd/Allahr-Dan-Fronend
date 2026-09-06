@@ -7,6 +7,7 @@ import {
   AuthService,
   CoreService,
   CustomerService,
+  DraftService,
   ExpenseService,
   HRService,
   LedgerService,
@@ -16,6 +17,8 @@ import {
   ReturnService,
   SaleService,
   SMSService,
+  SRService,
+  StockLogService,
   SupplierService,
   TreasuryService,
 } from '../api/services';
@@ -46,6 +49,9 @@ const fail = (error, fallback) => {
 
 /** Drop keys the API treats as read-only, so a PATCH doesn't fight the server. */
 const clean = (payload, extra = []) => {
+  if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+    return payload;
+  }
   const drop = new Set([
     'created_at', 'updated_at', 'dateAdded', 'date_added',
     'customer_code', 'supplier_code', 'staff_code', 'product_code',
@@ -95,6 +101,8 @@ const useStore = create(
       attendance: [],
       leaves: [],
       payrolls: [],
+      srSettlements: [],
+      drafts: [],
 
       cashBalance: 0,
       bankBalance: 0,
@@ -133,7 +141,7 @@ const useStore = create(
           user: null,
           inventory: [], categories: [], units: [], customers: [], suppliers: [], sales: [], purchases: [],
           returns: [], settlements: [], expenses: [], expenseCategories: [], staff: [], attendance: [],
-          leaves: [], payrolls: [], accountTransactions: [], dashboardSummary: null,
+          leaves: [], payrolls: [], srSettlements: [], drafts: [], accountTransactions: [], dashboardSummary: null,
           cashBalance: 0, bankBalance: 0, cart: [],
         });
       },
@@ -171,6 +179,8 @@ const useStore = create(
           attendance: () => HRService.attendance().then((r) => ({ attendance: r })),
           leaves: () => HRService.leaves().then((r) => ({ leaves: r })),
           payrolls: () => HRService.payrolls().then((r) => ({ payrolls: r })),
+          sr: () => SRService.list().then((r) => ({ srSettlements: r })),
+          drafts: () => DraftService.list().then((r) => ({ drafts: r })),
           treasury: () => TreasuryService.summary().then((r) => ({
             cashBalance: Number(r.cashBalance) || 0,
             bankBalance: Number(r.bankBalance) || 0,
@@ -310,18 +320,23 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       // Sales
       // ---------------------------------------------------------------- //
-      processSale: ({ cartItems, paymentType, customerInfo, invoiceDiscount, salesman }) =>
+      processSale: ({ cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount }) =>
         enqueue(async () => {
           try {
-            await SaleService.create({
+            const invoice = await SaleService.create({
               cartItems,
               paymentType,
               customerInfo,
               invoiceDiscount: invoiceDiscount || 0,
               salesman: salesman || {},
+              // Only a Partial sale carries a paid amount; Cash and Baki are
+              // decided entirely by the payment type.
+              paidAmount: paymentType === 'Partial' ? Number(paidAmount) || 0 : undefined,
             });
             await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
-            return { ok: true };
+            // Hand the saved invoice back so the receipt can print the number
+            // the shop actually filed, not one made up on the client.
+            return { ok: true, invoice };
           } catch (error) {
             // The cart is cleared by the page optimistically, so put it back
             // rather than leaving the counter staff to key it in a second time.
@@ -612,6 +627,197 @@ const useStore = create(
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not generate the payslip.');
+        }
+      }),
+
+      // ---------------------------------------------------------------- //
+      // SR consignment: stock goes out with a salesman in the morning and is
+      // reconciled against cash at night.
+      // ---------------------------------------------------------------- //
+      issueSRStock: ({ salesmanId, date, items, notes }) => enqueue(async () => {
+        try {
+          await SRService.issue({ salesmanId, date, items, notes: notes || '' });
+          // Issuing takes the goods off the shelf straight away.
+          await get().refresh('sr', 'inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'The stock could not be issued.');
+        }
+      }),
+
+      settleSR: (code, { cashReceived, returnItems }) => enqueue(async () => {
+        try {
+          await SRService.settle(code, { cashReceived, returnItems: returnItems || [] });
+          // Returns come back into stock, cash lands in the drawer, and any
+          // shortfall becomes a due against the salesman.
+          await get().refresh('sr', 'inventory', 'staff', 'treasury');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'The settlement could not be saved.');
+        }
+      }),
+
+      deleteSRSettlement: (code) => enqueue(async () => {
+        try {
+          await SRService.remove(code);
+          await get().refresh('sr', 'inventory', 'staff', 'treasury');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the SR record.');
+        }
+      }),
+
+      /**
+       * Find one product by whatever the scanner or the operator typed.
+       *
+       * Looks in the loaded catalogue first so a scan at the counter is
+       * instant, and only asks the server when that misses -- which is what
+       * happens when another terminal added the item a moment ago.
+       */
+      lookupProduct: async (code) => {
+        const term = String(code || '').trim();
+        if (!term) return null;
+        const lower = term.toLowerCase();
+        const list = get().inventory || [];
+
+        const local =
+          list.find((p) => String(p.id) === term) ||
+          list.find((p) => (p.name || '').toLowerCase() === lower);
+        if (local) return local;
+
+        // One partial match is unambiguous enough to act on; several are not.
+        const partial = list.filter((p) => (p.name || '').toLowerCase().includes(lower));
+        if (partial.length === 1) return partial[0];
+        if (partial.length > 1) return null;
+
+        try {
+          return await ProductService.byBarcode(term);
+        } catch {
+          return null;
+        }
+      },
+
+      // ---------------------------------------------------------------- //
+      // Stock movement log. Not held in state: the table only grows, so a
+      // screen asks for the slice it needs and renders that.
+      // ---------------------------------------------------------------- //
+      fetchStockLogs: async (params = {}) => {
+        try {
+          const [rows, summary] = await Promise.all([
+            StockLogService.list(params),
+            StockLogService.summary(params).catch(() => null),
+          ]);
+          return { ok: true, rows: rows || [], summary };
+        } catch (error) {
+          return fail(error, 'Could not load the stock movement log.');
+        }
+      },
+
+      // ---------------------------------------------------------------- //
+      // Parked carts
+      // ---------------------------------------------------------------- //
+      saveDraft: ({ cartItems, customerInfo, paymentType, invoiceDiscount, salesman, total }) =>
+        enqueue(async () => {
+          try {
+            const draft = await DraftService.create({
+              cartItems, customerInfo,
+              paymentType: paymentType || 'Baki',
+              invoiceDiscount: invoiceDiscount || 0,
+              total: total || 0,
+              salesman: salesman || {},
+            });
+            await get().refresh('drafts');
+            return { ok: true, draft };
+          } catch (error) {
+            return fail(error, 'Could not save the draft.');
+          }
+        }),
+
+      deleteDraft: (code) => enqueue(async () => {
+        try {
+          await DraftService.remove(code);
+          await get().refresh('drafts');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the draft.');
+        }
+      }),
+
+      // ---------------------------------------------------------------- //
+      // Categories and units. The product form creates these implicitly by
+      // name; these let someone correct a typo or drop one that is unused.
+      // ---------------------------------------------------------------- //
+      addCategory: (name) => enqueue(async () => {
+        try {
+          await ProductService.createCategory({ name });
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not add the category.');
+        }
+      }),
+
+      renameCategory: (id, name) => enqueue(async () => {
+        try {
+          await ProductService.updateCategory(id, { name });
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not rename the category.');
+        }
+      }),
+
+      deleteCategory: (id) => enqueue(async () => {
+        try {
+          await ProductService.removeCategory(id);
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the category.');
+        }
+      }),
+
+      addUnit: (name) => enqueue(async () => {
+        try {
+          await ProductService.createUnit({ name });
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not add the unit.');
+        }
+      }),
+
+      renameUnit: (id, name) => enqueue(async () => {
+        try {
+          await ProductService.updateUnit(id, { name });
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not rename the unit.');
+        }
+      }),
+
+      deleteUnit: (id) => enqueue(async () => {
+        try {
+          await ProductService.removeUnit(id);
+          await get().refresh('inventory');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the unit.');
+        }
+      }),
+
+      // ---------------------------------------------------------------- //
+      // Money put in or taken out by the owner, with no document behind it:
+      // the opening float, a capital injection, drawings.
+      // ---------------------------------------------------------------- //
+      addManualEntry: ({ accountId, type, amount, description }) => enqueue(async () => {
+        try {
+          await TreasuryService.entry({ accountId, type, amount, description });
+          await get().refresh('treasury', 'dashboard');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not record the entry.');
         }
       }),
 

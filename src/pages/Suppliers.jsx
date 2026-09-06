@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Printer, Eye, Download, Plus, Phone, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { toast } from 'react-toastify';
 
 const Suppliers = () => {
@@ -22,6 +22,20 @@ const Suppliers = () => {
       isCredit: true
     }));
 
+    // Money handed over at the counter is a payment too. Counting only later
+    // settlements made a cash purchase look entirely unpaid, even though the
+    // Due column beside it correctly read zero.
+    const paidOnPurchase = (purchases || [])
+      .filter(p => p.supplierId === supplierId && Number(p.paidAmount) > 0)
+      .map(p => ({
+        id: `${p.id}-paid`,
+        date: p.date,
+        type: 'Payment',
+        description: `Paid on purchase ${p.id} (${p.paymentType})`,
+        amount: Number(p.paidAmount),
+        isCredit: false
+      }));
+
     const supplierSettlements = (settlements || []).filter(s => s.targetId === supplierId && s.type === 'Supplier').map(s => ({
       id: s.id,
       date: s.date,
@@ -31,7 +45,7 @@ const Suppliers = () => {
       isCredit: false
     }));
 
-    return [...supplierPurchases, ...supplierSettlements].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return [...supplierPurchases, ...paidOnPurchase, ...supplierSettlements].sort((a, b) => new Date(b.date) - new Date(a.date));
   };
 
   const selectedPersonTransactions = selectedPerson ? getSupplierTransactions(selectedPerson.id) : [];
@@ -403,12 +417,7 @@ const Suppliers = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-person').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-person', 'Suppliers');
               }}>
                 <Printer size={20} /> Print Document
               </button>

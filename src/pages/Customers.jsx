@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, MessageSquare, Phone, Printer, Eye, Download, Plus, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
@@ -30,31 +30,50 @@ const Customers = () => {
       type: 'payment' // decreases due
     }));
 
+    // What goes on the account is whatever a document left unpaid, whichever
+    // payment type produced it. Filtering on 'Baki' hid every partly-paid sale
+    // and purchase, and charging the full total over-stated the ones it kept.
     if (activeTab === 'Customer') {
-      const personSales = (sales || []).filter(s => s.customerId === selectedPerson.id && s.paymentType === 'Baki').map(s => ({
-        id: s.id,
-        date: s.date,
-        description: `Baki Sale (${s.items.length} items)`,
-        amount: s.total,
-        type: 'charge' // increases due
-      }));
+      const personSales = (sales || [])
+        .filter(s => s.customerId === selectedPerson.id && Number(s.due_amount) > 0)
+        .map(s => ({
+          id: s.id,
+          date: s.date,
+          description: Number(s.paid_amount) > 0
+            ? `Partial Sale (${s.items.length} items) - total ৳${s.total}, paid ৳${s.paid_amount}`
+            : `Baki Sale (${s.items.length} items)`,
+          amount: Number(s.due_amount),
+          type: 'charge' // increases due
+        }));
       personLedger = [...personSales, ...personSettlements];
     } else {
-      const personPurchases = (purchases || []).filter(p => p.supplierId === selectedPerson.id && p.paymentType === 'Baki').map(p => ({
-        id: p.id,
-        date: p.date,
-        description: `Baki Purchase (${p.items.length} items)`,
-        amount: p.total,
-        type: 'charge' // increases due
-      }));
+      const personPurchases = (purchases || [])
+        .filter(p => p.supplierId === selectedPerson.id && Number(p.dueAmount) > 0)
+        .map(p => ({
+          id: p.id,
+          date: p.date,
+          description: Number(p.paidAmount) > 0
+            ? `Partial Purchase (${p.items.length} items) - total ৳${p.total}, paid ৳${p.paidAmount}`
+            : `Baki Purchase (${p.items.length} items)`,
+          amount: Number(p.dueAmount),
+          type: 'charge' // increases due
+        }));
       personLedger = [...personPurchases, ...personSettlements];
     }
 
-    // Sort ascending by date
-    personLedger.sort((a, b) => new Date(a.date) - new Date(b.date));
-    
-    // Calculate running balance
-    let balance = 0;
+    // Same day: charges before payments, so a payment never appears to settle
+    // a sale that has not been billed yet.
+    personLedger.sort((a, b) => {
+      const dayA = String(a.date).slice(0, 10);
+      const dayB = String(b.date).slice(0, 10);
+      if (dayA !== dayB) return dayA < dayB ? -1 : 1;
+      if (a.type !== b.type) return a.type === 'charge' ? -1 : 1;
+      return String(a.date) < String(b.date) ? -1 : 1;
+    });
+
+    // The balance opens at whatever they already owed before any of this, which
+    // is what makes the closing figure agree with the due on their record.
+    let balance = Number(selectedPerson.opening_due) || 0;
     personLedger = personLedger.map(tx => {
       if (tx.type === 'charge') balance += tx.amount;
       else if (tx.type === 'payment') balance -= tx.amount;
@@ -183,12 +202,7 @@ const Customers = () => {
               </button>
             )}
             <button className="btn-outline flex-align-gap" onClick={() => {
-              const printContents = document.getElementById('printable-customers-list').innerHTML;
-              const originalContents = document.body.innerHTML;
-              document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-              window.print();
-              document.body.innerHTML = originalContents;
-              window.location.reload(); 
+              printElement('printable-customers-list', 'Customers');
             }}>
               <Printer size={16} /> Print List
             </button>
@@ -585,12 +599,7 @@ const Customers = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-person').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-person', 'Customers');
               }}>
                 <Printer size={20} /> Print Document
               </button>

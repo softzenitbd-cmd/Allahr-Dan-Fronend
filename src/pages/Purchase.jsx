@@ -2,13 +2,16 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Minus, Search, Trash2, Database, List, Printer, FilePlus, Eye, Download, FileText, Edit } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Purchase.css';
 
 const Purchase = () => {
-  const { suppliers, inventory, purchases, processPurchase, deletePurchase, language } = useStore();
+  const { suppliers, inventory, purchases, processPurchase, deletePurchase, user, language } = useStore();
+  // Deleting a purchase un-receives goods and lowers the payable, so the
+  // server restricts it to an Admin. Edit works by delete-then-recreate.
+  const isAdmin = user?.role === 'Admin';
   const [activeTab, setActiveTab] = useState('New'); // 'New' or 'History'
   
   const [supplier, setSupplier] = useState('');
@@ -368,12 +371,7 @@ const Purchase = () => {
               title="End Date"
             />
             <button className="btn-primary flex-align-gap" onClick={() => {
-                 const printContents = document.getElementById('printable-all-purchases-details').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-all-purchases-details', 'Purchase');
             }}>
               <Printer size={16} /> Print All Details
             </button>
@@ -413,12 +411,16 @@ const Purchase = () => {
                       <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(p)}>
                         <Eye size={16} />
                       </button>
-                      <button className="btn-icon text-info" title="Edit" onClick={() => handleEditPurchase(p)}>
-                        <Edit size={16} />
-                      </button>
-                      <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeletePurchase(p.id)}>
-                        <Trash2 size={16} />
-                      </button>
+                      {isAdmin && (
+                        <>
+                          <button className="btn-icon text-info" title="Edit" onClick={() => handleEditPurchase(p)}>
+                            <Edit size={16} />
+                          </button>
+                          <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeletePurchase(p.id)}>
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -555,12 +557,7 @@ const Purchase = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-invoice-pur').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-invoice-pur', 'Purchase');
               }}>
                 <Printer size={20} /> Print Receipt
               </button>

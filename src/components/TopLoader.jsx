@@ -1,20 +1,35 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import useStore from '../store/useStore';
 import logo from '../assets/allah_dan.jpeg';
 
+// Hold off briefly before showing anything: a load that finishes in a blink
+// should not make the screen flash.
+const APPEAR_AFTER = 150;
+// Once the overlay is up, leave it up long enough to read as an animation
+// rather than a stutter.
+const MIN_VISIBLE = 600;
+
 const TopLoader = () => {
+  // Shown while the app is actually pulling data from the server, which is
+  // login and page reload. It used to appear for a fixed 500ms on every route
+  // change, blocking the screen even though the page was already in memory.
+  const isLoading = useStore((state) => state.isLoading);
   const [visible, setVisible] = useState(false);
-  const location = useLocation();
+  const shownAt = useRef(0);
 
   useEffect(() => {
-    setVisible(true);
-    
-    const timeout = setTimeout(() => {
-      setVisible(false);
-    }, 500); // 500ms loading overlay on page change
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        shownAt.current = Date.now();
+        setVisible(true);
+      }, APPEAR_AFTER);
+      return () => clearTimeout(timer);
+    }
 
-    return () => clearTimeout(timeout);
-  }, [location.pathname]);
+    const elapsed = Date.now() - shownAt.current;
+    const timer = setTimeout(() => setVisible(false), Math.max(0, MIN_VISIBLE - elapsed));
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   if (!visible) return null;
 

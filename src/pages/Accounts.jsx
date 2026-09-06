@@ -1,13 +1,34 @@
 import React, { useState } from 'react';
 import useStore from '../store/useStore';
+import { printElement } from '../utils/pdfGenerator';
 import { Wallet, Landmark, ArrowRightLeft, History, Plus, Printer } from 'lucide-react';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
 const Accounts = () => {
-  const { cashBalance, bankBalance, accountTransactions, transferFunds, user, language } = useStore();
+  const { cashBalance, bankBalance, accountTransactions, transferFunds, addManualEntry, user, language } = useStore();
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [transferForm, setTransferForm] = useState({ from: 'Cash', to: 'Bank', amount: '' });
+  const [entryForm, setEntryForm] = useState({ accountId: 'Cash', type: 'In', amount: '', description: '' });
+  const [savingEntry, setSavingEntry] = useState(false);
+
+  const handleManualEntry = async (e) => {
+    e.preventDefault();
+    const amount = parseFloat(entryForm.amount);
+    if (!amount || amount <= 0) return toast.error('Enter an amount greater than zero.');
+
+    setSavingEntry(true);
+    const res = await addManualEntry({ ...entryForm, amount });
+    setSavingEntry(false);
+    if (res?.ok) {
+      toast.success(
+        entryForm.type === 'In'
+          ? `৳${amount.toLocaleString()} added to ${entryForm.accountId}.`
+          : `৳${amount.toLocaleString()} taken out of ${entryForm.accountId}.`
+      );
+      setEntryForm({ accountId: 'Cash', type: 'In', amount: '', description: '' });
+    }
+  };
 
   const handleTransfer = async (e) => {
     e.preventDefault();
@@ -69,6 +90,56 @@ const Accounts = () => {
             <h3 className="text-muted">{t(language, 'Bank Balance')}</h3>
             <p className="text-3xl font-bold mt-2">৳{(bankBalance || 0).toLocaleString()}</p>
           </div>
+
+          {/* Money the owner puts in or takes out with no document behind it:
+              the opening float, a capital injection, drawings. Without this,
+              a drawer that runs dry cannot be topped up and every payment is
+              refused with nowhere to go. */}
+          <div className="card glass" style={{ gridColumn: '1 / -1' }}>
+            <h3 className="mb-2">{t(language, 'Add or Withdraw Money')}</h3>
+            <p className="text-muted text-sm mb-4">
+              {language === 'bn'
+                ? 'কোনো বিক্রয় বা ক্রয় ছাড়াই টাকা রাখা বা তোলা — যেমন সকালের খুচরা, মালিকের জমা বা উত্তোলন।'
+                : 'Cash put in or taken out directly: the opening float, owner capital, or drawings.'}
+            </p>
+            <form onSubmit={handleManualEntry} className="flex-align-gap" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ minWidth: '120px' }}>
+                <label className="text-muted text-sm block mb-1">{t(language, 'Account')}</label>
+                <select value={entryForm.accountId} onChange={e => setEntryForm({ ...entryForm, accountId: e.target.value })}>
+                  <option value="Cash">Cash</option>
+                  <option value="Bank">Bank</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ minWidth: '120px' }}>
+                <label className="text-muted text-sm block mb-1">{t(language, 'Type')}</label>
+                <select value={entryForm.type} onChange={e => setEntryForm({ ...entryForm, type: e.target.value })}>
+                  <option value="In">{language === 'bn' ? 'জমা (In)' : 'Money In'}</option>
+                  <option value="Out">{language === 'bn' ? 'উত্তোলন (Out)' : 'Money Out'}</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ minWidth: '130px' }}>
+                <label className="text-muted text-sm block mb-1">{t(language, 'Amount')}</label>
+                <input
+                  type="number" min="1" required
+                  value={entryForm.amount}
+                  onChange={e => setEntryForm({ ...entryForm, amount: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                <label className="text-muted text-sm block mb-1">{t(language, 'Description')}</label>
+                <input
+                  type="text" required className="w-full"
+                  value={entryForm.description}
+                  onChange={e => setEntryForm({ ...entryForm, description: e.target.value })}
+                  placeholder={language === 'bn' ? 'যেমন: সকালের খুচরা টাকা' : 'e.g. Opening float for the day'}
+                />
+              </div>
+              <button type="submit" className="btn-primary" style={{ height: '42px' }} disabled={savingEntry}>
+                {savingEntry ? t(language, 'Saving...') : t(language, 'Record')}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -107,12 +178,7 @@ const Accounts = () => {
           <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
             <h3 className="mb-0">All Account Transactions</h3>
             <button className="btn-primary flex-align-gap" onClick={() => {
-              const printContents = document.getElementById('printable-transactions').innerHTML;
-              const originalContents = document.body.innerHTML;
-              document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-              window.print();
-              document.body.innerHTML = originalContents;
-              window.location.reload(); 
+              printElement('printable-transactions', 'Accounts');
             }}>
               <Printer size={16} /> Print Transactions
             </button>

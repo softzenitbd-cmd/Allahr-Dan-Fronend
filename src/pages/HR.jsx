@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Download, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
@@ -611,12 +611,7 @@ const HR = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '1rem 3rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                const printContents = document.getElementById('printable-single-staff').innerHTML;
-                const originalContents = document.body.innerHTML;
-                document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                window.print();
-                document.body.innerHTML = originalContents;
-                window.location.reload();
+                printElement('printable-single-staff', 'HR');
               }}>
                 <Printer size={20} /> Print Document
               </button>

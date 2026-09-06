@@ -4,7 +4,7 @@ import { Plus, X, PieChart, DollarSign, Printer, Eye, Download, Edit, Trash2 } f
 
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 
 const DEFAULT_CATEGORIES = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
@@ -128,12 +128,7 @@ const Expenses = () => {
                 <PieChart size={16} /> {t(language, 'Monthly Report' || 'Monthly Report')}
               </button>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => {
-                const printContents = document.getElementById('printable-expenses-list').innerHTML;
-                const originalContents = document.body.innerHTML;
-                document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                window.print();
-                document.body.innerHTML = originalContents;
-                window.location.reload(); 
+                printElement('printable-expenses-list', 'Expenses');
               }}>
                 <Printer size={16} /> Print List
               </button>
@@ -409,12 +404,7 @@ const Expenses = () => {
             
             <div className="drawer-footer" style={{ gap: '1rem' }}>
               <button className="btn-primary flex-align-gap w-full center-content" onClick={() => {
-                 const printContents = document.getElementById('printable-monthly-expense').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = `<div style="padding:2rem;color:#000;"><h2>Expense Report: ${reportMonth}</h2>${printContents}</div>`;
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-monthly-expense', 'Expenses');
               }}>
                 <Printer size={18} /> Print Report
               </button>
@@ -459,12 +449,7 @@ const Expenses = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-expense').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-expense', 'Expenses');
               }}>
                 <Printer size={20} /> Print Document
               </button>

@@ -1,0 +1,191 @@
+/* Stock Movement Log
+   ------------------
+   A page for answering one question fast: why is this product down to four?
+   So the summary sits on one line, the filters read as a single strip, and the
+   table leans on colour only where it carries meaning -- in or out. */
+
+.stocklog-stats {
+  display: grid;
+  /* Four across on a counter monitor, folding to two then one on a phone.
+     The page used to stack these full-width, pushing the table off screen. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.stocklog-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.stocklog-stat .icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stocklog-stat .label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.stocklog-stat .value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-top: 2px;
+  /* Digits in a row of tiles should line up. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- filter strip --- */
+
+.stocklog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.stocklog-filters .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.stocklog-filters .field > label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stocklog-filters .grow { flex: 1 1 240px; min-width: 200px; }
+.stocklog-filters .dates { display: flex; align-items: center; gap: 0.4rem; }
+
+/* --- table --- */
+
+/* Hundreds of rows scroll past; without this the column headings are gone by
+   the third screenful and a bare number in a cell means nothing. */
+.stocklog-table {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+/* The long selector is deliberate. common.css sets a near-transparent heading
+   background through `body:not(.light-mode) .data-table th`, which outweighs a
+   plainer rule here and let rows read straight through the sticky heading in
+   dark mode. This has to out-specify it in both themes. */
+.stocklog-page .stocklog-table .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* --bg-card is translucent by design for the glass look, so it is layered
+     over the page's own solid ground rather than hard-coding a colour. */
+  background:
+    linear-gradient(var(--bg-card), var(--bg-card)),
+    linear-gradient(var(--bg-main), var(--bg-main));
+  box-shadow: inset 0 -1px 0 var(--border-color);
+  white-space: nowrap;
+}
+
+.stocklog-table .movement {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stocklog-table .qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.stocklog-table .balance {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stocklog-table .ref {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  /* Codes are long and never need to wrap a row into three lines. */
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.stocklog-table .reason {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 280px;
+}
+
+.stocklog-table .when .time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: block;
+}
+
+/* A row that put stock back gets the faintest green wash, one that took it
+   away the faintest red. Enough to scan a column at a glance, not enough to
+   fight the text. */
+.stocklog-table tbody tr.is-in  { background: rgba(16, 185, 129, 0.035); }
+.stocklog-table tbody tr.is-out { background: rgba(239, 68, 68, 0.03); }
+
+.stocklog-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+
+.stocklog-empty .big {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 768px) {
+  .stocklog-filters .field,
+  .stocklog-filters .grow { flex: 1 1 100%; min-width: 0; }
+  .stocklog-stat .value { font-size: 1.3rem; }
+}
+
+/* The refresh icon turns while a request is in flight, so a slow query looks
+   busy rather than broken. */
+@keyframes stocklog-spin { to { transform: rotate(360deg); } }
+.stocklog-page .spin { animation: stocklog-spin 0.9s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stocklog-page .spin { animation: none; }
+}

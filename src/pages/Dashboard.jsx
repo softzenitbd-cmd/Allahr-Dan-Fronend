@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, RefreshCcw, Users, ArrowRight, Clock, MessageSquare, FileText, Settings, Landmark, Calendar } from 'lucide-react';
+import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, RefreshCcw, Users, ArrowRight, Clock, MessageSquare, FileText, Settings, Landmark, Calendar, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -7,7 +7,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const { user, sales, expenses, inventory, customers, suppliers, purchases, language, dashboardSummary } = useStore();
+  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance } = useStore();
   const isAdmin = user?.role === 'Admin';
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -34,15 +34,12 @@ const Dashboard = () => {
   const dailyProfit = dailySales - dailyExpenses;
   const monthlyProfit = monthlySales - monthlyExpenses;
 
-  // Cash Balance Calculation (All time Cash Sales - All time Cash Purchases - All time Expenses + All time Customer Settlements - All time Supplier Settlements)
-  const allTimeCashSales = sales.filter(s => s.paymentType === 'Cash').reduce((acc, sale) => acc + sale.total, 0);
-  const allTimeCashPurchases = purchases.filter(p => p.paymentType === 'Cash').reduce((acc, p) => acc + p.total, 0);
-  const allTimeExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-
-  // Actually, we don't have settlements tracked fully in a way that distinguishes cash vs bank, but let's do a basic net balance.
-  const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
-  const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-  const netBalance = totalSales - totalExpenses; // A simplified "Total Balance" for the business overall
+  // The money the shop actually holds. This card used to read sales minus
+  // expenses, which left purchases out of it entirely and ignored the opening
+  // balances, so a card labelled "balance" showed something that was not one.
+  // Cash and bank are now tracked for real, so the card can just say what they
+  // add up to.
+  const totalBalance = (cashBalance || 0) + (bankBalance || 0);
 
   const totalInventoryValue = inventory.reduce((acc, item) => acc + (item.stock * item.price), 0);
   const totalCustomerDue = customers.reduce((acc, cust) => acc + cust.due, 0);
@@ -51,7 +48,7 @@ const Dashboard = () => {
   // --- GRADIENT DESIGN (Commented out for now as requested) ---
   /*
   const stats = [
-    { label: "Total Balance (Net)", value: `৳${netBalance.toLocaleString()}`, icon: DollarSign, gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', shadow: '0 10px 20px -5px rgba(16, 185, 129, 0.4)' },
+    { label: "Total Balance (Cash + Bank)", value: `৳${totalBalance.toLocaleString()}`, icon: DollarSign, gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', shadow: '0 10px 20px -5px rgba(16, 185, 129, 0.4)' },
     { label: "Today's Sales", value: `৳${dailySales.toLocaleString()}`, icon: ShoppingCart, gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', shadow: '0 10px 20px -5px rgba(139, 92, 246, 0.4)' },
     { label: "Today's Expense", value: `৳${dailyExpenses.toLocaleString()}`, icon: TrendingDown, gradient: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', shadow: '0 10px 20px -5px rgba(239, 68, 68, 0.4)' },
     { label: "Today's Net Profit", value: `৳${dailyProfit.toLocaleString()}`, icon: TrendingUp, gradient: dailyProfit >= 0 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', shadow: dailyProfit >= 0 ? '0 10px 20px -5px rgba(16, 185, 129, 0.4)' : '0 10px 20px -5px rgba(239, 68, 68, 0.4)' },
@@ -65,7 +62,7 @@ const Dashboard = () => {
 
   // --- ACTIVE BORDER DESIGN ---
   const stats = [
-    { label: language === 'bn' ? "মোট ব্যালেন্স (নেট)" : "Total Balance (Net)", value: `৳${netBalance.toLocaleString()}`, icon: DollarSign, color: "var(--success)" },
+    { label: language === 'bn' ? "মোট ব্যালেন্স (ক্যাশ + ব্যাংক)" : "Total Balance (Cash + Bank)", value: `৳${totalBalance.toLocaleString()}`, icon: DollarSign, color: "var(--success)" },
     { label: language === 'bn' ? "আজকের বিক্রয়" : "Today's Sales", value: `৳${dailySales.toLocaleString()}`, icon: ShoppingCart, color: "var(--primary)" },
     { label: language === 'bn' ? "আজকের খরচ" : "Today's Expense", value: `৳${dailyExpenses.toLocaleString()}`, icon: TrendingDown, color: "var(--danger)" },
     { label: language === 'bn' ? "আজকের নিট লাভ" : "Today's Net Profit", value: `৳${dailyProfit.toLocaleString()}`, icon: TrendingUp, color: dailyProfit >= 0 ? "#10b981" : "var(--danger)" },
@@ -84,6 +81,8 @@ const Dashboard = () => {
     { name: language === 'bn' ? 'সাপ্লায়ার' : 'Suppliers', path: '/suppliers', icon: Users },
     { name: language === 'bn' ? 'কাস্টমার' : 'Customers', path: '/customers', icon: Users },
     { name: language === 'bn' ? 'খরচ' : 'Expenses', path: '/expenses', icon: DollarSign },
+    { name: language === 'bn' ? 'এসআর' : 'SR', path: '/sr', icon: Truck },
+    { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
   ];
 
   const adminServices = user?.role === 'Admin' ? [

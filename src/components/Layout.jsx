@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   Landmark,
   Calendar,
+  ClipboardList,
   Menu,
   X
 } from 'lucide-react';
@@ -64,6 +65,8 @@ const Layout = () => {
     { name: language === 'bn' ? 'সাপ্লায়ার' : 'Suppliers', path: '/suppliers', icon: Users },
     { name: language === 'bn' ? 'কাস্টমার' : 'Customers', path: '/customers', icon: Users },
     { name: language === 'bn' ? 'খরচ' : 'Expenses', path: '/expenses', icon: DollarSign },
+    { name: language === 'bn' ? 'এসআর' : 'SR', path: '/sr', icon: Truck },
+    { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
   ];
 
   const adminServices = user?.role === 'Admin' ? [

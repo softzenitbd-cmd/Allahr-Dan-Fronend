@@ -53,6 +53,13 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      if (config.headers?.delete) {
+        config.headers.delete('Content-Type');
+      } else if (config.headers) {
+        delete config.headers['Content-Type'];
+      }
+    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -118,8 +125,14 @@ export const errorMessage = (error, fallback = 'Something went wrong.') => {
   const first = Object.entries(data)[0];
   if (!first) return fallback;
   const [field, value] = first;
-  const text = Array.isArray(value) ? value[0] : value;
-  return field === 'non_field_errors' ? String(text) : `${field}: ${text}`;
+  const text = String(Array.isArray(value) ? value[0] : value);
+
+  // Name the field only when the message alone would not say enough. A written
+  // sentence already reads well on its own, and "id: Product ID or Barcode
+  // '10007' already exists." just gets in the reader's way.
+  const readsAsSentence = text.length > 30 && /[.!?]$/.test(text);
+  if (field === 'non_field_errors' || readsAsSentence) return text;
+  return `${field}: ${text}`;
 };
 
 export default apiClient;

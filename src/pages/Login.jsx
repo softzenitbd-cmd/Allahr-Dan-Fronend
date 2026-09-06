@@ -9,7 +9,6 @@ import logo from '../assets/allah_dan.jpeg';
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Salesman');
   const [busy, setBusy] = useState(false);
   const signIn = useStore((state) => state.signIn);
   const language = useStore((state) => state.language);
@@ -19,9 +18,9 @@ const Login = () => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
-    // The role comes back with the account. A user picking their own role here
-    // would defeat every permission check on the server, so the selection above
-    // is not what decides what they can do.
+    // The account decides the role. There is deliberately no role picker here:
+    // letting someone choose their own would defeat every permission check the
+    // server makes.
     const result = await signIn(username.trim(), password);
     setBusy(false);
     if (result?.ok) {
@@ -68,28 +67,8 @@ const Login = () => {
               required
             />
           </div>
-          <div className="role-selector">
-            <label>
-              <input
-                type="radio"
-                value="Salesman"
-                checked={role === 'Salesman'}
-                onChange={(e) => setRole(e.target.value)}
-              />
-              Salesman
-            </label>
-            <label>
-              <input
-                type="radio"
-                value="Admin"
-                checked={role === 'Admin'}
-                onChange={(e) => setRole(e.target.value)}
-              />
-              Admin
-            </label>
-          </div>
-          <button type="submit" className="btn-primary">
-            {t(language, 'Sign In' || 'Sign In')}
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? t(language, 'Signing in...') : t(language, 'Sign In')}
           </button>
         </form>
       </div>

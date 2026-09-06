@@ -15,8 +15,11 @@ export const ENDPOINTS = {
   PRODUCT: (code) => `/inventory/products/${encodeURIComponent(code)}/`,
   BARCODE_SEARCH: '/inventory/products/barcode-search/',
   CATEGORIES: '/inventory/categories/',
+  CATEGORY: (id) => `/inventory/categories/${encodeURIComponent(id)}/`,
   UNITS: '/inventory/units/',
+  UNIT: (id) => `/inventory/units/${encodeURIComponent(id)}/`,
   STOCK_LOGS: '/inventory/stock-logs/',
+  STOCK_LOGS_SUMMARY: '/inventory/stock-logs/summary/',
 
   // Contacts
   CUSTOMERS: '/contacts/customers/',
@@ -28,6 +31,7 @@ export const ENDPOINTS = {
   INVOICES: '/sales/invoices/',
   INVOICE: (id) => `/sales/invoices/${encodeURIComponent(id)}/`,
   DRAFTS: '/sales/drafts/',
+  DRAFT: (code) => `/sales/drafts/${encodeURIComponent(code)}/`,
 
   // Purchases
   PURCHASES: '/purchases/',
@@ -58,6 +62,11 @@ export const ENDPOINTS = {
   LEAVE_STATUS: (id) => `/hr/leaves/${encodeURIComponent(id)}/status/`,
   PAYROLLS: '/hr/payrolls/',
   PAYROLL_GENERATE: '/hr/payrolls/generate/',
+
+  // SR consignment (stock issued to a salesman, settled at end of day)
+  SR_SETTLEMENTS: '/sr/settlements/',
+  SR_SETTLEMENT: (code) => `/sr/settlements/${encodeURIComponent(code)}/`,
+  SR_SETTLE: (code) => `/sr/settlements/${encodeURIComponent(code)}/settle/`,
 
   // Treasury (cash & bank)
   TREASURY_SUMMARY: '/treasury/summary/',

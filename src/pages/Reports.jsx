@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, Printer, Database, ShoppingCart, Download, Eye, Plus, X, Gift } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF } from '../utils/pdfGenerator';
+import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 
 const Reports = () => {
@@ -593,8 +593,11 @@ const Reports = () => {
                 <thead><tr><th>Date</th><th>Type</th><th>Ref ID</th><th style={{textAlign:'right'}}>Debit (Due+)</th><th style={{textAlign:'right'}}>Credit (Paid-)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
                 <tbody>
                   {(() => {
-                    let runBal = 0;
-                    const custSales = sales.filter(s => s.customerId === selectedCustomerId && s.paymentType === 'Baki').map(s => ({ date: s.date, type: 'Sale (Due)', ref: s.id, debit: s.total, credit: 0 }));
+                    // Open at what they already owed, then charge each sale
+                    // whatever it left unpaid -- a partly-paid sale belongs here
+                    // too, for the part that is still outstanding.
+                    let runBal = Number(customers.find(c => c.id === selectedCustomerId)?.opening_due) || 0;
+                    const custSales = sales.filter(s => s.customerId === selectedCustomerId && Number(s.due_amount) > 0).map(s => ({ date: s.date, type: Number(s.paid_amount) > 0 ? 'Sale (Partial)' : 'Sale (Due)', ref: s.id, debit: Number(s.due_amount), credit: 0 }));
                     const custPayments = (settlements || []).filter(s => s.type === 'Customer' && s.targetId === selectedCustomerId).map(s => ({ date: s.date, type: 'Payment', ref: s.id, debit: 0, credit: s.amount }));
                     const ledger = [...custSales, ...custPayments].sort((a,b) => new Date(a.date) - new Date(b.date));
                     
@@ -635,8 +638,8 @@ const Reports = () => {
                 <thead><tr><th>Date</th><th>Type</th><th>Ref ID</th><th style={{textAlign:'right'}}>Debit (Due+)</th><th style={{textAlign:'right'}}>Credit (Paid-)</th><th style={{textAlign:'right'}}>Balance</th></tr></thead>
                 <tbody>
                   {(() => {
-                    let runBal = 0;
-                    const supPurchases = purchases.filter(p => p.supplierId === selectedSupplierId && (p.paymentType === 'Baki' || p.paidAmount < p.total)).map(p => ({ date: p.date, type: 'Purchase (Due)', ref: p.id, debit: (p.total - p.paidAmount), credit: 0 }));
+                    let runBal = Number(suppliers.find(s => s.id === selectedSupplierId)?.opening_due) || 0;
+                    const supPurchases = purchases.filter(p => p.supplierId === selectedSupplierId && Number(p.dueAmount) > 0).map(p => ({ date: p.date, type: Number(p.paidAmount) > 0 ? 'Purchase (Partial)' : 'Purchase (Due)', ref: p.id, debit: Number(p.dueAmount), credit: 0 }));
                     const supPayments = (settlements || []).filter(s => s.type === 'Supplier' && s.targetId === selectedSupplierId).map(s => ({ date: s.date, type: 'Payment', ref: s.id, debit: 0, credit: s.amount }));
                     const ledger = [...supPurchases, ...supPayments].sort((a,b) => new Date(a.date) - new Date(b.date));
                     
@@ -837,12 +840,7 @@ const Reports = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 const printContents = document.getElementById('printable-single-invoice').innerHTML;
-                 const originalContents = document.body.innerHTML;
-                 document.body.innerHTML = '<div id="print-wrapper">' + printContents + '</div>';
-                 window.print();
-                 document.body.innerHTML = originalContents;
-                 window.location.reload(); 
+                 printElement('printable-single-invoice', 'Reports');
               }}>
                 <Printer size={20} /> Print Document
               </button>
