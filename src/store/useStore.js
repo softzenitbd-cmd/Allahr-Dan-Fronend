@@ -44,6 +44,9 @@ const enqueue = (task) => {
 // Cache freshness TTL: 90 seconds (data fresher than 90s is served instantly from memory)
 const CACHE_TTL_MS = 90 * 1000;
 // Tracks the epoch timestamp (ms) when each slice was last fetched
+// Holds back the accent save while the colour picker is being dragged.
+let accentSaveTimer = null;
+
 const lastFetchedTimestamps = new Map();
 // Deduplicates concurrent in-flight requests for the same slice
 const inFlightRequests = new Map();
@@ -81,6 +84,7 @@ const useStore = create(
       language: 'en',
       isLoading: false,
       shopProfile: null,
+      accentColor: '',
       dashboardSummary: null,
       _cacheTimestamps: {},
 
@@ -342,6 +346,7 @@ const useStore = create(
             set((state) => ({
               theme: settings.theme_mode || state.theme,
               themeGradient: settings.active_theme_class || state.themeGradient,
+              accentColor: settings.accentColor ?? state.accentColor,
               language: settings.language || state.language,
               smsSettings: settings.smsSettings || state.smsSettings,
               _cacheTimestamps: { ...(state._cacheTimestamps || {}), _userSettings: Date.now() },
@@ -361,6 +366,25 @@ const useStore = create(
       setThemeGradient: (gradient) => {
         set({ themeGradient: gradient });
         get().saveSettings({ active_theme_class: gradient });
+      },
+
+      /**
+       * A colour chosen from the Settings picker. Passing an empty string hands
+       * the look back to the named theme, which is what the "reset" does.
+       *
+       * The colour is applied the instant it changes so dragging the picker
+       * repaints the app live, but the save is held back until the dragging
+       * stops -- otherwise one sweep across the hue rail would fire a hundred
+       * requests at the server.
+       */
+      setAccentColor: (hex) => {
+        const value = hex || '';
+        set({ accentColor: value });
+
+        clearTimeout(accentSaveTimer);
+        accentSaveTimer = setTimeout(() => {
+          get().saveSettings({ accentColor: value });
+        }, 450);
       },
 
       setLanguage: (lang) => {
@@ -1049,6 +1073,7 @@ const useStore = create(
         language: state.language,
         cart: state.cart,
         shopProfile: state.shopProfile,
+        accentColor: state.accentColor,
         _cacheTimestamps: state._cacheTimestamps,
         // Persist tables so page reload does not blank out data and force full refetches
         inventory: state.inventory,

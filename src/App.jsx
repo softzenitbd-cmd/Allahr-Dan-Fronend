@@ -4,6 +4,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import logo from './assets/allah_dan.jpeg';
 import useStore from './store/useStore';
+import { applyAccent } from './utils/accent';
 import TopLoader from './components/TopLoader';
 import Login from './pages/Login';
 import Layout from './components/Layout';
@@ -47,6 +48,7 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 function App() {
   const theme = useStore((state) => state.theme);
   const themeGradient = useStore((state) => state.themeGradient) || 'theme-sky';
+  const accentColor = useStore((state) => state.accentColor);
   const user = useStore((state) => state.user);
   const hydrate = useStore((state) => state.hydrate);
 
@@ -75,6 +77,11 @@ function App() {
       document.body.classList.add('dark-mode');
     }
 
+    // A freely picked accent is painted straight onto the body, which beats
+    // the theme class. It has to be re-derived when the screen flips to dark,
+    // because the same colour needs different treatment on each ground.
+    applyAccent(accentColor, theme !== 'light');
+
     // Global click listener for closing modals/drawers
     const handleOverlayClick = (e) => {
       if (e.target.classList.contains('drawer-overlay') || e.target.classList.contains('modal-overlay')) {
@@ -90,7 +97,7 @@ function App() {
     return () => {
       document.removeEventListener('mousedown', handleOverlayClick);
     };
-  }, [theme, themeGradient]);
+  }, [theme, themeGradient, accentColor]);
 
   return (
     <Router>

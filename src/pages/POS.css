@@ -722,3 +722,20 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
   .cart-line .cl-amount { grid-row: 1; }
   .pos-tabs .segmented-control { width: 100%; overflow-x: auto; }
 }
+
+/* An item the shelf cannot supply: shown, but not pickable. */
+.search-result.is-out { opacity: 0.5; cursor: not-allowed; }
+.search-result:disabled:hover { background: transparent; }
+
+.cl-overstock {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--danger);
+  margin-top: 1px;
+}
+
+.qty-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+}

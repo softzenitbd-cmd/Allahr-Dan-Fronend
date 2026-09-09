@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { printElement } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
+import PaymentVoucher from '../components/PaymentVoucher';
 import { openCashDrawer } from '../utils/cashDrawer';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
@@ -112,13 +113,64 @@ const POS = () => {
       ).slice(0, 8)
     : [];
 
+  /**
+   * Refuse at the counter what the server would refuse at checkout.
+   *
+   * The server has always been the real gate -- it re-checks the whole cart
+   * against stock inside the sale transaction and rejects it outright -- but
+   * finding out only after the customer's items are rung up is a bad way to
+   * learn the shelf is empty. This stops it happening at the moment of the
+   * scan, while the customer is still standing there.
+   */
+  const stockBlockReason = (product) => {
+    const available = Number(product.stock);
+    if (!Number.isFinite(available)) return null;
+
+    if (available <= 0) {
+      return language === 'bn'
+        ? `"${product.name}" এর স্টক শেষ — বিক্রি করা যাবে না।`
+        : `"${product.name}" is out of stock and cannot be sold.`;
+    }
+
+    const inCart = cart.find((item) => item.id === product.id)?.quantity || 0;
+    if (inCart + 1 > available) {
+      return language === 'bn'
+        ? `"${product.name}" এর স্টকে আছে ${available} টি, কার্টেই ${inCart} টি আছে।`
+        : `Only ${available} of "${product.name}" in stock, and ${inCart} already in the cart.`;
+    }
+    return null;
+  };
+
   const pickProduct = (product) => {
+    const blocked = stockBlockReason(product);
+    if (blocked) {
+      toast.error(blocked);
+      setScannedItem(product);
+      setBarcodeInput('');
+      document.getElementById('barcode-input')?.focus();
+      return;
+    }
+
     addToCart({ ...product, isGift: false, itemDiscount: 0 });
     // Show what was just scanned, so whoever is on the counter can see the
     // machine read the right label before the customer is charged for it.
     setScannedItem(product);
     setBarcodeInput('');
     document.getElementById('barcode-input')?.focus();
+  };
+
+  /** The + button stops at what the shelf actually holds. */
+  const increaseQty = (item) => {
+    const available = Number(item.stock);
+    if (Number.isFinite(available) && item.quantity + 1 > available) {
+      toast.error(
+        language === 'bn'
+          ? `স্টকে আছে মাত্র ${available} টি।`
+          : `Only ${available} in stock.`
+      );
+      return;
+    }
+    updateCartItem(item.id, { quantity: item.quantity + 1 });
   };
 
   const handleBarcodeSubmit = async (e) => {
@@ -409,8 +461,12 @@ const POS = () => {
                         <button
                           key={item.id}
                           type="button"
-                          className="search-result"
+                          className={`search-result ${item.stock <= 0 ? 'is-out' : ''}`}
                           onClick={() => pickProduct(item)}
+                          disabled={item.stock <= 0}
+                          title={item.stock <= 0
+                            ? (language === 'bn' ? 'স্টক শেষ' : 'Out of stock')
+                            : undefined}
                         >
                           <span className="sr-main">
                             <span className="sr-name">{item.name}</span>
@@ -521,6 +577,13 @@ const POS = () => {
                       {item.variant ? `${item.variant} · ` : ''}{item.id}
                       {item.stock !== undefined ? ` · ${language === 'bn' ? 'স্টক' : 'stock'} ${item.stock}` : ''}
                     </div>
+                    {Number.isFinite(Number(item.stock)) && item.quantity > Number(item.stock) && (
+                      <div className="cl-overstock">
+                        {language === 'bn'
+                          ? `স্টকে আছে মাত্র ${item.stock} টি — এভাবে বিক্রি আটকে যাবে`
+                          : `Only ${item.stock} in stock — this sale will be refused`}
+                      </div>
+                    )}
                   </div>
 
                   <div className="qty-stepper">
@@ -534,8 +597,9 @@ const POS = () => {
                     <span className="qty">{item.quantity}</span>
                     <button
                       type="button"
-                      onClick={() => updateCartItem(item.id, { quantity: item.quantity + 1 })}
+                      onClick={() => increaseQty(item)}
                       title="Increase quantity"
+                      disabled={Number.isFinite(Number(item.stock)) && item.quantity >= Number(item.stock)}
                     >
                       <Plus size={13} />
                     </button>
@@ -902,7 +966,7 @@ const POS = () => {
           <div className="drawer-container" style={{ maxWidth: '780px' }}>
             <div className="drawer-header">
               <h3>
-                {language === 'bn' ? 'চালান' : 'Invoice'} {completedSale.invoiceId}
+                {language === 'bn' ? 'পেমেন্ট ভাউচার' : 'Payment Voucher'} · {completedSale.invoiceId}
               </h3>
               <button className="drawer-close-btn" onClick={() => setCompletedSale(null)}>
                 <X size={20} />
@@ -910,12 +974,23 @@ const POS = () => {
             </div>
 
             <div className="drawer-body" style={{ padding: 0, background: '#fff' }}>
-              <InvoiceDocument
+              <PaymentVoucher
                 sale={fromCompletedSale(completedSale)}
                 shopProfile={shopProfile}
                 language={language}
-                domId="printable-invoice"
+                domId="printable-voucher"
               />
+
+              {/* Kept off screen so the same sale can also be printed as the
+                  full invoice without leaving the drawer. */}
+              <div style={{ display: 'none' }}>
+                <InvoiceDocument
+                  sale={fromCompletedSale(completedSale)}
+                  shopProfile={shopProfile}
+                  language={language}
+                  domId="printable-invoice"
+                />
+              </div>
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'space-between' }}>
@@ -926,13 +1001,19 @@ const POS = () => {
               </span>
               <div className="flex-align-gap">
                 <button className="btn-outline" onClick={() => setCompletedSale(null)}>
-                  {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
+                  {language === 'bn' ? 'বন্ধ' : 'Close'}
+                </button>
+                <button
+                  className="btn-outline"
+                  onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`)}
+                >
+                  <FileText size={16} /> {language === 'bn' ? 'চালান' : 'Invoice'}
                 </button>
                 <button
                   className="btn-primary"
-                  onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`)}
+                  onClick={() => printElement('printable-voucher', `Voucher-${completedSale.invoiceId}`)}
                 >
-                  <Printer size={16} /> {language === 'bn' ? 'চালান প্রিন্ট' : 'Print Invoice'}
+                  <Printer size={16} /> {language === 'bn' ? 'ভাউচার প্রিন্ট' : 'Print Voucher'}
                 </button>
               </div>
             </div>
