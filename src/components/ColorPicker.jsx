@@ -27,6 +27,10 @@ const ColorPicker = ({ value, onChange, language = 'en' }) => {
 
   const areaRef = useRef(null);
   const hueRef = useRef(null);
+  // The updater function passed to setState runs during render, so the parent
+  // must not be told about the new colour from inside one. This ref carries
+  // the current value so the change can be applied and announced outside it.
+  const hsvRef = useRef(hsv);
   // What this picker last handed out, so a value coming back in from the
   // parent is not mistaken for someone choosing a different colour.
   const emitted = useRef(value);
@@ -37,13 +41,16 @@ const ColorPicker = ({ value, onChange, language = 'en' }) => {
     if (!value || value === emitted.current) return;
     const next = hexToHsv(value);
     if (next) {
+      hsvRef.current = next;
       setHsv(next);
       setHexText(value);
     }
   }, [value]);
 
-  const commit = useCallback((nextHsv) => {
-    const hex = hsvToHex(nextHsv);
+  const applyHsv = useCallback((next) => {
+    hsvRef.current = next;
+    setHsv(next);
+    const hex = hsvToHex(next);
     emitted.current = hex;
     setHexText(hex);
     onChange?.(hex);
@@ -55,22 +62,18 @@ const ColorPicker = ({ value, onChange, language = 'en' }) => {
     const rect = el.getBoundingClientRect();
 
     if (kind === 'area') {
-      const s = clamp01((event.clientX - rect.left) / rect.width) * 100;
-      const v = (1 - clamp01((event.clientY - rect.top) / rect.height)) * 100;
-      setHsv((prev) => {
-        const next = { ...prev, s, v };
-        commit(next);
-        return next;
+      applyHsv({
+        ...hsvRef.current,
+        s: clamp01((event.clientX - rect.left) / rect.width) * 100,
+        v: (1 - clamp01((event.clientY - rect.top) / rect.height)) * 100,
       });
     } else {
-      const h = clamp01((event.clientX - rect.left) / rect.width) * 360;
-      setHsv((prev) => {
-        const next = { ...prev, h };
-        commit(next);
-        return next;
+      applyHsv({
+        ...hsvRef.current,
+        h: clamp01((event.clientX - rect.left) / rect.width) * 360,
       });
     }
-  }, [commit]);
+  }, [applyHsv]);
 
   // Pointer capture keeps the drag alive when the cursor leaves the box, which
   // is what makes dragging to a corner feel right rather than stopping short.
@@ -90,24 +93,23 @@ const ColorPicker = ({ value, onChange, language = 'en' }) => {
 
   const nudge = (kind) => (event) => {
     const step = event.shiftKey ? 10 : 1;
-    let handled = true;
-    setHsv((prev) => {
-      const next = { ...prev };
-      if (kind === 'hue') {
-        if (event.key === 'ArrowLeft') next.h = Math.max(0, prev.h - step);
-        else if (event.key === 'ArrowRight') next.h = Math.min(360, prev.h + step);
-        else { handled = false; return prev; }
-      } else {
-        if (event.key === 'ArrowLeft') next.s = Math.max(0, prev.s - step);
-        else if (event.key === 'ArrowRight') next.s = Math.min(100, prev.s + step);
-        else if (event.key === 'ArrowUp') next.v = Math.min(100, prev.v + step);
-        else if (event.key === 'ArrowDown') next.v = Math.max(0, prev.v - step);
-        else { handled = false; return prev; }
-      }
-      commit(next);
-      return next;
-    });
-    if (handled) event.preventDefault();
+    const prev = hsvRef.current;
+    const next = { ...prev };
+
+    if (kind === 'hue') {
+      if (event.key === 'ArrowLeft') next.h = Math.max(0, prev.h - step);
+      else if (event.key === 'ArrowRight') next.h = Math.min(360, prev.h + step);
+      else return;
+    } else {
+      if (event.key === 'ArrowLeft') next.s = Math.max(0, prev.s - step);
+      else if (event.key === 'ArrowRight') next.s = Math.min(100, prev.s + step);
+      else if (event.key === 'ArrowUp') next.v = Math.min(100, prev.v + step);
+      else if (event.key === 'ArrowDown') next.v = Math.max(0, prev.v - step);
+      else return;
+    }
+
+    event.preventDefault();
+    applyHsv(next);
   };
 
   const onHexInput = (raw) => {
@@ -116,6 +118,7 @@ const ColorPicker = ({ value, onChange, language = 'en' }) => {
     if (isValidHex(withHash)) {
       const next = hexToHsv(withHash);
       if (next) {
+        hsvRef.current = next;
         setHsv(next);
         emitted.current = rgbToHex(hexToRgb(withHash));
         onChange?.(emitted.current);
