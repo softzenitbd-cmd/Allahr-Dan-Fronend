@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, X, PieChart, DollarSign, Printer, Eye, Download, Edit, Trash2 } from 'lucide-react';
+import { Plus, X, PieChart, DollarSign, Printer, Eye, Edit, Trash2 } from 'lucide-react';
 
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 
 const DEFAULT_CATEGORIES = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
@@ -74,8 +75,15 @@ const Expenses = () => {
     }
   };
 
-  const handleDeleteExpense = (id) => {
-    if (window.confirm('Are you sure you want to delete this expense?')) {
+  const handleDeleteExpense = async (id) => {
+    const isConfirmed = await showConfirmDialog({
+      title: 'খরচ ডিলিট করবেন?',
+      text: 'আপনি কি নিশ্চিত এই খরচ রেকর্ডটি ডিলিট করতে চান?',
+      confirmButtonText: 'হ্যাঁ, ডিলিট করুন',
+      cancelButtonText: 'বাতিল',
+      isDanger: true,
+    });
+    if (isConfirmed) {
       deleteExpense(id);
     }
   };
@@ -131,9 +139,6 @@ const Expenses = () => {
                 printElement('printable-expenses-list', 'Expenses');
               }}>
                 <Printer size={16} /> Print List
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => downloadAsPDF('printable-expenses-list', 'Expenses_List.pdf')}>
-                <Download size={16} /> Download PDF
               </button>
             </div>
           </div>
@@ -408,9 +413,6 @@ const Expenses = () => {
               }}>
                 <Printer size={18} /> Print Report
               </button>
-              <button className="btn-outline flex-align-gap text-info w-full center-content" onClick={() => downloadAsPDF('printable-monthly-expense', `Monthly_Expenses_${reportMonth}.pdf`)}>
-                <Download size={18} /> Download PDF
-              </button>
             </div>
           </div>
         </div>,
@@ -452,9 +454,6 @@ const Expenses = () => {
                  printElement('printable-single-expense', 'Expenses');
               }}>
                 <Printer size={20} /> Print Document
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-expense', `Expense_Voucher_${selectedExpense.id}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

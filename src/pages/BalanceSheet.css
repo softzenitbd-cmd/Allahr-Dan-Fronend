@@ -1,0 +1,200 @@
+/* Balance Sheet: statement-style blocks rather than data tables.
+
+   A ledger is read down a column of figures, so every amount in a block sits
+   on the same right edge and the lines that matter -- subtotals, the profit --
+   are the only ones that carry weight. */
+
+.balancesheet-page .bs-hero {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.bs-hero-card {
+  padding: 1.1rem 1.25rem;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
+  position: relative;
+  overflow: hidden;
+}
+
+.bs-hero-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent, #3b82f6);
+}
+
+.bs-hero-card .label {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.bs-hero-card .value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.bs-hero-card .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+/* --- the statement rows --- */
+
+.bs-section {
+  margin-bottom: 1.25rem;
+}
+
+.bs-section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.25rem 0;
+}
+
+.bs-section .bs-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 1rem 0;
+}
+
+.bs-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+.bs-row:last-child { border-bottom: 0; }
+
+.bs-row .bs-label { min-width: 0; }
+
+.bs-row .bs-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* An indented detail line under a heading figure. */
+.bs-row.sub {
+  padding: 0.28rem 0 0.28rem 1.5rem;
+  border-bottom: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.bs-row.sub .bs-amount { font-weight: 500; }
+
+/* A line that something is subtracted on. */
+.bs-row.deduct .bs-amount { color: var(--danger); }
+
+/* A subtotal: the arithmetic stops here. */
+.bs-row.total {
+  border-bottom: 0;
+  border-top: 2px solid rgba(0, 0, 0, 0.12);
+  margin-top: 0.35rem;
+  padding-top: 0.6rem;
+  font-weight: 700;
+}
+
+.bs-row.total .bs-amount { font-size: 1.05rem; }
+
+/* The one figure the whole page exists to produce. */
+.bs-row.headline {
+  border-top: 2px solid rgba(0, 0, 0, 0.15);
+  border-bottom: 3px double rgba(0, 0, 0, 0.2);
+  margin-top: 0.5rem;
+  padding: 0.7rem 0;
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.bs-row.headline .bs-amount { font-size: 1.3rem; }
+
+.bs-note {
+  margin-top: 0.85rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* --- side-by-side blocks (assets vs liabilities, sales vs purchases) --- */
+
+.bs-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.bs-panel-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 0.35rem;
+}
+
+.bs-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.bs-presets .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.bs-presets .field > label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.bs-preset-btn {
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.bs-preset-btn:hover { background: rgba(0, 0, 0, 0.04); }
+
+.bs-preset-btn.active {
+  background: var(--primary, #3b82f6);
+  border-color: transparent;
+  color: #fff;
+}
+
+@media (max-width: 1100px) {
+  .balancesheet-page .bs-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bs-split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .balancesheet-page .bs-hero { grid-template-columns: 1fr; }
+}

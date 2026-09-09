@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Barcode from 'react-barcode';
-import { Plus, Search, Printer, Edit, Trash2, Download, Settings2, Image as ImageIcon, Upload, X } from 'lucide-react';
+import { 
+  Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon, 
+  Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, 
+  Loader2 
+} from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { printBarcodeLabels } from '../utils/printLabels';
+import { ProductService } from '../api/services';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 
 const getProductImageUrl = (img) => {
@@ -19,18 +24,29 @@ const getProductImageUrl = (img) => {
 };
 
 const Inventory = () => {
-  const { inventory, categories, units, addInventoryItem, updateInventoryItem, deleteInventoryItem, language } = useStore();
+  const { 
+    inventory, categories, units, addInventoryItem, updateInventoryItem, 
+    deleteInventoryItem, language, shopProfile, refresh 
+  } = useStore();
+
+  // Server-side pagination & filter states
+  const [paginatedProducts, setPaginatedProducts] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterDate, setFilterDate] = useState('All Time');
-  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
-  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [stockStatus, setStockStatus] = useState('All');
+  const [ordering, setOrdering] = useState('newest');
+
+  // Modals & drawers
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
   const [showReferenceDrawer, setShowReferenceDrawer] = useState(false);
-  const [showUnitsModal, setShowUnitsModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
-  const [printQuantity, setPrintQuantity] = useState(21); // Default to 21 (3x7 grid)
   const [newProductImage, setNewProductImage] = useState(null);
   const [newProductImagePreview, setNewProductImagePreview] = useState(null);
   const [editProductImage, setEditProductImage] = useState(null);
@@ -39,27 +55,108 @@ const Inventory = () => {
   const availableCategories = Array.from(new Set([
     'Panjabi', 'Shirt', 'Pant', 'T-Shirt', 'Polo', 'Pajama', 'Blazer', 'Accessories', 'Fabric',
     ...(categories || []).map(c => typeof c === 'string' ? c : c.name).filter(Boolean),
-    ...inventory.map(i => i.category).filter(Boolean)
-  ]));
+    ...(inventory || []).map(i => i.category).filter(Boolean)
+  ].map(c => (c || '').trim()).filter(Boolean)));
 
   const availableUnits = Array.from(new Set([
     'Pcs', 'Set', 'Box', 'Packet', 'Meter', 'Yard',
     ...(units || []).map(u => typeof u === 'string' ? u : u.name).filter(Boolean),
-    ...inventory.map(i => i.unit).filter(Boolean)
+    ...(inventory || []).map(i => i.unit).filter(Boolean)
   ]));
 
   const [newProduct, setNewProduct] = useState({
-    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, price: 0
+    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0
   });
 
-  const getNextProductId = () => {
-    const numericCodes = (inventory || [])
-      .map(i => parseInt(i.id || i.product_code))
-      .filter(n => !isNaN(n) && n > 0);
-    if (numericCodes.length > 0) {
-      return String(Math.max(...numericCodes) + 1);
+  const calculateEan13CheckDigit = (twelveDigits) => {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      const digit = parseInt(twelveDigits[i], 10);
+      sum += i % 2 === 0 ? digit : digit * 3;
     }
-    return '10006';
+    return String((10 - (sum % 10)) % 10);
+  };
+
+  const getNextProductId = () => {
+    const existingBases = (inventory || [])
+      .map(i => String(i.id || i.product_code || '').trim())
+      .filter(code => /^894\d{10}$/.test(code) || /^20\d{11}$/.test(code))
+      .map(code => parseInt(code.slice(0, 12), 10))
+      .filter(n => !isNaN(n) && n > 0);
+
+    let nextBase = 894117000001;
+    if (existingBases.length > 0) {
+      nextBase = Math.max(...existingBases) + 1;
+    }
+
+    const baseStr = String(nextBase).padStart(12, '0');
+    return `${baseStr}${calculateEan13CheckDigit(baseStr)}`;
+  };
+
+  // Fetch paginated products from backend
+  const fetchPaginatedProducts = useCallback(async (targetPage = currentPage) => {
+    setIsLoading(true);
+    try {
+      const params = {
+        page: targetPage,
+        page_size: pageSize,
+      };
+      if (searchTerm && searchTerm.trim()) params.search = searchTerm.trim();
+      if (selectedCategory && selectedCategory !== 'All') params.category = selectedCategory;
+      if (stockStatus && stockStatus !== 'All') params.stock_status = stockStatus;
+      if (ordering) params.ordering = ordering;
+
+
+      const res = await ProductService.list(params);
+      if (res && res.results) {
+        setPaginatedProducts(res.results);
+        setTotalCount(res.count ?? 0);
+        setTotalPages(res.total_pages ?? Math.max(1, Math.ceil((res.count || 0) / pageSize)));
+      } else if (Array.isArray(res)) {
+        setPaginatedProducts(res);
+        setTotalCount(res.length);
+        setTotalPages(1);
+      }
+    } catch (err) {
+      console.error('Failed to fetch paginated products:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentPage, pageSize, searchTerm, selectedCategory, stockStatus, ordering]);
+
+  const isFirstRender = useRef(true);
+
+  // Debounced query when filters/search change
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      fetchPaginatedProducts(1);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchPaginatedProducts(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedCategory, stockStatus, ordering, pageSize]);
+
+  const handlePageChange = (newPage) => {
+    if (newPage < 1 || newPage > totalPages || newPage === currentPage) return;
+    setCurrentPage(newPage);
+    fetchPaginatedProducts(newPage);
+  };
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (currentPage >= totalPages - 3) {
+      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
   };
 
   const handleOpenAddModal = () => {
@@ -70,6 +167,8 @@ const Inventory = () => {
       unit: availableUnits[0] || 'Pcs',
       variant: '',
       stock: 0,
+      mrp: 0,
+      discount_price: 0,
       price: 0
     });
     setNewProductImage(null);
@@ -78,7 +177,14 @@ const Inventory = () => {
   };
 
   const handleOpenEditModal = (item) => {
-    setEditingItem(item);
+    const salePrice = item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price);
+    const mrpPrice = item.mrp && Number(item.mrp) > 0 ? Number(item.mrp) : salePrice;
+    setEditingItem({
+      ...item,
+      mrp: mrpPrice,
+      discount_price: salePrice,
+      price: salePrice,
+    });
     setEditProductImage(null);
     setEditProductImagePreview(getProductImageUrl(item.image) || null);
   };
@@ -106,6 +212,10 @@ const Inventory = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     let res;
+    const mrpVal = parseFloat(editingItem.mrp) || 0;
+    const discVal = parseFloat(editingItem.discount_price) || 0;
+    const saleVal = discVal > 0 ? discVal : (parseFloat(editingItem.price) || mrpVal);
+
     if (editProductImage) {
       const formData = new FormData();
       formData.append('name', editingItem.name);
@@ -113,13 +223,17 @@ const Inventory = () => {
       formData.append('unit', editingItem.unit || 'Pcs');
       if (editingItem.variant) formData.append('variant', editingItem.variant);
       formData.append('stock', parseInt(editingItem.stock) || 0);
-      formData.append('price', parseFloat(editingItem.price) || 0);
+      formData.append('mrp', mrpVal || saleVal);
+      formData.append('discount_price', discVal || saleVal);
+      formData.append('price', saleVal);
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
       const payload = {
         ...editingItem,
-        price: parseFloat(editingItem.price) || 0,
+        mrp: mrpVal || saleVal,
+        discount_price: discVal || saleVal,
+        price: saleVal,
         stock: parseInt(editingItem.stock) || 0,
       };
       res = await updateInventoryItem(editingItem.id, payload);
@@ -129,15 +243,26 @@ const Inventory = () => {
       setEditingItem(null);
       setEditProductImage(null);
       setEditProductImagePreview(null);
-      toast.success(language === 'bn' ? 'পণ্য সফলভাবে আপডেট হয়েছে!' : 'Product updated successfully!');
+      showSuccessAlert(language === 'bn' ? 'পণ্য সফলভাবে আপডেট হয়েছে!' : 'Product updated successfully!');
+      await refresh('inventory');
+      fetchPaginatedProducts(currentPage);
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm(language === 'bn' ? 'আপনি কি নিশ্চিত এই পণ্যটি ডিলিট করতে চান?' : 'Are you sure you want to delete this item?')) {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'পণ্যটি ডিলিট করবেন?' : 'Delete Product?',
+      text: language === 'bn' ? 'আপনি কি নিশ্চিত এই পণ্যটি ডিলিট করতে চান?' : 'Are you sure you want to delete this item?',
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, ডিলিট করুন' : 'Yes, delete',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (isConfirmed) {
       const res = await deleteInventoryItem(id);
       if (res?.ok) {
-        toast.success(language === 'bn' ? 'পণ্য ডিলিট করা হয়েছে!' : 'Product deleted!');
+        showSuccessAlert(language === 'bn' ? 'পণ্য ডিলিট করা হয়েছে!' : 'Product deleted!');
+        await refresh('inventory');
+        fetchPaginatedProducts(currentPage);
       }
     }
   };
@@ -152,6 +277,10 @@ const Inventory = () => {
     }
 
     let res;
+    const mrpVal = parseFloat(newProduct.mrp) || 0;
+    const discVal = parseFloat(newProduct.discount_price) || 0;
+    const saleVal = discVal > 0 ? discVal : (parseFloat(newProduct.price) || mrpVal);
+
     if (newProductImage) {
       const formData = new FormData();
       formData.append('id', finalId);
@@ -160,7 +289,9 @@ const Inventory = () => {
       formData.append('unit', newProduct.unit || 'Pcs');
       if (newProduct.variant) formData.append('variant', newProduct.variant);
       formData.append('stock', parseInt(newProduct.stock) || 0);
-      formData.append('price', parseFloat(newProduct.price) || 0);
+      formData.append('mrp', mrpVal || saleVal);
+      formData.append('discount_price', discVal || saleVal);
+      formData.append('price', saleVal);
       formData.append('image', newProductImage);
       res = await addInventoryItem(formData);
     } else {
@@ -168,7 +299,9 @@ const Inventory = () => {
         ...newProduct,
         id: finalId,
         name: finalName,
-        price: parseFloat(newProduct.price) || 0,
+        mrp: mrpVal || saleVal,
+        discount_price: discVal || saleVal,
+        price: saleVal,
         stock: parseInt(newProduct.stock) || 0,
       };
       res = await addInventoryItem(payload);
@@ -176,54 +309,24 @@ const Inventory = () => {
 
     if (res?.ok) {
       setShowAddModal(false);
-      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, price: 0 });
+      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0 });
       setNewProductImage(null);
       setNewProductImagePreview(null);
-      toast.success(language === 'bn' ? 'নতুন পণ্য সফলভাবে যুক্ত হয়েছে!' : 'Product added successfully!');
+      showSuccessAlert(language === 'bn' ? 'নতুন পণ্য সফলভাবে যুক্ত হয়েছে!' : 'Product added successfully!');
+      await refresh('inventory');
+      fetchPaginatedProducts(1);
     }
   };
 
   const handlePrintBarcode = (product) => {
-    setSelectedProduct(product);
-    setShowBarcodeModal(true);
+    printBarcodeLabels(product, 1, "Allah'r Dan");
   };
 
-  const filteredInventory = inventory.filter(item => {
-    // 1. Text Search Filter
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.id.includes(searchTerm);
-    if (!matchesSearch) return false;
-
-    // 2. Date Filter
-    if (filterDate === 'All Time') return true;
-    
-    if (!item.dateAdded) return true; // If no date, just include it to be safe
-    
-    const itemDate = new Date(item.dateAdded);
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    if (filterDate === 'Today') {
-      return itemDate >= today;
-    } else if (filterDate === 'Weekly') {
-      const lastWeek = new Date(today);
-      lastWeek.setDate(lastWeek.getDate() - 7);
-      return itemDate >= lastWeek;
-    } else if (filterDate === 'Monthly') {
-      const lastMonth = new Date(today);
-      lastMonth.setMonth(lastMonth.getMonth() - 1);
-      return itemDate >= lastMonth;
-    } else if (filterDate === 'Custom' && customDateRange.start && customDateRange.end) {
-      const start = new Date(customDateRange.start);
-      const end = new Date(customDateRange.end);
-      end.setHours(23,59,59,999);
-      return itemDate >= start && itemDate <= end;
-    }
-    
-    return true;
-  });
-
-  const totalItems = filteredInventory.reduce((sum, item) => sum + item.stock, 0);
-  const totalValue = filteredInventory.reduce((sum, item) => sum + (item.stock * item.price), 0);
+  const totalItems = (inventory || []).reduce((sum, item) => sum + (Number(item.stock) || 0), 0);
+  const totalValue = (inventory || []).reduce((sum, item) => {
+    const salePrice = item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price);
+    return sum + ((Number(item.stock) || 0) * (salePrice || 0));
+  }, 0);
 
   const handlePrintInventoryList = () => {
     printElement('printable-inventory-list', 'Inventory');
@@ -240,9 +343,6 @@ const Inventory = () => {
           <button className="btn-outline flex-align-gap" onClick={handlePrintInventoryList}>
             <Printer size={18} /> {t(language, 'Print List' || 'Print')}
           </button>
-          <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-inventory-list', 'Inventory_List.pdf')}>
-            <Download size={18} /> {t(language, 'Download PDF' || 'Download')}
-          </button>
           <button className="btn-primary flex-align-gap" style={{ width: 'fit-content', whiteSpace: 'nowrap' }} onClick={handleOpenAddModal}>
             <Plus size={18} /> {t(language, 'Add New Item')}
           </button>
@@ -255,57 +355,101 @@ const Inventory = () => {
             <Search size={18} className="text-muted" />
             <input 
               type="text" 
-              placeholder={t(language, 'Search')} 
+              placeholder={language === 'bn' ? 'নাম বা বারকোড দিয়ে খুঁজুন...' : 'Search by name or barcode...'} 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button 
+                type="button" 
+                onClick={() => setSearchTerm('')} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'var(--text-muted)' }}
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
           <div className="toolbar-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {/* Category Filter */}
             <select 
               className="w-full" 
-              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto' }}
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
+              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '140px' }}
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              title={language === 'bn' ? 'ক্যাটাগরি ফিল্টার' : 'Filter by Category'}
             >
-              <option value="All Time">All Time</option>
-              <option value="Today">Today</option>
-              <option value="Weekly">Last 7 Days</option>
-              <option value="Monthly">Last 30 Days</option>
-              <option value="Custom">Custom Date</option>
+              <option value="All">{t(language, 'All Categories')}</option>
+              {availableCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
-            
-            {filterDate === 'Custom' && (
-              <div className="flex-align-gap" style={{ background: 'var(--surface-color)', padding: '0.2rem', borderRadius: '8px' }}>
-                <input 
-                  type="date" 
-                  style={{ padding: '0.4rem', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  value={customDateRange.start}
-                  onChange={(e) => setCustomDateRange({...customDateRange, start: e.target.value})}
-                />
-                <span className="text-muted">to</span>
-                <input 
-                  type="date" 
-                  style={{ padding: '0.4rem', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  value={customDateRange.end}
-                  onChange={(e) => setCustomDateRange({...customDateRange, end: e.target.value})}
-                />
-              </div>
+
+            {selectedCategory !== 'All' && (
+              <button 
+                type="button"
+                className="btn-outline flex-align-gap" 
+                style={{ 
+                  padding: '0.35rem 0.65rem', 
+                  borderRadius: '8px', 
+                  fontSize: '0.85rem', 
+                  color: 'var(--primary)', 
+                  borderColor: 'var(--primary)',
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)' 
+                }}
+                onClick={() => setSelectedCategory('All')}
+                title={language === 'bn' ? 'ক্যাটাগরি ফিল্টার রিসেট করুন' : 'Clear Category Filter'}
+              >
+                <span>{selectedCategory}</span>
+                <X size={14} />
+              </button>
             )}
-            <button className="btn-outline" onClick={() => setShowCategoriesModal(true)}>
-              {t(language, 'Categories')} ({availableCategories.length})
-            </button>
-            <button className="btn-outline" onClick={() => setShowUnitsModal(true)}>
-              {t(language, 'Units')} ({availableUnits.length})
-            </button>
-            {/* The two buttons above summarise what is in use. This one edits
-                the underlying lists -- rename a typo, drop an unused entry. */}
-            <button className="btn-outline flex-align-gap text-info" onClick={() => setShowReferenceDrawer(true)}>
-              <Settings2 size={16} /> {t(language, 'Manage')}
+
+            {/* Stock Status Filter */}
+            <select 
+              className="w-full" 
+              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '130px' }}
+              value={stockStatus}
+              onChange={(e) => setStockStatus(e.target.value)}
+              title={language === 'bn' ? 'স্টক ফিল্টার' : 'Filter by Stock'}
+            >
+              <option value="All">{language === 'bn' ? 'সব স্টক' : 'All Stock'}</option>
+              <option value="in_stock">{language === 'bn' ? 'স্টকে আছে' : 'In Stock'}</option>
+              <option value="low_stock">{language === 'bn' ? 'কম স্টক (Low)' : 'Low Stock'}</option>
+              <option value="out_of_stock">{language === 'bn' ? 'স্টক শেষ (Out)' : 'Out of Stock'}</option>
+            </select>
+
+            {/* Sort / Ordering Filter */}
+            <select 
+              className="w-full" 
+              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '135px' }}
+              value={ordering}
+              onChange={(e) => setOrdering(e.target.value)}
+              title={language === 'bn' ? 'সাজান' : 'Sort Order'}
+            >
+              <option value="newest">{language === 'bn' ? 'সর্বশেষ যুক্ত' : 'Newest'}</option>
+              <option value="oldest">{language === 'bn' ? 'পুরাতন' : 'Oldest'}</option>
+              <option value="name_asc">{language === 'bn' ? 'নাম (A - Z)' : 'Name (A-Z)'}</option>
+              <option value="name_desc">{language === 'bn' ? 'নাম (Z - A)' : 'Name (Z-A)'}</option>
+              <option value="price_asc">{language === 'bn' ? 'মূল্য (কম থেকে বেশি)' : 'Price (Low to High)'}</option>
+              <option value="price_desc">{language === 'bn' ? 'মূল্য (বেশি থেকে কম)' : 'Price (High to Low)'}</option>
+              <option value="stock_asc">{language === 'bn' ? 'স্টক (কম থেকে বেশি)' : 'Stock (Low to High)'}</option>
+              <option value="stock_desc">{language === 'bn' ? 'স্টক (বেশি থেকে কম)' : 'Stock (High to Low)'}</option>
+            </select>
+
+            {/* Reference drawer manages categories and units */}
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={() => setShowReferenceDrawer(true)}
+              title={language === 'bn' ? 'ক্যাটাগরি ও ইউনিট ম্যানেজ করুন' : 'Manage Categories & Units'}
+            >
+              <Settings2 size={16} />
+              <span>{t(language, 'Manage')}</span>
             </button>
           </div>
         </div>
 
-        <div className="table-responsive">
+        <div className="table-responsive inventory-table-loading">
           <table className="data-table">
             <thead>
               <tr>
@@ -321,50 +465,183 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInventory.map(item => (
-                <tr key={item.id}>
-                  <td style={{ textAlign: 'center' }}>
-                    {item.image ? (
-                      <img 
-                        src={getProductImageUrl(item.image)} 
-                        alt={item.name} 
-                        className="product-table-thumb" 
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      <div className="product-table-thumb-placeholder">
-                        <ImageIcon size={16} />
-                      </div>
-                    )}
-                  </td>
-                  <td className="font-semibold">{item.id}</td>
-                  <td>{item.name}</td>
-                  <td>{item.category}</td>
-                  <td>{item.variant || '-'}</td>
-                  <td>{item.unit}</td>
-                  <td>
-                    <span className={`stock-badge ${item.stock < 50 ? 'warning' : 'success'}`}>
-                      {item.stock}
-                    </span>
-                  </td>
-                  <td className="font-semibold">৳{item.price}</td>
-                  <td>
-                    <div className="action-buttons">
-                      <button className="btn-icon" title="Print Barcode" onClick={() => handlePrintBarcode(item)}>
-                        <Printer size={16} />
-                      </button>
-                      <button className="btn-icon text-info" title="Edit" onClick={() => handleOpenEditModal(item)}>
-                        <Edit size={16} />
-                      </button>
-                      <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
-                        <Trash2 size={16} />
-                      </button>
+              {isLoading ? (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--primary)' }}>
+                    <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
+                      <Loader2 size={20} className="animate-spin" />
+                      <span>{language === 'bn' ? 'পণ্য লোড হচ্ছে...' : 'Loading products...'}</span>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : paginatedProducts.length === 0 ? (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn' ? 'এই ফিল্টারে কোনো পণ্য পাওয়া যায়নি।' : 'No products found matching the filter criteria.'}
+                  </td>
+                </tr>
+              ) : (
+                paginatedProducts.map(item => (
+                  <tr key={item.id}>
+                    <td style={{ textAlign: 'center' }}>
+                      {item.image ? (
+                        <img 
+                          src={getProductImageUrl(item.image)} 
+                          alt={item.name} 
+                          className="product-table-thumb" 
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="product-table-thumb-placeholder">
+                          <ImageIcon size={16} />
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span className="font-mono" style={{ fontWeight: 'bold' }}>{item.id}</span>
+                    </td>
+                    <td>
+                      <strong>{item.name}</strong>
+                    </td>
+                    <td>
+                      <span className="badge badge-secondary">{item.category}</span>
+                    </td>
+                    <td>{item.variant || '-'}</td>
+                    <td>{item.unit}</td>
+                    <td>
+                      <span className={`badge ${item.stock <= 5 ? 'badge-danger' : item.stock <= 15 ? 'badge-warning' : 'badge-success'}`}>
+                        {item.stock}
+                      </span>
+                    </td>
+                    <td>
+                      {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            ৳{Number(item.mrp).toLocaleString()}
+                          </span>
+                          <span style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '0.95rem' }}>
+                            ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ fontWeight: 'bold' }}>
+                          ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        <button 
+                          className="btn-icon text-secondary" 
+                          title="Print Barcode"
+                          onClick={() => handlePrintBarcode(item)}
+                        >
+                          <Printer size={16} />
+                        </button>
+                        <button className="btn-icon text-primary" title="Edit" onClick={() => handleOpenEditModal(item)}>
+                          <Edit size={16} />
+                        </button>
+                        <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="pagination-container">
+          <div className="pagination-info">
+            {language === 'bn' ? (
+              totalCount > 0 ? (
+                <>মোট <strong>{totalCount}</strong> টির মধ্যে <strong>{(currentPage - 1) * pageSize + 1}</strong> - <strong>{Math.min(currentPage * pageSize, totalCount)}</strong> টি দেখানো হচ্ছে</>
+              ) : 'কোনো পণ্য পাওয়া যায়নি'
+            ) : (
+              totalCount > 0 ? (
+                <>Showing <strong>{(currentPage - 1) * pageSize + 1}</strong> to <strong>{Math.min(currentPage * pageSize, totalCount)}</strong> of <strong>{totalCount}</strong> products</>
+              ) : 'No products found'
+            )}
+          </div>
+
+          <div className="pagination-controls">
+            <label className="flex-align-gap" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              <span>{language === 'bn' ? 'প্রতি পেজে:' : 'Per page:'}</span>
+              <select 
+                className="pagination-size-select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+
+            <div className="pagination-pages">
+              <button 
+                type="button"
+                className="pagination-btn"
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1 || isLoading}
+                title={language === 'bn' ? 'প্রথম পেজ' : 'First Page'}
+              >
+                <ChevronsLeft size={16} />
+              </button>
+              <button 
+                type="button"
+                className="pagination-btn"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1 || isLoading}
+                title={language === 'bn' ? 'আগের পেজ' : 'Previous Page'}
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              {getPageNumbers().map((p, idx) => (
+                p === '...' ? (
+                  <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+                ) : (
+                  <button 
+                    key={`page-${p}`}
+                    type="button"
+                    className={`pagination-btn ${p === currentPage ? 'active' : ''}`}
+                    onClick={() => handlePageChange(p)}
+                    disabled={isLoading}
+                  >
+                    {p}
+                  </button>
+                )
+              ))}
+
+              <button 
+                type="button"
+                className="pagination-btn"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages || totalPages === 0 || isLoading}
+                title={language === 'bn' ? 'পরের পেজ' : 'Next Page'}
+              >
+                <ChevronRight size={16} />
+              </button>
+              <button 
+                type="button"
+                className="pagination-btn"
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages || totalPages === 0 || isLoading}
+                title={language === 'bn' ? 'শেষ পেজ' : 'Last Page'}
+              >
+                <ChevronsRight size={16} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -374,7 +651,7 @@ const Inventory = () => {
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
           <p style={{ textAlign: 'center', fontSize: '1rem', marginBottom: '0.5rem', color: '#333' }}>Inventory Stock List</p>
           <p style={{ textAlign: 'center', fontSize: '0.9rem', marginBottom: '1.5rem', color: '#666' }}>
-            Date Filter: {filterDate} {filterDate === 'Custom' ? `(${customDateRange.start} to ${customDateRange.end})` : ''}
+            {selectedCategory !== 'All' ? `Category: ${selectedCategory}` : 'All Categories'}
           </p>
           
           <table style={{ width: '100%', fontSize: '0.85rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
@@ -390,7 +667,7 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInventory.length > 0 ? filteredInventory.map((item, idx) => (
+              {paginatedProducts.length > 0 ? paginatedProducts.map((item, idx) => (
                 <tr key={idx}>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.id}</td>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.name}</td>
@@ -398,7 +675,16 @@ const Inventory = () => {
                   <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.variant || '-'}</td>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', fontWeight: 'bold'}}>{item.stock}</td>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>{item.unit}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>৳{item.price.toLocaleString()}</td>
+                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>
+                    {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
+                      <>
+                        <span style={{ textDecoration: 'line-through', color: '#888', marginRight: '6px' }}>৳{Number(item.mrp).toLocaleString()}</span>
+                        <b>৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}</b>
+                      </>
+                    ) : (
+                      `৳${(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}`
+                    )}
+                  </td>
                 </tr>
               )) : (
                 <tr>
@@ -417,59 +703,6 @@ const Inventory = () => {
           </table>
         </div>
       </div>
-
-      {/* Barcode Drawer */}
-      {showBarcodeModal && selectedProduct && createPortal(
-        <div className="drawer-overlay">
-          <div className="drawer-container">
-            <div className="drawer-header">
-              <h2>Generate Barcode</h2>
-              <button className="drawer-close-btn" onClick={() => setShowBarcodeModal(false)}>
-                <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
-              </button>
-            </div>
-            <div className="drawer-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              
-              <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label>Number of Stickers:</label>
-                <input 
-                  type="number" 
-                  value={printQuantity} 
-                  onChange={(e) => setPrintQuantity(Math.max(1, parseInt(e.target.value) || 1))} 
-                  style={{ width: '80px', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
-                />
-              </div>
-
-              <div id="printable-barcode" style={{ background: '#fff', padding: '1rem', borderRadius: '12px', width: '100%' }}>
-                {/* A4 Sheet grid emulation for printing */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                  {Array.from({ length: printQuantity }).map((_, i) => (
-                    <div key={i} style={{ border: '1px dashed #ccc', padding: '1rem', textAlign: 'center' }}>
-                      <Barcode value={selectedProduct.id} width={1.5} height={40} fontSize={14} />
-                      <p style={{ margin: '0.2rem 0 0 0', fontWeight: 'bold', fontSize: '0.9rem', color: '#000' }}>
-                        {selectedProduct.name}
-                      </p>
-                      {selectedProduct.variant && (
-                         <p style={{ margin: '0', fontSize: '0.8rem', color: '#333' }}>Var: {selectedProduct.variant}</p>
-                      )}
-                      <p style={{ margin: 0, fontWeight: 'bold', fontSize: '1rem', color: '#000' }}>৳{selectedProduct.price}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => printBarcodeLabels(selectedProduct, printQuantity)}>
-                <Printer size={20} /> Print Labels ({printQuantity})
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-barcode', `Barcode_${selectedProduct.name}.pdf`)}>
-                <Download size={20} /> Download PDF
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* Add Product Drawer */}
       {showAddModal && createPortal(
@@ -533,57 +766,106 @@ const Inventory = () => {
                     <input 
                       type="text" 
                       className="w-full" 
+                      required
+                      placeholder="e.g. 8941170000013"
                       value={newProduct.id} 
-                      onChange={e => setNewProduct({...newProduct, id: e.target.value})} 
-                      required 
-                      placeholder={`e.g. ${getNextProductId()}`} 
+                      onChange={(e) => setNewProduct({...newProduct, id: e.target.value})} 
                     />
                   </div>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Item Name')} *</label>
-                    <input type="text" className="w-full" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} required placeholder="e.g. Sugar 1kg" />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Category')}</label>
-                      <input 
-                        list="inventory-category-options"
-                        type="text" 
-                        className="w-full" 
-                        value={newProduct.category} 
-                        onChange={e => setNewProduct({...newProduct, category: e.target.value})} 
-                        placeholder="e.g. Panjabi" 
-                      />
-                      <datalist id="inventory-category-options">
-                        {availableCategories.map(c => <option key={c} value={c} />)}
-                      </datalist>
-                    </div>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant')}</label>
-                      <input type="text" className="w-full" value={newProduct.variant} onChange={e => setNewProduct({...newProduct, variant: e.target.value})} placeholder="e.g. Red, XL, 40" />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Unit')}</label>
-                      <select className="w-full" value={newProduct.unit} onChange={e => setNewProduct({...newProduct, unit: e.target.value})}>
-                        {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Stock')}</label>
-                      <input type="number" className="w-full" min="0" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} />
-                    </div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
+                    <input 
+                      type="text" 
+                      className="w-full" 
+                      required
+                      placeholder="e.g. Silk Punjabi"
+                      value={newProduct.name} 
+                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})} 
+                    />
                   </div>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Price')} (BDT)</label>
-                    <input type="number" className="w-full" min="0" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value) || 0})} />
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Category')} *</label>
+                    <select 
+                      className="w-full"
+                      value={newProduct.category}
+                      onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full" 
+                      placeholder="e.g. XL, Red, 42"
+                      value={newProduct.variant} 
+                      onChange={(e) => setNewProduct({...newProduct, variant: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
+                    <select 
+                      className="w-full"
+                      value={newProduct.unit}
+                      onChange={(e) => setNewProduct({...newProduct, unit: e.target.value})}
+                    >
+                      {availableUnits.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      required
+                      min="0"
+                      value={newProduct.stock} 
+                      onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      min="0"
+                      step="any"
+                      placeholder="e.g. 1500"
+                      value={newProduct.mrp} 
+                      onChange={(e) => setNewProduct({...newProduct, mrp: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'বিক্রয় মূল্য (Discount/Sale Price)' : 'Discount/Sale Price'} (BDT) *
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      required
+                      min="0"
+                      step="any"
+                      placeholder="e.g. 1400"
+                      value={newProduct.discount_price} 
+                      onChange={(e) => setNewProduct({...newProduct, discount_price: e.target.value, price: e.target.value})} 
+                    />
                   </div>
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline" onClick={() => setShowAddModal(false)}>{t(language, 'Cancel')}</button>
-                <button type="submit" className="btn-primary flex-align-gap"><Plus size={18} /> {t(language, 'Save')}</button>
+                <button type="button" className="btn-outline flex-1" onClick={() => setShowAddModal(false)}>
+                  {t(language, 'Cancel')}
+                </button>
+                <button type="submit" className="btn-primary flex-1">
+                  {t(language, 'Save Item')}
+                </button>
               </div>
             </form>
           </div>
@@ -604,30 +886,31 @@ const Inventory = () => {
             <form id="edit-product-form" onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div className="drawer-body">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
-                  {/* Edit Product Image Dropzone */}
+                  {/* Product Image Dropzone */}
                   <div className="product-image-upload-section">
                     <label className="text-muted text-sm block mb-1">{t(language, 'Product Image')}</label>
                     {editProductImagePreview ? (
                       <div className="product-image-preview-wrapper">
                         <img src={editProductImagePreview} alt="Preview" className="product-image-preview-img" />
+                        <button 
+                          type="button" 
+                          className="remove-preview-btn" 
+                          onClick={() => { setEditProductImage(null); setEditProductImagePreview(null); }}
+                          title="Remove image"
+                        >
+                          <X size={15} />
+                        </button>
                         <div className="preview-action-row">
-                          <label className="change-preview-label" title="Change image">
+                          <label className="change-preview-label">
+                            <Upload size={13} />
+                            <span>{language === 'bn' ? 'ছবি পরিবর্তন' : 'Change'}</span>
                             <input 
                               type="file" 
                               accept="image/png, image/jpeg, image/webp" 
                               onChange={e => handleImageSelect(e.target.files?.[0], true)} 
                               style={{ display: 'none' }}
                             />
-                            <Upload size={13} /> {language === 'bn' ? 'ছবি পরিবর্তন' : 'Change'}
                           </label>
-                          <button
-                            type="button"
-                            className="remove-preview-btn"
-                            onClick={() => { setEditProductImage(null); setEditProductImagePreview(null); }}
-                            title="Remove image"
-                          >
-                            <X size={15} />
-                          </button>
                         </div>
                       </div>
                     ) : (
@@ -641,7 +924,7 @@ const Inventory = () => {
                         <div className="dropzone-content">
                           <Upload size={22} className="text-muted" />
                           <div className="dropzone-text">
-                            <span className="font-semibold text-primary">{language === 'bn' ? 'ছবি যোগ করুন' : 'Click to upload image'}</span>
+                            <span className="font-semibold text-primary">{language === 'bn' ? 'ছবি আপলোড করুন' : 'Click to upload image'}</span>
                             <span className="text-xs text-muted block mt-0.5">PNG, JPG, WEBP (Max 5MB)</span>
                           </div>
                         </div>
@@ -650,53 +933,101 @@ const Inventory = () => {
                   </div>
 
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'ID/Barcode' || 'Product ID / Barcode')} *</label>
-                    <input type="text" className="w-full" value={editingItem.id} disabled style={{ backgroundColor: '#f3f4f6' }} />
+                    <label className="text-muted text-sm block mb-1">{t(language, 'ID/Barcode' || 'Product ID / Barcode')}</label>
+                    <input type="text" className="w-full" disabled value={editingItem.id} />
                   </div>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Item Name')} *</label>
-                    <input type="text" className="w-full" value={editingItem.name} onChange={e => setEditingItem({...editingItem, name: e.target.value})} required />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Category')}</label>
-                      <input 
-                        list="inventory-category-options-edit"
-                        type="text" 
-                        className="w-full" 
-                        value={editingItem.category} 
-                        onChange={e => setEditingItem({...editingItem, category: e.target.value})} 
-                      />
-                      <datalist id="inventory-category-options-edit">
-                        {availableCategories.map(c => <option key={c} value={c} />)}
-                      </datalist>
-                    </div>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant')}</label>
-                      <input type="text" className="w-full" value={editingItem.variant || ''} onChange={e => setEditingItem({...editingItem, variant: e.target.value})} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Unit')}</label>
-                      <select className="w-full" value={editingItem.unit} onChange={e => setEditingItem({...editingItem, unit: e.target.value})}>
-                        {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-muted text-sm block mb-1">{t(language, 'Stock')}</label>
-                      <input type="number" className="w-full" min="0" value={editingItem.stock} onChange={e => setEditingItem({...editingItem, stock: parseInt(e.target.value) || 0})} />
-                    </div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
+                    <input 
+                      type="text" 
+                      className="w-full" 
+                      required
+                      value={editingItem.name} 
+                      onChange={(e) => setEditingItem({...editingItem, name: e.target.value})} 
+                    />
                   </div>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Price')} (BDT)</label>
-                    <input type="number" className="w-full" min="0" value={editingItem.price} onChange={e => setEditingItem({...editingItem, price: parseFloat(e.target.value) || 0})} />
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Category')} *</label>
+                    <select 
+                      className="w-full"
+                      value={editingItem.category}
+                      onChange={(e) => setEditingItem({...editingItem, category: e.target.value})}
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full" 
+                      value={editingItem.variant || ''} 
+                      onChange={(e) => setEditingItem({...editingItem, variant: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
+                    <select 
+                      className="w-full"
+                      value={editingItem.unit}
+                      onChange={(e) => setEditingItem({...editingItem, unit: e.target.value})}
+                    >
+                      {availableUnits.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      required
+                      min="0"
+                      value={editingItem.stock} 
+                      onChange={(e) => setEditingItem({...editingItem, stock: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      min="0"
+                      step="any"
+                      placeholder="e.g. 1500"
+                      value={editingItem.mrp || ''} 
+                      onChange={(e) => setEditingItem({...editingItem, mrp: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'বিক্রয় মূল্য (Discount/Sale Price)' : 'Discount/Sale Price'} (BDT) *
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full" 
+                      required
+                      min="0"
+                      step="any"
+                      placeholder="e.g. 1400"
+                      value={editingItem.discount_price || editingItem.price || ''} 
+                      onChange={(e) => setEditingItem({...editingItem, discount_price: e.target.value, price: e.target.value})} 
+                    />
                   </div>
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline" onClick={() => setEditingItem(null)}>{t(language, 'Cancel')}</button>
-                <button type="submit" className="btn-primary flex-align-gap"><Edit size={18} /> {t(language, 'Save Changes')}</button>
+                <button type="button" className="btn-outline flex-1" onClick={() => setEditingItem(null)}>
+                  {t(language, 'Cancel')}
+                </button>
+                <button type="submit" className="btn-primary flex-1">
+                  {t(language, 'Save Changes')}
+                </button>
               </div>
             </form>
           </div>
@@ -704,70 +1035,12 @@ const Inventory = () => {
         document.body
       )}
 
-      {/* Categories Summary Drawer */}
-      {showCategoriesModal && createPortal(
-        <div className="drawer-overlay">
-          <div className="drawer-container" style={{ maxWidth: '500px' }}>
-            <div className="drawer-header">
-              <h2>{t(language, 'Categories')} ({availableCategories.length})</h2>
-              <button className="drawer-close-btn" onClick={() => setShowCategoriesModal(false)}>
-                <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
-              </button>
-            </div>
-            <div className="drawer-body">
-              <p className="text-muted mb-4">{language === 'bn' ? 'বর্তমান স্টকে থাকা ক্যাটাগরি এবং প্রোডাক্ট সংখ্যা:' : 'Active categories and products in stock:'}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {availableCategories.map((cat, idx) => {
-                  const count = inventory.filter(i => (i.category || '').toLowerCase() === cat.toLowerCase()).length;
-                  return (
-                    <div key={idx} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem' }}>
-                      <span style={{ fontWeight: '600' }}>{cat}</span>
-                      <span className="stock-badge success">{count} {language === 'bn' ? 'টি পণ্য' : 'products'}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="drawer-footer">
-              <button type="button" className="btn-primary w-full" onClick={() => setShowCategoriesModal(false)}>{t(language, 'Close')}</button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {/* Reference Data Drawer */}
+      {showReferenceDrawer && (
+        <ReferenceDataDrawer 
+          onClose={() => setShowReferenceDrawer(false)} 
+        />
       )}
-
-      {/* Units Summary Drawer */}
-      {showUnitsModal && createPortal(
-        <div className="drawer-overlay">
-          <div className="drawer-container" style={{ maxWidth: '500px' }}>
-            <div className="drawer-header">
-              <h2>{t(language, 'Units')} ({availableUnits.length})</h2>
-              <button className="drawer-close-btn" onClick={() => setShowUnitsModal(false)}>
-                <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
-              </button>
-            </div>
-            <div className="drawer-body">
-              <p className="text-muted mb-4">{language === 'bn' ? 'ব্যবহৃত এককসমূহ:' : 'Measurement units currently configured:'}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {availableUnits.map((u, idx) => {
-                  const count = inventory.filter(i => (i.unit || '').toLowerCase() === u.toLowerCase()).length;
-                  return (
-                    <div key={idx} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem' }}>
-                      <span style={{ fontWeight: '600' }}>{u}</span>
-                      <span className="stock-badge warning">{count} {language === 'bn' ? 'আইটেম' : 'items'}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="drawer-footer">
-              <button type="button" className="btn-primary w-full" onClick={() => setShowUnitsModal(false)}>{t(language, 'Close')}</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-      {showReferenceDrawer && <ReferenceDataDrawer onClose={() => setShowReferenceDrawer(false)} />}
     </div>
   );
 };

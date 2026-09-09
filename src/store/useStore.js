@@ -41,6 +41,13 @@ const enqueue = (task) => {
   return chain;
 };
 
+// Cache freshness TTL: 90 seconds (data fresher than 90s is served instantly from memory)
+const CACHE_TTL_MS = 90 * 1000;
+// Tracks the epoch timestamp (ms) when each slice was last fetched
+const lastFetchedTimestamps = new Map();
+// Deduplicates concurrent in-flight requests for the same slice
+const inFlightRequests = new Map();
+
 const fail = (error, fallback) => {
   const message = errorMessage(error, fallback);
   toast.error(message);
@@ -75,6 +82,7 @@ const useStore = create(
       isLoading: false,
       shopProfile: null,
       dashboardSummary: null,
+      _cacheTimestamps: {},
 
       smsSettings: {
         autoSalesConfirm: true,
@@ -137,8 +145,11 @@ const useStore = create(
 
       logout: () => {
         AuthService.logout();
+        lastFetchedTimestamps.clear();
+        inFlightRequests.clear();
         set({
           user: null,
+          _cacheTimestamps: {},
           inventory: [], categories: [], units: [], customers: [], suppliers: [], sales: [], purchases: [],
           returns: [], settlements: [], expenses: [], expenseCategories: [], staff: [], attendance: [],
           leaves: [], payrolls: [], srSettlements: [], drafts: [], accountTransactions: [], dashboardSummary: null,
@@ -150,18 +161,27 @@ const useStore = create(
       // Loading
       // ---------------------------------------------------------------- //
 
-      /** Refresh a named slice after something changed it. */
+      /** 
+       * Request-deduplicating and timestamp-tracking slice refresher.
+       * If called without arguments, refreshes all available slices.
+       */
       refresh: async (...slices) => {
         const jobs = {
           inventory: () => Promise.allSettled([
-            ProductService.list(),
+            ProductService.list({ all: 'true' }),
             ProductService.categories(),
             ProductService.units()
-          ]).then(([pList, pCats, pUnits]) => ({
-            inventory: pList.status === 'fulfilled' ? pList.value : [],
-            categories: pCats.status === 'fulfilled' ? pCats.value : [],
-            units: pUnits.status === 'fulfilled' ? pUnits.value : [],
-          })),
+          ]).then(([pList, pCats, pUnits]) => {
+            const rawProds = pList.status === 'fulfilled' ? pList.value : [];
+            const inventory = Array.isArray(rawProds) ? rawProds : (rawProds?.results || []);
+            return {
+              inventory,
+              categories: pCats.status === 'fulfilled' ? pCats.value : [],
+              units: pUnits.status === 'fulfilled' ? pUnits.value : [],
+            };
+          }),
+          categories: () => ProductService.categories().then((r) => ({ categories: r })),
+          units: () => ProductService.units().then((r) => ({ units: r })),
           customers: () => CustomerService.list().then((r) => ({ customers: r })),
           suppliers: () => SupplierService.list().then((r) => ({ suppliers: r })),
           sales: () => SaleService.list().then((r) => ({ sales: r })),
@@ -190,42 +210,143 @@ const useStore = create(
           dashboard: () => ReportService.summary().then((r) => ({ dashboardSummary: r })),
         };
 
-        const wanted = slices.length ? slices : Object.keys(jobs);
-        const results = await Promise.allSettled(wanted.map((name) => jobs[name]?.()));
+        const flatSlices = slices.flat().filter(Boolean);
+        const wanted = flatSlices.length ? flatSlices : Object.keys(jobs);
+
+        // Deduplicate in-flight requests
+        const promises = wanted.map((name) => {
+          if (!jobs[name]) return Promise.resolve(null);
+
+          if (inFlightRequests.has(name)) {
+            return inFlightRequests.get(name);
+          }
+
+          const promise = jobs[name]()
+            .then((data) => {
+              lastFetchedTimestamps.set(name, Date.now());
+              return data;
+            })
+            .catch((err) => {
+              console.warn(`[Store] Failed to fetch slice: ${name}`, err);
+              return null;
+            })
+            .finally(() => {
+              inFlightRequests.delete(name);
+            });
+
+          inFlightRequests.set(name, promise);
+          return promise;
+        });
+
+        const results = await Promise.allSettled(promises);
 
         const patch = {};
-        results.forEach((result) => {
-          if (result.status === 'fulfilled' && result.value) Object.assign(patch, result.value);
+        const newTimestamps = { ...(get()._cacheTimestamps || {}) };
+
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            Object.assign(patch, result.value);
+            const sliceName = wanted[idx];
+            if (sliceName) {
+              newTimestamps[sliceName] = Date.now();
+            }
+          }
         });
-        if (Object.keys(patch).length) set(patch);
+
+        patch._cacheTimestamps = newTimestamps;
+
+        if (Object.keys(patch).length) {
+          set(patch);
+        }
         return patch;
       },
 
-      /** Load everything the app shows. Called once after login and on reload. */
+      /**
+       * Smart lazy-loader with persistent cache TTL (90s).
+       * Only hits the network if the slice is missing or older than 90s.
+       * If data is already in cache (surviving reload), ZERO network requests are made!
+       */
+      ensureLoaded: async (...slices) => {
+        if (!get().user) return;
+        const flatSlices = slices.flat().filter(Boolean);
+        if (!flatSlices.length) return;
+
+        const now = Date.now();
+        const timestamps = get()._cacheTimestamps || {};
+        const needed = [];
+        const waiting = [];
+
+        for (const slice of flatSlices) {
+          if (inFlightRequests.has(slice)) {
+            waiting.push(inFlightRequests.get(slice));
+          } else {
+            const last = timestamps[slice];
+            const dataSlice = get()[slice];
+            const isStale = !last || (now - last) > CACHE_TTL_MS;
+            const isEmpty = dataSlice === undefined || dataSlice === null;
+            if (isStale || isEmpty) {
+              needed.push(slice);
+            }
+          }
+        }
+
+        const tasks = [...waiting];
+        if (needed.length > 0) {
+          tasks.push(get().refresh(...needed));
+        }
+
+        if (tasks.length > 0) {
+          await Promise.allSettled(tasks);
+        }
+      },
+
+      /** Manually invalidate cache timestamps so next route access or ensureLoaded fetches fresh data */
+      invalidateCache: (...slices) => {
+        const flat = slices.flat().filter(Boolean);
+        if (!flat.length) {
+          lastFetchedTimestamps.clear();
+          set({ _cacheTimestamps: {} });
+        } else {
+          const ts = { ...(get()._cacheTimestamps || {}) };
+          flat.forEach((s) => {
+            lastFetchedTimestamps.delete(s);
+            delete ts[s];
+          });
+          set({ _cacheTimestamps: ts });
+        }
+      },
+
+      /** Lean hydrate: loads profile & settings only if missing or older than 10 mins. */
       hydrate: async () => {
         if (!get().user) return;
-        set({ isLoading: true });
-        try {
-          await get().refresh();
+        const now = Date.now();
+        const timestamps = get()._cacheTimestamps || {};
+        const profileLast = timestamps._shopProfile;
+        const settingsLast = timestamps._userSettings;
+
+        // Profile: only fetch if missing or older than 10 minutes
+        if (!get().shopProfile || !profileLast || (now - profileLast) > 10 * 60 * 1000) {
           try {
             const profile = await CoreService.shopProfile();
-            set({ shopProfile: profile });
-          } catch {
-            /* letterhead is optional; the pages have their own headings */
-          }
+            set((state) => ({
+              shopProfile: profile,
+              _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
+            }));
+          } catch {}
+        }
+
+        // Settings: only fetch if missing or older than 10 minutes
+        if (!settingsLast || (now - settingsLast) > 10 * 60 * 1000) {
           try {
             const settings = await CoreService.userSettings();
-            set({
-              theme: settings.theme_mode || get().theme,
-              themeGradient: settings.active_theme_class || get().themeGradient,
-              language: settings.language || get().language,
-              smsSettings: settings.smsSettings || get().smsSettings,
-            });
-          } catch {
-            /* fall back to whatever is stored locally */
-          }
-        } finally {
-          set({ isLoading: false });
+            set((state) => ({
+              theme: settings.theme_mode || state.theme,
+              themeGradient: settings.active_theme_class || state.themeGradient,
+              language: settings.language || state.language,
+              smsSettings: settings.smsSettings || state.smsSettings,
+              _cacheTimestamps: { ...(state._cacheTimestamps || {}), _userSettings: Date.now() },
+            }));
+          } catch {}
         }
       },
 
@@ -257,6 +378,25 @@ const useStore = create(
         const merged = { ...get().smsSettings, ...patch };
         set({ smsSettings: merged });
         get().saveSettings({ smsSettings: merged });
+      },
+
+      /**
+       * Shop-wide settings: the letterhead every document prints, and whether
+       * a sale texts the customer. Unlike the appearance settings above these
+       * belong to the shop rather than to whoever is logged in, so the new
+       * values are only kept once the server has accepted them.
+       */
+      saveShopProfile: async (patch) => {
+        try {
+          const profile = await CoreService.saveShopProfile(patch);
+          set((state) => ({
+            shopProfile: profile,
+            _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
+          }));
+          return { ok: true, profile };
+        } catch (error) {
+          return fail(error, 'Could not save the shop settings.');
+        }
       },
 
       // ---------------------------------------------------------------- //
@@ -344,6 +484,27 @@ const useStore = create(
             return fail(error, 'The sale could not be saved.');
           }
         }),
+
+      /**
+       * Collect a payment against one invoice that went out on Baki or Partial.
+       * The server files it as a customer settlement pointed at that invoice,
+       * so the drawer, the customer's balance and the invoice's own outstanding
+       * figure all move together.
+       */
+      payInvoiceDue: (invoiceId, { amount, date, method, notes } = {}) => enqueue(async () => {
+        try {
+          const res = await SaleService.payDue(invoiceId, {
+            amount: Number(amount) || 0,
+            date: date ? String(date).split('T')[0] : undefined,
+            method: method || 'Cash',
+            notes: notes || undefined,
+          });
+          await get().refresh('sales', 'customers', 'settlements', 'treasury', 'dashboard');
+          return { ok: true, invoice: res?.invoice, settlement: res?.settlement };
+        } catch (error) {
+          return fail(error, 'The due payment could not be recorded.');
+        }
+      }),
 
       deleteSale: (saleId) => enqueue(async () => {
         try {
@@ -713,6 +874,20 @@ const useStore = create(
         }
       },
 
+      /**
+       * The books for a date range: what was sold, what it cost, what came in
+       * and what the shop is worth. Not held in a slice -- every answer
+       * depends on the range asked for, so it is fetched by the page.
+       */
+      fetchBalanceSheet: async (params = {}) => {
+        try {
+          const data = await ReportService.balanceSheet(params);
+          return { ok: true, data };
+        } catch (error) {
+          return fail(error, 'Could not load the balance sheet.');
+        }
+      },
+
       // ---------------------------------------------------------------- //
       // Parked carts
       // ---------------------------------------------------------------- //
@@ -873,6 +1048,30 @@ const useStore = create(
         themeGradient: state.themeGradient,
         language: state.language,
         cart: state.cart,
+        shopProfile: state.shopProfile,
+        _cacheTimestamps: state._cacheTimestamps,
+        // Persist tables so page reload does not blank out data and force full refetches
+        inventory: state.inventory,
+        categories: state.categories,
+        units: state.units,
+        customers: state.customers,
+        suppliers: state.suppliers,
+        sales: state.sales,
+        purchases: state.purchases,
+        returns: state.returns,
+        settlements: state.settlements,
+        expenses: state.expenses,
+        expenseCategories: state.expenseCategories,
+        staff: state.staff,
+        attendance: state.attendance,
+        leaves: state.leaves,
+        payrolls: state.payrolls,
+        srSettlements: state.srSettlements,
+        drafts: state.drafts,
+        cashBalance: state.cashBalance,
+        bankBalance: state.bankBalance,
+        accountTransactions: state.accountTransactions,
+        dashboardSummary: state.dashboardSummary,
       }),
     }
   )

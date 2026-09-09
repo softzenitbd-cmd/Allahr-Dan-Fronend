@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Download, Edit, Trash2 } from 'lucide-react';
+import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
@@ -544,7 +544,7 @@ const HR = () => {
         <div className="drawer-overlay">
           <div className="drawer-container">
             
-            <div className="drawer-header" style={{ borderBottom: 'none', backgroundColor: '#f1f5f9' }}>
+            <div className="drawer-header">
               <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Staff Profile Document</h3>
               <button className="drawer-close-btn" onClick={() => setSelectedStaff(null)}>
                 <X size={24} />
@@ -614,9 +614,6 @@ const HR = () => {
                 printElement('printable-single-staff', 'HR');
               }}>
                 <Printer size={20} /> Print Document
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '1rem 3rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-staff', `Staff_${selectedStaff.name}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

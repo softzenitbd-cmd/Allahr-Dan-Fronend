@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ArrowDownCircle, ArrowUpCircle, Download, Layers, Printer,
+  ArrowDownCircle, ArrowUpCircle, Layers, Printer,
   RefreshCcw, Scale, Search, TrendingDown, TrendingUp, X,
 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import './StockLog.css';
 
@@ -119,9 +119,6 @@ const StockLog = () => {
           </button>
           <button className="btn-primary flex-align-gap" onClick={() => printElement('printable-stock-log', 'StockLog')}>
             <Printer size={16} /> {t(language, 'Print')}
-          </button>
-          <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-stock-log', 'Stock_Movement_Log.pdf')}>
-            <Download size={16} /> {t(language, 'Download PDF')}
           </button>
         </div>
       </div>

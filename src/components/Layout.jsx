@@ -1,12 +1,13 @@
+import { toast } from 'react-toastify';
 import React from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useStore from '../store/useStore';
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Package, 
-  Users, 
-  FileText, 
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Package,
+  Users,
+  FileText,
   LogOut,
   Settings,
   DollarSign,
@@ -14,14 +15,16 @@ import {
   RefreshCcw,
   Sun,
   Moon,
-  List,
+  PanelLeft,
   MessageSquare,
   Wifi,
   WifiOff,
   ArrowLeft,
   Landmark,
+  Scale,
   Calendar,
   ClipboardList,
+  ReceiptText,
   Menu,
   X
 } from 'lucide-react';
@@ -29,8 +32,31 @@ import { useState, useEffect } from 'react';
 import './Layout.css';
 import logo from '../assets/allah_dan.jpeg';
 
+// Route-to-Data requirements mapping for lazy-loading
+const ROUTE_SLICES = {
+  '/': ['dashboard', 'sales', 'expenses', 'treasury', 'inventory', 'customers', 'suppliers'],
+  '/pos': ['inventory', 'customers', 'drafts', 'staff', 'sales'],
+  '/pos-history': ['sales', 'customers', 'settlements', 'treasury'],
+  '/inventory': ['categories', 'units'],
+  '/purchases': ['purchases', 'suppliers', 'inventory'],
+  '/returns': ['returns', 'inventory'],
+  '/suppliers': ['suppliers', 'purchases', 'settlements'],
+  '/customers': ['customers', 'suppliers', 'sales', 'purchases', 'settlements'],
+  '/expenses': ['expenses'],
+  '/sr': ['sr', 'staff', 'inventory'],
+  '/stock-log': ['inventory'],
+  '/accounts': ['treasury'],
+  // The balance sheet fetches its own figures for the chosen range.
+  '/balance-sheet': [],
+  '/reports': ['dashboard', 'sales', 'inventory', 'purchases', 'expenses', 'customers', 'suppliers', 'staff', 'payrolls', 'returns', 'attendance', 'leaves', 'treasury', 'settlements'],
+  '/hr': ['staff', 'attendance', 'leaves', 'payrolls'],
+  '/sms': ['sms', 'customers'],
+  '/settings': [],
+};
+
 const Layout = () => {
-  const { user, logout, theme, toggleTheme, language, setLanguage } = useStore();
+  const { user, logout, theme, toggleTheme, language, setLanguage, ensureLoaded, refresh } = useStore();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -51,6 +77,35 @@ const Layout = () => {
     };
   }, []);
 
+  // Smart lazy-loader: fetch only what the current active route requires with 90s cache
+  useEffect(() => {
+    if (!user) return;
+    const cleanPath = location.pathname.replace(/\/$/, '') || '/';
+    const slices = ROUTE_SLICES[cleanPath];
+    if (slices && slices.length > 0) {
+      ensureLoaded(...slices);
+    }
+  }, [location.pathname, user, ensureLoaded]);
+
+  const handleRefreshRoute = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    const cleanPath = location.pathname.replace(/\/$/, '') || '/';
+    const slices = ROUTE_SLICES[cleanPath] || [];
+    try {
+      if (slices.length > 0) {
+        await refresh(...slices);
+      } else {
+        await refresh();
+      }
+      toast.info(language === 'bn' ? 'তথ্য রিফ্রেশ হয়েছে' : 'Data refreshed');
+    } catch {
+      toast.error(language === 'bn' ? 'রিফ্রেশ ব্যর্থ হয়েছে' : 'Failed to refresh data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -59,6 +114,7 @@ const Layout = () => {
   const allServices = [
     { name: language === 'bn' ? 'ড্যাশবোর্ড' : 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: language === 'bn' ? 'বিক্রয়' : 'POS', path: '/pos', icon: ShoppingCart },
+    { name: language === 'bn' ? 'পিওএস ইতিহাস' : 'POS History', path: '/pos-history', icon: ReceiptText },
     { name: language === 'bn' ? 'স্টক' : 'Inventory', path: '/inventory', icon: Package },
     { name: language === 'bn' ? 'ক্রয়' : 'Purchases', path: '/purchases', icon: Truck },
     { name: language === 'bn' ? 'রিটার্ন' : 'Returns', path: '/returns', icon: RefreshCcw },
@@ -71,141 +127,139 @@ const Layout = () => {
 
   const adminServices = user?.role === 'Admin' ? [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
+    { name: language === 'bn' ? 'ব্যালেন্স শিট' : 'Balance Sheet', icon: Scale, path: '/balance-sheet' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
     { name: language === 'bn' ? 'এসএমএস' : 'SMS', icon: MessageSquare, path: '/sms' },
     { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' }
   ] : [];
 
-  const navItems = [...allServices, ...adminServices];
+  // Rendered as two labelled groups. Fifteen links in one undifferentiated
+  // column is a wall; split into "day to day" and "management" it reads as two
+  // short lists, and the admin half is visibly a different kind of work.
+  const navGroups = [
+    { key: 'ops', label: language === 'bn' ? 'দৈনন্দিন' : 'Operations', items: allServices },
+    { key: 'admin', label: language === 'bn' ? 'ব্যবস্থাপনা' : 'Management', items: adminServices },
+  ].filter((group) => group.items.length > 0);
 
   return (
-    <div className={`app-container ${theme === 'dark' ? 'dark-mode' : ''}`} style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
+    <div className={`app-container ${theme === 'dark' ? 'dark-mode' : ''}`}>
       {/* Sidebar */}
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-header" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>{language === 'bn' ? 'মেনু' : 'Menu'}</h2>
-          
-          <button className="btn-icon hide-on-mobile" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title="Toggle Sidebar">
-            <List size={20} />
+        <div className="sidebar-header">
+          <h2>{language === 'bn' ? 'মেনু' : 'Menu'}</h2>
+
+          <button
+            className="btn-icon hide-on-mobile"
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            title={language === 'bn' ? 'সাইডবার ছোট/বড় করুন' : 'Collapse sidebar'}
+          >
+            <PanelLeft size={17} />
           </button>
 
           {isMobileMenuOpen && (
             <button className="btn-icon mobile-menu-toggle" onClick={() => setIsMobileMenuOpen(false)}>
-              <X size={20} />
+              <X size={18} />
             </button>
           )}
         </div>
+
         <nav className={`sidebar-nav ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-          {navItems.map((item, index) => (
-            <NavLink 
-              key={index}
-              to={item.path}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setIsMobileMenuOpen(false)}
-              title={isSidebarCollapsed ? item.name : undefined}
-            >
-              <item.icon size={18} />
-              <span>{item.name}</span>
-            </NavLink>
+          {navGroups.map((group) => (
+            <React.Fragment key={group.key}>
+              <div className="nav-section-label">{group.label}</div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/'}
+                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  title={isSidebarCollapsed ? item.name : undefined}
+                >
+                  <item.icon size={17} />
+                  <span>{item.name}</span>
+                </NavLink>
+              ))}
+            </React.Fragment>
           ))}
         </nav>
       </aside>
 
-      <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', width: '0' }}>
-        <header className="topbar glass" style={{ 
-          height: '70px', 
-          borderBottom: '1px solid rgba(0,0,0,0.05)', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          padding: '0 2rem', 
-          background: 'var(--bg-card)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.02)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 50
-        }}>
-          {/* Left Side: Brand Logo */}
-          <div className="topbar-brand flex-align-gap" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <button className="btn-icon mobile-menu-toggle" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} style={{ background: 'var(--bg-input)' }}>
-              <Menu size={20} />
+      <main className="main-content">
+        <header className="topbar">
+          {/* Left: navigation and brand */}
+          <div className="topbar-brand">
+            <button
+              className="mobile-menu-toggle"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              title={language === 'bn' ? 'মেনু' : 'Menu'}
+            >
+              <Menu size={18} />
             </button>
+
             {!isDashboard && (
-              <button 
-                onClick={() => navigate(-1)} 
-                style={{ 
-                  background: '#f1f5f9', 
-                  color: '#0f172a',
-                  width: '40px',
-                  height: '40px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '12px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform='translateX(-3px)'; e.currentTarget.style.background='#e2e8f0'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform='translateX(0)'; e.currentTarget.style.background='#f1f5f9'; }}
-                title="Go Back"
-              >
-                <ArrowLeft size={20} strokeWidth={2.5} />
+              <button className="back-btn" onClick={() => navigate(-1)} title={language === 'bn' ? 'পেছনে' : 'Go back'}>
+                <ArrowLeft size={17} />
               </button>
             )}
-            <div style={{ cursor: 'pointer', transition: 'transform 0.2s ease', display: 'flex', alignItems: 'center', gap: '0.75rem' }} onClick={() => navigate('/')} onMouseEnter={e => e.currentTarget.style.transform='scale(1.02)'} onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'white'
-              }}>
-                <img src={logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+
+            <div className="brand-link" onClick={() => navigate('/')} role="button" tabIndex={0}
+                 onKeyDown={(e) => { if (e.key === 'Enter') navigate('/'); }}>
+              <div className="brand-logo">
+                <img src={logo} alt="" />
               </div>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.5px' }}>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
-                <span className="role-badge" style={{ marginTop: '2px', padding: '0.15rem 0.5rem', fontSize: '0.65rem', display: 'inline-block' }}>{user?.role}</span>
+              <div className="brand-text">
+                <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
               </div>
             </div>
           </div>
 
-          {/* Right Side: Actions & Profile */}
-          <div className="topbar-actions flex-align-gap">
-            <div className={`flex-align-gap px-3 py-1.5 rounded-full`} style={{ backgroundColor: isOnline ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: isOnline ? '#10b981' : '#f59e0b', border: `1px solid ${isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`, fontSize: '0.8rem', fontWeight: 600, borderRadius: '20px' }}>
-              {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+          {/* Right: status and account */}
+          <div className="topbar-actions">
+            <div className={`conn-pill ${isOnline ? 'online' : 'offline'}`} title={isOnline ? 'Connected' : 'No connection'}>
+              {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
               <span className="hide-on-mobile">{isOnline ? 'Synced' : 'Offline'}</span>
             </div>
-            
-            <button className="btn-icon" onClick={() => setLanguage(language === 'en' ? 'bn' : 'en')} title="Toggle Language" style={{ background: 'var(--bg-input)', color: 'var(--text-main)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+
+            <button
+              className="btn-icon"
+              onClick={handleRefreshRoute}
+              title={language === 'bn' ? 'তথ্য রিফ্রেশ করুন' : 'Refresh page data'}
+              disabled={isRefreshing}
+            >
+              <RefreshCcw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+            </button>
+
+            <button
+              className="btn-icon"
+              onClick={() => setLanguage(language === 'en' ? 'bn' : 'en')}
+              title="Toggle language"
+              style={{ fontWeight: 700, fontSize: '0.75rem' }}
+            >
               {language === 'en' ? 'BN' : 'EN'}
             </button>
-            
-            <button className="btn-icon" onClick={toggleTheme} title="Toggle Theme" style={{ background: 'var(--bg-input)', color: 'var(--text-main)' }}>
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+
+            <button className="btn-icon" onClick={toggleTheme} title="Toggle theme">
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            
-            <div className="user-profile-topbar flex-align-gap" style={{ marginLeft: '0.5rem', paddingLeft: '1.5rem', borderLeft: '1px solid rgba(0,0,0,0.1)' }}>
-              <div className="avatar" style={{ width: '38px', height: '38px', fontSize: '1rem', borderRadius: '50%' }}>{user?.name?.charAt(0).toUpperCase()}</div>
-              <div className="hide-on-mobile" style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>{user?.name}</span>
+
+            <div className="user-profile-topbar">
+              <div className="avatar">{user?.name?.charAt(0).toUpperCase()}</div>
+              <div className="user-meta hide-on-mobile">
+                <span className="name">{user?.name}</span>
+                <span className="role-badge">{user?.role}</span>
               </div>
-              <button onClick={handleLogout} className="btn-icon" style={{ marginLeft: '0.5rem', color: 'var(--danger)', background: 'rgba(239, 68, 68, 0.1)' }} title="Logout">
-                <LogOut size={18} />
+              <button onClick={handleLogout} className="logout-btn" title={language === 'bn' ? 'লগআউট' : 'Logout'}>
+                <LogOut size={16} />
               </button>
             </div>
           </div>
         </header>
 
-        <div className="content-area" style={{ padding: '2rem', flex: 1, overflowY: 'auto' }}>
+        <div className="content-area">
           <div className="print-only-header">
-            <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
+            <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
           </div>
           <Outlet />
         </div>

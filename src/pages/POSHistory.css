@@ -1,0 +1,115 @@
+/* POS History: the filed invoices, and what is still owed on each of them. */
+
+.poshistory-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.poshistory-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
+}
+
+.poshistory-stat .icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.poshistory-stat .label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.poshistory-stat .value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.poshistory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.poshistory-filters .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.poshistory-filters .field > label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.poshistory-filters .field.grow {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+/* A pill that says at a glance whether an invoice is settled. */
+.pay-pill {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pay-pill.paid { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.pay-pill.due { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+.pay-pill.partial { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+
+@media (max-width: 1100px) {
+  .poshistory-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .poshistory-stats { grid-template-columns: 1fr; }
+  .poshistory-filters .field { flex: 1 1 100%; }
+}
+
+/* The due-payment form is portalled outside the page, so its rules live here
+   rather than under a page-scoped selector. Labels sit on their own line: the
+   shared utility classes leave them inline, which ran the hint text around the
+   controls and made the amount hard to find in a hurry. */
+.poshistory-pay-form label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.poshistory-pay-form small {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.poshistory-pay-form input,
+.poshistory-pay-form select {
+  width: 100%;
+}

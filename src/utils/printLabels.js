@@ -1,52 +1,92 @@
-/**
- * Printing a sheet of barcode labels.
- *
- * This used to swap the whole page into `document.body` and call print. It came
- * out blank, because the app's print stylesheet hides everything under <body>
- * that is not #print-wrapper, #root or #pdf-print-wrapper -- and the wrapper the
- * barcode button built had no id at all. It also destroyed the React tree and
- * reloaded the page afterwards, which closed the drawer and lost the sticker
- * count the operator had just set.
- *
- * A hidden iframe avoids both. It carries its own stylesheet, so the sheet
- * lays out the same on any machine regardless of what the app's CSS is doing,
- * and the page behind it is untouched.
- */
-
-const LABELS_PER_ROW = 3;
+import JsBarcode from 'jsbarcode';
 
 /**
- * Send `count` copies of one product's label to the printer.
- *
- * `barcodeSvg` is the SVG react-barcode already drew on screen; reusing it
- * means the printed bars are the same ones that were checked visually, rather
- * than a second rendering that might differ.
+ * Generate clean standalone barcode bars SVG using JsBarcode without embedded text.
+ * Configured with responsive height and width to scale cleanly inside label cards.
  */
-export const printBarcodeLabels = (product, count, sourceElementId = 'printable-barcode') => {
-  if (!product || !count) return;
+export const generateBarcodeSvg = (value) => {
+  const cleanVal = String(value || '').trim();
+  const isEan13 = /^\d{13}$/.test(cleanVal);
+  const isUpcA = /^\d{12}$/.test(cleanVal);
 
-  const source = document.getElementById(sourceElementId);
-  const svg = source?.querySelector('svg');
-  if (!svg) {
-    // Nothing drawn yet: better to say so than to send a blank sheet.
-    // eslint-disable-next-line no-alert
-    alert('The barcode has not finished drawing yet. Wait a moment and try again.');
-    return;
+  try {
+    const svgNode = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svgNode, cleanVal, {
+      format: isEan13 ? 'EAN13' : isUpcA ? 'UPC' : 'CODE128',
+      width: 1.35,
+      height: 28,
+      displayValue: false, // Clean bars without embedded SVG text
+      margin: 0,
+    });
+    svgNode.removeAttribute('width');
+    svgNode.removeAttribute('height');
+    return svgNode.outerHTML;
+  } catch (err) {
+    try {
+      const svgNode = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(svgNode, cleanVal, {
+        format: 'CODE128',
+        width: 1.35,
+        height: 28,
+        displayValue: false,
+        margin: 0,
+      });
+      svgNode.removeAttribute('width');
+      svgNode.removeAttribute('height');
+      return svgNode.outerHTML;
+    } catch (e2) {
+      console.error('Barcode error:', e2);
+      return `<div style="font-family: monospace; font-size: 10px; font-weight: bold; padding: 2px 0;">*${cleanVal}*</div>`;
+    }
+  }
+};
+
+/**
+ * Directly prints barcode label matching the user's reference sticker design:
+ * - Shop Name: Allah'r Dan
+ * - Product Title & Variant
+ * - Category Name
+ * - Standard 13-digit EAN Barcode
+ * - Price (with optional MRP discount strike-through)
+ * - Sized for 40x50mm thermal paper with full enclosing border
+ */
+export const printBarcodeLabels = (product, count = 1, shopName = "Allah'r Dan") => {
+  if (!product) return;
+
+  const barcodeCode = String(product.id || product.product_code || '').trim();
+  const barcodeSvg = generateBarcodeSvg(barcodeCode);
+
+  const salePrice = product.discount_price && Number(product.discount_price) > 0
+    ? Number(product.discount_price)
+    : Number(product.price);
+  const mrpVal = Number(product.mrp);
+  const hasDiscount = mrpVal > 0 && mrpVal > salePrice;
+
+  const category = product.category_name || (typeof product.category === 'object' ? product.category?.name : product.category) || '';
+  const variant = product.variant || '';
+
+  let itemTitle = product.name || '';
+  if (variant && !itemTitle.includes(variant)) {
+    itemTitle += ` (${variant})`;
   }
 
-  const barcode = svg.outerHTML;
-  const price = `৳${product.price}`;
-  const variant = product.variant ? `<div class="variant">Var: ${product.variant}</div>` : '';
+  const labelHtml = `
+    <div class="label-card">
+      <div class="shop-name">${shopName}</div>
+      <div class="item-name">${itemTitle}</div>
+      ${category ? `<div class="category-name">${category}</div>` : ''}
+      <div class="barcode-box">
+        ${barcodeSvg}
+      </div>
+      <div class="barcode-number">${barcodeCode}</div>
+      <div class="price-row">
+        ${hasDiscount ? `<span class="mrp">৳ ${mrpVal.toLocaleString()}</span>` : ''}
+        <span class="sale-price">৳ ${salePrice.toLocaleString()}</span>
+      </div>
+    </div>
+  `;
 
-  const label = `
-    <div class="label">
-      ${barcode}
-      <div class="name">${product.name}</div>
-      ${variant}
-      <div class="price">${price}</div>
-    </div>`;
-
-  const html = `<div class="sheet">${label.repeat(count)}</div>`;
+  const labelsHtml = labelHtml.repeat(Math.max(1, count));
 
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
@@ -57,40 +97,163 @@ export const printBarcodeLabels = (product, count, sourceElementId = 'printable-
 
   const doc = iframe.contentWindow.document;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><title>Barcode Labels - ${product.name}</title>
-    <style>
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #000; background: #fff; }
-      .sheet {
-        display: grid;
-        grid-template-columns: repeat(${LABELS_PER_ROW}, 1fr);
-        gap: 4mm;
-        padding: 5mm;
+  doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Barcode - ${product.name}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    @page {
+      size: 40mm 50mm;
+      margin: 0mm;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      background: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .label-card {
+      width: 36.5mm;
+      box-sizing: border-box;
+      border: 2px solid #000;
+      padding: 1.8mm 1.5mm 1.5mm 1.5mm;
+      text-align: center;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 2mm auto 0 auto;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      page-break-after: always;
+      break-after: page;
+    }
+    .label-card:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .shop-name {
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 900;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      line-height: 1.15;
+      margin-bottom: 1px;
+      color: #000;
+      width: 100%;
+      text-align: center;
+      word-break: break-word;
+    }
+    .item-name {
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 700;
+      font-size: 7pt;
+      line-height: 1.15;
+      color: #000;
+      width: 100%;
+      margin-bottom: 1px;
+      word-break: break-word;
+      text-align: center;
+    }
+    .category-name {
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 600;
+      font-size: 6.5pt;
+      line-height: 1.1;
+      color: #222;
+      width: 100%;
+      margin-bottom: 1.5px;
+      text-align: center;
+      word-break: break-word;
+    }
+    .barcode-box {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 1.5px 0 1px 0;
+    }
+    .barcode-box svg {
+      width: 90%;
+      max-width: 92%;
+      height: 28px;
+      display: block;
+    }
+    .barcode-number {
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 900;
+      font-size: 8.5pt;
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+      margin-top: 1.5px;
+      margin-bottom: 1.5px;
+      color: #000;
+      width: 100%;
+      text-align: center;
+    }
+    .price-row {
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 900;
+      font-size: 12pt;
+      line-height: 1.1;
+      margin-top: 1.5px;
+      color: #000;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 4px;
+      width: 100%;
+      text-align: center;
+    }
+    .mrp {
+      font-size: 7.5pt;
+      font-weight: normal;
+      text-decoration: line-through;
+      color: #555;
+    }
+    .sale-price {
+      font-weight: 900;
+      font-size: 12pt;
+      color: #000;
+    }
+    @media print {
+      html, body {
+        width: 40mm;
+        margin: 0 !important;
+        padding: 0 !important;
       }
-      .label {
-        border: 1px dashed #bbb;
-        padding: 3mm 2mm;
-        text-align: center;
-        /* A label split across two pages is wasted stock. */
-        break-inside: avoid;
+      .label-card {
+        width: 36.5mm !important;
+        margin: 2mm auto 0 auto !important;
         page-break-inside: avoid;
+        break-inside: avoid;
       }
-      .label svg { max-width: 100%; height: auto; }
-      .name { font-weight: 700; font-size: 10pt; margin-top: 1mm; }
-      .variant { font-size: 8pt; color: #333; }
-      .price { font-weight: 700; font-size: 11pt; }
-      @page { size: A4 portrait; margin: 5mm; }
-    </style></head><body>${html}</body></html>`);
+    }
+  </style>
+</head>
+<body>
+  ${labelsHtml}
+</body>
+</html>`);
   doc.close();
 
-  // Give the document a moment to lay the SVGs out before the print dialog
-  // measures the page, then clean up once the dialog has been dealt with.
   setTimeout(() => {
     try {
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
-    } catch {
-      /* the dialog was blocked or dismissed */
+    } catch (e) {
+      console.error('Print error:', e);
     }
     setTimeout(() => {
       if (document.body.contains(iframe)) document.body.removeChild(iframe);

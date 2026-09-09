@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, MessageSquare, Phone, Printer, Eye, Download, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 const Customers = () => {
   const { customers, suppliers, settleCustomerDue, settleSupplierDue, sales, purchases, settlements, sendSms, language, addCustomer, updateCustomer, deleteCustomer, updateSupplier, deleteSupplier } = useStore();
@@ -129,7 +130,7 @@ const Customers = () => {
     if (res?.ok) {
       setNewCustomer({ name: '', phone: '', location: '', due: '', notes: '' });
       setShowAddModal(false);
-      toast.success(language === 'bn' ? 'কাস্টমার সফলভাবে যুক্ত হয়েছে!' : 'Customer added successfully!');
+      showSuccessAlert(language === 'bn' ? 'কাস্টমার সফলভাবে যুক্ত হয়েছে!' : 'Customer added successfully!');
     }
   };
 
@@ -147,15 +148,22 @@ const Customers = () => {
 
     if (res?.ok) {
       setEditingPerson(null);
-      toast.success(language === 'bn' ? 'তথ্য সফলভাবে আপডেট হয়েছে!' : 'Updated successfully!');
+      showSuccessAlert(language === 'bn' ? 'তথ্য সফলভাবে আপডেট হয়েছে!' : 'Updated successfully!');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm(language === 'bn' ? 'আপনি কি নিশ্চিত এই রেকর্ডটি মুছে ফেলতে চান?' : 'Are you sure you want to delete this record? This action cannot be undone.')) {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'রেকর্ডটি মুছে ফেলবেন?' : 'Delete Record?',
+      text: language === 'bn' ? 'আপনি কি নিশ্চিত এই রেকর্ডটি মুছে ফেলতে চান? এই কাজটি আর ফিরিয়ে আনা যাবে না।' : 'Are you sure you want to delete this record? This action cannot be undone.',
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (isConfirmed) {
       const res = activeTab === 'Customer' ? await deleteCustomer(id) : await deleteSupplier(id);
       if (res?.ok) {
-        toast.success(language === 'bn' ? 'সফলভাবে মুছে ফেলা হয়েছে!' : 'Deleted successfully!');
+        showSuccessAlert(language === 'bn' ? 'সফলভাবে মুছে ফেলা হয়েছে!' : 'Deleted successfully!');
       }
     }
   };
@@ -205,9 +213,6 @@ const Customers = () => {
               printElement('printable-customers-list', 'Customers');
             }}>
               <Printer size={16} /> Print List
-            </button>
-            <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-customers-list', 'Customers_List.pdf')}>
-              <Download size={16} /> Download PDF
             </button>
           </div>
         </div>
@@ -533,7 +538,7 @@ const Customers = () => {
       {selectedPerson && createPortal(
         <div className="drawer-overlay">
           <div className="drawer-container">
-            <div className="drawer-header" style={{ backgroundColor: '#f1f5f9' }}>
+            <div className="drawer-header">
               <h3 style={{ margin: 0 }}>Due Statement</h3>
               <button className="drawer-close-btn" onClick={() => setSelectedPerson(null)}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -602,9 +607,6 @@ const Customers = () => {
                  printElement('printable-single-person', 'Customers');
               }}>
                 <Printer size={20} /> Print Document
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-person', `Customer_${selectedPerson.name}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

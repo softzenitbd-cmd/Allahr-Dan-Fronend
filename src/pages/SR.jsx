@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, List, Truck, Trash2, Printer, Download, Eye, PackageCheck } from 'lucide-react';
+import { Plus, List, Truck, Trash2, Printer, Eye, PackageCheck } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
@@ -424,12 +424,6 @@ const SR = () => {
               >
                 <Printer size={16} /> Print
               </button>
-              <button
-                className="btn-outline flex-align-gap text-info"
-                onClick={() => downloadAsPDF('printable-sr-history', 'SR_History.pdf')}
-              >
-                <Download size={16} /> Download PDF
-              </button>
             </div>
           </div>
 
@@ -720,13 +714,6 @@ const SR = () => {
                 }}
               >
                 <Printer size={20} /> Print Slip
-              </button>
-              <button
-                className="btn-outline flex-align-gap text-info"
-                style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }}
-                onClick={() => downloadAsPDF('printable-sr-slip', `SR_${viewing.id}.pdf`)}
-              >
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

@@ -30,6 +30,7 @@ export const ENDPOINTS = {
   // Sales
   INVOICES: '/sales/invoices/',
   INVOICE: (id) => `/sales/invoices/${encodeURIComponent(id)}/`,
+  INVOICE_PAY_DUE: (id) => `/sales/invoices/${encodeURIComponent(id)}/pay-due/`,
   DRAFTS: '/sales/drafts/',
   DRAFT: (code) => `/sales/drafts/${encodeURIComponent(code)}/`,
 
@@ -84,6 +85,7 @@ export const ENDPOINTS = {
   // Reports
   REPORTS_SUMMARY: '/reports/summary/',
   REPORTS_DETAILS: '/reports/details/',
+  REPORTS_BALANCE_SHEET: '/reports/balance-sheet/',
 
   // Core
   SHOP_PROFILE: '/core/shop-profile/',

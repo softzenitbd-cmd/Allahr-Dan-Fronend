@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, Printer, Database, ShoppingCart, Download, Eye, Plus, X, Gift } from 'lucide-react';
+import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, Printer, Database, ShoppingCart, Eye, Plus, X, Gift } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 
 const Reports = () => {
@@ -201,9 +201,6 @@ const Reports = () => {
           )}
           <button className="btn-primary flex-align-gap" onClick={() => window.print()}>
             <Printer size={18} /> Print Report
-          </button>
-          <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('reports-page-container', `Reports_${dateFilter}.pdf`)}>
-            <Download size={18} /> Download PDF
           </button>
         </div>
       </div>
@@ -843,9 +840,6 @@ const Reports = () => {
                  printElement('printable-single-invoice', 'Reports');
               }}>
                 <Printer size={20} /> Print Document
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-invoice', `Invoice_${selectedInvoice.id}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

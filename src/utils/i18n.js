@@ -69,10 +69,18 @@ export const dict = {
   'Product Image': 'পণ্যের ছবি',
   'Image': 'ছবি',
   'Category': 'ক্যাটাগরি',
+  'Categories': 'ক্যাটাগরি সমূহ',
+  'All Categories': 'সকল ক্যাটাগরি',
+  'Filter by Category': 'ক্যাটাগরি ফিল্টার',
   'Stock': 'স্টক',
   'Unit': 'ইউনিট',
   'Unit Price': 'একক মূল্য',
   'Purchase Price': 'ক্রয় মূল্য',
+  'MRP': 'এমআরপি (MRP)',
+  'MRP (BDT)': 'এমআরপি (টাকা)',
+  'Discount Price': 'ছাড়ের মূল্য',
+  'Discount Price (BDT)': 'ছাড়ের মূল্য (টাকা)',
+  'Sale Price': 'বিক্রয় মূল্য',
 
   // Purchases
   'Purchase Management': 'ক্রয় ম্যানেজমেন্ট (Purchases)',

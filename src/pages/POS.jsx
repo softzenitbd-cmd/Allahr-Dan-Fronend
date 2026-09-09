@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import useStore from '../store/useStore';
-import { 
-  Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye, 
-  Download, FilePlus, Edit, Wallet, ShoppingCart, User, Phone, 
-  MapPin, Sparkles, Banknote, CreditCard, FileText 
+import {
+  Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
+  FilePlus, Edit, Wallet, ShoppingCart, User, UserCheck, Phone,
+  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X
 } from 'lucide-react';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
+import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
 import { openCashDrawer } from '../utils/cashDrawer';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import Expenses from './Expenses';
 import './POS.css';
 
 const POS = () => {
-  const { cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart, loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft, drafts, sales, customers, language } = useStore();
+  const { cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart, loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft, drafts, sales, customers, language, shopProfile } = useStore();
   // Editing or deleting a sale reverses stock and balances, which the server
   // only lets an Admin do. Hiding the controls keeps a salesman from
   // confirming a destructive dialog and then meeting a 403.
@@ -346,453 +348,414 @@ const POS = () => {
 
       {activeTab === 'New' && (
       <div className="pos-container animate-fade-in">
-        <div className="pos-left glass">
-          <div className="pos-header">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', width: '100%' }}>
-              <h2 style={{ margin: 0 }}>{editingSaleId ? t(language, 'Edit Sale') : t(language, 'Point of Sale')}</h2>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Left: scan / search, then the order                              */}
+        {/* ---------------------------------------------------------------- */}
+        <section className="pos-left">
+          <div className="pos-left-head">
+            <div className="pos-title-row">
+              <h2>{editingSaleId ? t(language, 'Edit Sale') : t(language, 'Point of Sale')}</h2>
               {/* Opens the drawer without a sale, for making change from an
                   earlier customer or putting the float in. Needs the printer's
                   "open cash drawer" setting switched on -- see utils/cashDrawer.js. */}
               <button
                 type="button"
-                className="btn-outline flex-align-gap"
-                style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                className="btn-outline"
                 onClick={() => openCashDrawer({ operator: user?.name })}
                 title={language === 'bn'
                   ? 'বিক্রি ছাড়াই ড্রয়ার খুলুন (একটি No Sale স্লিপ ছাপবে)'
                   : 'Open the drawer without a sale (prints a No Sale slip)'}
               >
-                <Wallet size={16} /> {t(language, 'Open Drawer')}
+                <Wallet size={15} /> {t(language, 'Open Drawer')}
               </button>
             </div>
-          <form onSubmit={handleBarcodeSubmit} className="barcode-form">
-            <Search size={18} className="text-muted" />
-            <input 
-              id="barcode-input"
-              type="text" 
-              placeholder={t(language, 'Scan barcode or search items...')} 
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              onKeyDown={handleBarcodeKeyDown}
-              autoComplete="off"
-            />
-            <button type="submit" className="btn-primary" disabled={scanning}>
-              {scanning ? t(language, 'Searching...') : t(language, 'Add')}
-            </button>
-          </form>
-        </div>
 
-        {/* What the scanner just read. Shown so the counter can confirm the
-            machine picked up the right label before the customer is charged. */}
-        {scannedItem && (
-          <div
-            className="scanned-item"
-            style={{
-              margin: '0 1.5rem 1rem',
-              padding: '0.85rem 1rem',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--primary)',
-              background: 'var(--bg-input)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '1rem',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-              <div className="text-muted" style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {t(language, 'Scanned Item')}
-              </div>
-              <h4 style={{ margin: '0.15rem 0', fontSize: '1.05rem', fontWeight: 700 }}>{scannedItem.name}</h4>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                {t(language, 'ID/Barcode')}: {scannedItem.id}
-                {scannedItem.variant ? ` · ${scannedItem.variant}` : ''}
-                {scannedItem.category ? ` · ${scannedItem.category}` : ''}
-              </div>
+            <div className="barcode-wrap">
+              <form onSubmit={handleBarcodeSubmit} className="barcode-form">
+                <Search size={18} className="text-muted" />
+                <input
+                  id="barcode-input"
+                  type="text"
+                  placeholder={language === 'bn'
+                    ? 'বারকোড স্ক্যান করুন বা পণ্যের নাম লিখুন…'
+                    : 'Scan barcode or type a product name…'}
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  onKeyDown={handleBarcodeKeyDown}
+                  autoComplete="off"
+                />
+                <button type="submit" className="btn-primary" disabled={scanning}>
+                  {scanning ? t(language, 'Searching...') : t(language, 'Add')}
+                </button>
+              </form>
+
+              {/* Typing narrows the catalogue to a short list. Picking one adds
+                  it just as a scan would. */}
+              {searchTerm && (
+                <div className="search-results">
+                  {searchResults.length === 0 ? (
+                    <div className="search-empty">
+                      {language === 'bn'
+                        ? `"${barcodeInput}" এর সাথে কোনো পণ্য মিলল না।`
+                        : `No product matches "${barcodeInput}".`}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="sr-hint">
+                        {searchResults.length} {language === 'bn' ? 'টি মিলেছে — যোগ করতে চাপুন' : 'matches — tap to add'}
+                      </div>
+                      {searchResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="search-result"
+                          onClick={() => pickProduct(item)}
+                        >
+                          <span className="sr-main">
+                            <span className="sr-name">{item.name}</span>
+                            <span className="sr-meta">
+                              {item.variant ? `${item.variant} · ` : ''}{item.id}
+                              {item.category ? ` · ${item.category}` : ''}
+                            </span>
+                          </span>
+                          <span className="sr-price">
+                            {item.mrp && Number(item.mrp) > Number(item.price) ? (
+                              <span className="sr-was">৳{Number(item.mrp).toLocaleString()}</span>
+                            ) : null}
+                            ৳{Number(item.price).toLocaleString()}
+                          </span>
+                          <span className={`stock-pill ${item.stock <= 0 ? 'stock-empty' : item.stock <= 10 ? 'stock-low' : 'stock-ok'}`}>
+                            {item.stock}
+                          </span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div style={{ textAlign: 'right' }}>
-              <div className="text-muted" style={{ fontSize: '0.7rem', textTransform: 'uppercase' }}>{t(language, 'Price')}</div>
-              <div className="text-primary" style={{ fontSize: '1.2rem', fontWeight: 800 }}>৳{scannedItem.price}</div>
-            </div>
-
-            <div style={{ textAlign: 'right' }}>
-              <div className="text-muted" style={{ fontSize: '0.7rem', textTransform: 'uppercase' }}>{t(language, 'Stock')}</div>
-              <div
-                style={{
-                  fontSize: '1.2rem',
-                  fontWeight: 800,
-                  color: scannedItem.stock <= 0 ? 'var(--danger)' : scannedItem.stock <= 10 ? 'var(--warning)' : 'var(--success)',
-                }}
-              >
-                {scannedItem.stock} {scannedItem.unit}
-              </div>
-            </div>
-
-            <button className="btn-icon text-muted" title="Dismiss" onClick={() => setScannedItem(null)}>
-              <Plus size={18} style={{ transform: 'rotate(45deg)' }} />
-            </button>
-
-            {scannedItem.stock <= 0 && (
-              <div className="text-danger" style={{ flexBasis: '100%', fontSize: '0.8rem', fontWeight: 600 }}>
-                {language === 'bn'
-                  ? 'সতর্কতা: এই পণ্যের স্টক শেষ। বিক্রির সময় সার্ভার আটকে দিতে পারে।'
-                  : 'Warning: this item shows no stock. The sale will be refused at checkout.'}
+            {/* What the scanner just read, so the counter can confirm the
+                machine picked up the right label before the customer is
+                charged for it. */}
+            {scannedItem && (
+              <div className={`scan-confirm ${scannedItem.stock <= 0 ? 'is-empty' : ''}`}>
+                <Check size={15} />
+                <span className="name">{scannedItem.name}</span>
+                <span className="meta">
+                  ৳{Number(scannedItem.price).toLocaleString()}
+                  {scannedItem.variant ? ` · ${scannedItem.variant}` : ''}
+                  {' · '}{language === 'bn' ? 'স্টক' : 'stock'} {scannedItem.stock}
+                </span>
+                {scannedItem.stock <= 0 && (
+                  <span style={{ fontWeight: 700 }}>
+                    {language === 'bn' ? '— স্টক শেষ, চেকআউটে আটকাবে' : '— out of stock, checkout will refuse it'}
+                  </span>
+                )}
+                <span className="spacer" />
+                <button className="btn-icon" title="Dismiss" onClick={() => setScannedItem(null)}>
+                  <X size={15} />
+                </button>
               </div>
             )}
           </div>
-        )}
 
-        {/* Quick Add Section */}
-        <div className="quick-products-row">
-          {inventory.length === 0 ? (
-            <button className="btn-secondary flex-align-gap" style={{ fontSize: '0.82rem', padding: '0.35rem 0.8rem' }} onClick={loadDummyData}>
-              <Database size={15} /> {language === 'bn' ? 'স্টক সিঙ্ক করুন' : 'Sync Inventory'}
-            </button>
-          ) : searchTerm ? (
-            // Typing turns the shortcut row into live results.
-            searchResults.length === 0 ? (
-              <span className="text-muted" style={{ fontSize: '0.85rem', padding: '0.35rem 0' }}>
-                {language === 'bn' ? `"${barcodeInput}" এর সাথে কিছু মিলল না।` : `Nothing matches "${barcodeInput}".`}
-              </span>
-            ) : (
-              searchResults.map(item => (
-                <button
-                  key={item.id}
-                  className="quick-item-chip"
-                  onClick={() => pickProduct(item)}
-                  title={`${item.id} · ${item.category || ''}`}
-                >
-                  <span style={{ fontWeight: 600 }}>{item.name}</span>
-                  <span className="price">৳{item.price}</span>
-                  <span className={`stock-pill ${item.stock <= 0 ? 'stock-empty' : item.stock <= 10 ? 'stock-low' : 'stock-ok'}`}>
-                    {item.stock}
-                  </span>
-                </button>
-              ))
-            )
-          ) : (
-            inventory.slice(0, 8).map(item => (
-              <button 
-                key={item.id} 
-                className="quick-item-chip" 
-                onClick={() => pickProduct(item)}
-                title={`${item.id} · ${item.category || ''}`}
-              >
-                <span style={{ fontWeight: 600 }}>{item.name}</span>
-                <span className="price">৳{item.price}</span>
-                <span className={`stock-pill ${item.stock <= 0 ? 'stock-empty' : item.stock <= 10 ? 'stock-low' : 'stock-ok'}`}>
-                  {item.stock}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-
-        {/* A running count and a way out. Clearing a cart used to mean removing
-            items one at a time, and nothing on screen said how many were in it. */}
-        {cart.length > 0 && (
-          <div className="cart-bar">
-            <span className="count">
+          <div className="cart-toolbar">
+            <span>
               {cart.reduce((n, i) => n + i.quantity, 0)} {language === 'bn' ? 'টি আইটেম' : 'items'}
-              <span className="text-muted"> · {cart.length} {language === 'bn' ? 'ধরন' : 'lines'}</span>
+              {cart.length > 0 && <> · {cart.length} {language === 'bn' ? 'ধরন' : 'lines'}</>}
             </span>
-            <button
-              className="btn-icon text-danger flex-align-gap"
-              onClick={() => {
-                if (window.confirm(language === 'bn' ? 'পুরো কার্ট মুছে ফেলবেন?' : 'Clear the whole cart?')) {
-                  clearCart();
-                  setScannedItem(null);
-                  document.getElementById('barcode-input')?.focus();
-                }
-              }}
-            >
-              <Trash2 size={15} /> {t(language, 'Clear Cart')}
-            </button>
+            {cart.length > 0 && (
+              <button
+                className="btn-icon text-danger"
+                title={t(language, 'Clear Cart')}
+                onClick={async () => {
+                  const isConfirmed = await showConfirmDialog({
+                    title: language === 'bn' ? 'পুরো কার্ট মুছে ফেলবেন?' : 'Clear Cart?',
+                    text: language === 'bn' ? 'কার্টের সব পণ্য মুছে ফেলা হবে।' : 'All items in the cart will be removed.',
+                    confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, clear',
+                    cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+                    isDanger: true,
+                  });
+                  if (isConfirmed) {
+                    clearCart();
+                    setScannedItem(null);
+                    document.getElementById('barcode-input')?.focus();
+                  }
+                }}
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
-        )}
 
-        <div className="cart-list">
-          {cart.length === 0 ? (
-            // The cart is empty for most of the day. Rather than a bare line of
-            // grey text floating in the space, say what to do next -- this is
-            // the first thing a new counter hand sees.
-            <div className="empty-cart">
-              <div className="empty-cart-icon"><ShoppingCart size={34} /></div>
-              <h3>{t(language, 'No items in cart')}</h3>
-              <p className="text-muted">
-                {language === 'bn'
-                  ? 'বারকোড স্ক্যান করুন, অথবা উপরের বাক্সে নাম লিখে খুঁজুন।'
-                  : 'Scan a barcode, or type a name in the box above to search.'}
-              </p>
-              {inventory.length > 0 && (
-                <p className="text-muted text-sm">
+          <div className="cart-lines">
+            {cart.length === 0 ? (
+              <div className="empty-cart">
+                <div className="empty-cart-icon"><ShoppingCart size={28} /></div>
+                <h3>{t(language, 'No items in cart')}</h3>
+                <p className="text-muted">
                   {language === 'bn'
-                    ? 'দ্রুত যোগ করতে উপরের বাটনগুলোতেও চাপতে পারেন।'
-                    : 'The shortcuts above add an item in one tap.'}
+                    ? 'উপরের বাক্সে বারকোড স্ক্যান করুন, অথবা পণ্যের নাম লিখে তালিকা থেকে বেছে নিন।'
+                    : 'Scan a barcode in the box above, or type a product name and pick it from the list.'}
                 </p>
-              )}
-            </div>
-          ) : (
-            cart.map(item => (
-              <div className="cart-item glass" key={item.id}>
-                <div className="item-info">
-                  <div className="item-title-row">
-                    <h4>{item.name}</h4>
-                    {item.variant && <span className="variant-tag">{item.variant}</span>}
+
+                {/* Nothing can be scanned against an empty catalogue, so this
+                    is the one place the sync is worth offering. */}
+                {inventory.length === 0 && (
+                  <button className="btn-outline" style={{ marginTop: '1rem' }} onClick={loadDummyData}>
+                    <Database size={15} /> {language === 'bn' ? 'স্টক সিঙ্ক করুন' : 'Sync Inventory'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              cart.map(item => (
+                <div className="cart-line" key={item.id}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="cl-name">
+                      {item.name}
+                      {item.isGift && <span className="cl-gift-tag">GIFT</span>}
+                    </div>
+                    <div className="cl-meta">
+                      {item.variant ? `${item.variant} · ` : ''}{item.id}
+                      {item.stock !== undefined ? ` · ${language === 'bn' ? 'স্টক' : 'stock'} ${item.stock}` : ''}
+                    </div>
                   </div>
-                  <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.15rem' }}>
-                    <span>ID: {item.id}</span>
-                    <span style={{ margin: '0 0.35rem' }}>·</span>
-                    <span className="font-bold">৳{item.price}</span>
-                    {item.stock !== undefined && (
-                      <>
-                        <span style={{ margin: '0 0.35rem' }}>·</span>
-                        <span className={item.stock <= 0 ? 'text-danger' : item.stock <= 10 ? 'text-warning' : 'text-success'}>
-                          Stock: {item.stock}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="item-actions">
-                  <div className="quantity-control">
-                    <button 
+
+                  <div className="qty-stepper">
+                    <button
                       type="button"
-                      className="btn-icon" 
                       onClick={() => updateCartItem(item.id, { quantity: Math.max(1, item.quantity - 1) })}
                       title="Decrease quantity"
                     >
                       <Minus size={13} />
                     </button>
-                    <span className="qty-number">{item.quantity}</span>
-                    <button 
+                    <span className="qty">{item.quantity}</span>
+                    <button
                       type="button"
-                      className="btn-icon" 
                       onClick={() => updateCartItem(item.id, { quantity: item.quantity + 1 })}
                       title="Increase quantity"
                     >
                       <Plus size={13} />
                     </button>
                   </div>
-                  <div className="item-discount">
-                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>Disc:</span>
-                    <input 
-                      type="number" 
+
+                  <span className="cl-rate">× ৳{Number(item.price).toLocaleString()}</span>
+
+                  <span className="cl-disc">
+                    <span>{language === 'bn' ? 'ছাড়' : 'Disc'}</span>
+                    <input
+                      type="number"
                       min="0"
-                      className="item-discount-input"
                       value={item.itemDiscount || ''}
                       onChange={(e) => updateCartItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })}
                       disabled={item.isGift}
                       placeholder="0"
                     />
-                  </div>
-                  <button 
-                    type="button"
-                    className={`btn-icon gift-toggle-btn ${item.isGift ? 'is-gift' : ''}`} 
-                    title={item.isGift ? 'Gift (Price ৳0)' : 'Mark as Gift'} 
-                    onClick={() => toggleGift(item)}
-                  >
-                    <Gift size={16} strokeWidth={item.isGift ? 2.5 : 1.5} />
-                  </button>
-                  <div className="item-price">
+                  </span>
+
+                  <span className="cl-tools">
+                    <button
+                      type="button"
+                      className={`btn-icon gift-toggle-btn ${item.isGift ? 'is-gift' : ''}`}
+                      title={item.isGift ? 'Gift (Price ৳0)' : 'Mark as Gift'}
+                      onClick={() => toggleGift(item)}
+                    >
+                      <Gift size={15} strokeWidth={item.isGift ? 2.5 : 1.7} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon delete-item-btn"
+                      title="Remove item"
+                      onClick={() => removeFromCart(item.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </span>
+
+                  <div className="cl-amount">
                     ৳{item.isGift ? 0 : ((item.price - (item.itemDiscount || 0)) * item.quantity).toLocaleString()}
                   </div>
-                  <button 
-                    type="button"
-                    className="btn-icon delete-item-btn" 
-                    title="Remove item" 
-                    onClick={() => removeFromCart(item.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+              ))
+            )}
+          </div>
+        </section>
 
-      <div className="pos-right glass">
-        <div className="pos-right-header">
-          <h3>{t(language, 'Checkout Details')}</h3>
-          <span className="text-muted" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-            {cart.reduce((n, i) => n + i.quantity, 0)} {language === 'bn' ? 'টি আইটেম' : 'items'}
-          </span>
-        </div>
-
-        <div className="checkout-scroll">
-          {/* Card 1: Customer Details */}
-          <div className="checkout-card">
-            <div className="card-header-row">
-              <label>
-                {t(language, 'Customer Details')} <span className="text-danger">*</span>
-              </label>
-              <button
-                type="button"
-                className={`walkin-btn ${customerInfo.name === 'Walk-in Customer' ? 'active' : ''}`}
-                onClick={handleWalkInCustomer}
-                title="Fill as Walk-in Customer"
-              >
-                <Sparkles size={12} />
-                {customerInfo.name === 'Walk-in Customer' 
-                  ? (language === 'bn' ? '✓ ওয়াক-ইন' : '✓ Walk-in')
-                  : (language === 'bn' ? '+ ওয়াক-ইন' : '+ Walk-in')}
-              </button>
-            </div>
-
-            <div className="input-with-icon" style={{ position: 'relative' }}>
-              <User size={15} />
-              <input
-                type="text"
-                placeholder={language === 'bn' ? 'কাস্টমারের নাম লিখুন বা খুঁজুন...' : 'Customer Name (or search existing)...'}
-                value={customerInfo.name}
-                onChange={e => {
-                  setCustomerInfo({ ...customerInfo, name: e.target.value });
-                  setShowCustomerDropdown(true);
-                }}
-                onFocus={() => setShowCustomerDropdown(true)}
-                autoComplete="off"
-              />
-              {showCustomerDropdown && customerSuggestions.length > 0 && (
-                <div className="customer-suggestions-dropdown">
-                  {customerSuggestions.map(c => (
-                    <div
-                      key={c.id}
-                      className="customer-suggestion-item"
-                      onClick={() => {
-                        setCustomerInfo({
-                          name: c.name,
-                          phone: c.phone || '',
-                          location: c.location || ''
-                        });
-                        setShowCustomerDropdown(false);
-                      }}
-                    >
-                      <div className="font-bold text-sm">{c.name}</div>
-                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                        {c.phone ? `📞 ${c.phone}` : ''} {c.due > 0 ? ` · Due: ৳${c.due}` : ''}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="customer-sub-grid">
-              <div className="input-with-icon">
-                <Phone size={14} />
-                <input
-                  type="text"
-                  placeholder={language === 'bn' ? 'মোবাইল নম্বর' : 'Phone'}
-                  value={customerInfo.phone}
-                  onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                />
-              </div>
-              <div className="input-with-icon">
-                <MapPin size={14} />
-                <input
-                  type="text"
-                  placeholder={language === 'bn' ? 'ঠিকানা' : 'Address'}
-                  value={customerInfo.location}
-                  onChange={e => setCustomerInfo({ ...customerInfo, location: e.target.value })}
-                />
-              </div>
-            </div>
+        {/* ---------------------------------------------------------------- */}
+        {/* Right: checkout                                                  */}
+        {/* ---------------------------------------------------------------- */}
+        <aside className="pos-right">
+          <div className="order-head">
+            <h3>{t(language, 'Checkout Details')}</h3>
+            <span className="count">
+              {cart.reduce((n, i) => n + i.quantity, 0)} {language === 'bn' ? 'টি আইটেম' : 'items'}
+            </span>
           </div>
 
-          {/* Card 2: Salesman & Payment Mode */}
-          <div className="checkout-card">
-            <div className="card-header-row">
-              <label>{t(language, 'Salesman')}</label>
-            </div>
-            <select 
-              className="w-full" 
-              style={{ padding: '0.5rem 0.75rem', fontSize: '0.88rem' }}
-              value={selectedSalesman} 
-              onChange={e => setSelectedSalesman(e.target.value)}
-            >
-              {user?.role === 'Admin' && <option value="Admin">Admin (Main Counter)</option>}
-              {staff.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
-            </select>
+          <div className="order-scroll">
+            {/* Who is buying */}
+            <div className="field-block">
+              <span className="lbl">
+                <span>{t(language, 'Customer Details')} *</span>
+                <button
+                  type="button"
+                  className={`walkin-btn ${customerInfo.name === 'Walk-in Customer' ? 'active' : ''}`}
+                  onClick={handleWalkInCustomer}
+                  title="Fill as Walk-in Customer"
+                >
+                  <Sparkles size={11} />
+                  {language === 'bn' ? 'ওয়াক-ইন' : 'Walk-in'}
+                </button>
+              </span>
 
-            <div className="payment-type-section" style={{ marginTop: '0.25rem' }}>
-              <label>{t(language, 'Payment Method')}</label>
-              <div className="payment-segmented-control">
-                <button 
+              <div className="input-with-icon">
+                <User size={14} />
+                <input
+                  type="text"
+                  placeholder={language === 'bn' ? 'কাস্টমারের নাম বা খুঁজুন…' : 'Customer name or search…'}
+                  value={customerInfo.name}
+                  onChange={e => {
+                    setCustomerInfo({ ...customerInfo, name: e.target.value });
+                    setShowCustomerDropdown(true);
+                  }}
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  autoComplete="off"
+                />
+                {showCustomerDropdown && customerSuggestions.length > 0 && (
+                  <div className="customer-suggestions-dropdown">
+                    {customerSuggestions.map(c => (
+                      <div
+                        key={c.id}
+                        className="customer-suggestion-item"
+                        onClick={() => {
+                          setCustomerInfo({
+                            name: c.name,
+                            phone: c.phone || '',
+                            location: c.location || ''
+                          });
+                          setShowCustomerDropdown(false);
+                        }}
+                      >
+                        <div className="font-bold text-sm">{c.name}</div>
+                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                          {c.phone || ''}{c.due > 0 ? ` · ${language === 'bn' ? 'বকেয়া' : 'Due'} ৳${c.due}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="field-row">
+                <div className="input-with-icon">
+                  <Phone size={13} />
+                  <input
+                    type="text"
+                    placeholder={language === 'bn' ? 'মোবাইল' : 'Phone'}
+                    value={customerInfo.phone}
+                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                  />
+                </div>
+                <div className="input-with-icon">
+                  <MapPin size={13} />
+                  <input
+                    type="text"
+                    placeholder={language === 'bn' ? 'ঠিকানা' : 'Address'}
+                    value={customerInfo.location}
+                    onChange={e => setCustomerInfo({ ...customerInfo, location: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Who is selling */}
+            <div className="field-block">
+              <span className="lbl">{t(language, 'Salesman')}</span>
+              <div className="input-with-icon">
+                <UserCheck size={13} />
+                <select value={selectedSalesman} onChange={e => setSelectedSalesman(e.target.value)}>
+                  {user?.role === 'Admin' && <option value="Admin">Admin (Main Counter)</option>}
+                  {staff.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* How they are paying */}
+            <div className="field-block">
+              <span className="lbl">{t(language, 'Payment Method')}</span>
+              <div className="pay-segmented">
+                <button
                   type="button"
                   className={paymentType === 'Cash' ? 'active' : ''}
                   onClick={() => setPaymentType('Cash')}
                 >
-                  <Banknote size={14} /> {t(language, 'Cash')}
+                  <Banknote size={13} /> {t(language, 'Cash')}
                 </button>
                 <button
                   type="button"
                   className={paymentType === 'Baki' ? 'active' : ''}
                   onClick={() => setPaymentType('Baki')}
                 >
-                  <FileText size={14} /> {t(language, 'Due (Baki)')}
+                  <FileText size={13} /> {t(language, 'Due (Baki)')}
                 </button>
                 <button
                   type="button"
                   className={paymentType === 'Partial' ? 'active' : ''}
                   onClick={() => setPaymentType('Partial')}
                 >
-                  <CreditCard size={14} /> {t(language, 'Partial')}
+                  <CreditCard size={13} /> {t(language, 'Partial')}
                 </button>
               </div>
             </div>
-          </div>
 
-          {/* Card 3: Order Summary & Money Calculation */}
-          <div className="checkout-summary-card">
-            <div className="summary-line">
-              <span className="text-muted">{t(language, 'Subtotal')}</span>
-              <span className="font-bold">৳{subtotal.toLocaleString()}</span>
-            </div>
+            {/* What it comes to */}
+            <div className="sum-box">
+              <div className="sum-line">
+                <span className="text-muted">{t(language, 'Subtotal')}</span>
+                <span className="val">৳{subtotal.toLocaleString()}</span>
+              </div>
 
-            <div className="summary-line">
-              <span className="text-muted">{t(language, 'Discount')}</span>
-              <div className="discount-input-box">
-                <span className="currency-prefix">৳</span>
-                <input 
-                  type="number" 
-                  className="summary-input"
-                  value={invoiceDiscount || ''}
-                  onChange={e => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
-                  min="0"
-                  placeholder="0"
-                />
+              <div className="sum-line">
+                <span className="text-muted">{t(language, 'Discount')}</span>
+                <span className="inline-amount">
+                  <span className="prefix">৳</span>
+                  <input
+                    type="number"
+                    value={invoiceDiscount || ''}
+                    onChange={e => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
+                    min="0"
+                    placeholder="0"
+                  />
+                </span>
+              </div>
+
+              <div className="sum-total">
+                <span className="label">{t(language, 'Total Payable')}</span>
+                <span className="amount">৳{total.toLocaleString()}</span>
               </div>
             </div>
 
-            <div className="summary-line total-highlight-row">
-              <span>{t(language, 'Total Payable')}</span>
-              <span className="total-amount-display">৳{total.toLocaleString()}</span>
-            </div>
-
-            {/* Cash Payment Mode Flow */}
+            {/* Cash */}
             {paymentType === 'Cash' && (
-              <div className="cash-payment-box">
-                <div className="summary-line">
-                  <span className="font-bold" style={{ fontSize: '0.88rem' }}>{t(language, 'Cash Received')}</span>
-                  <div className="cash-input-box">
-                    <span className="currency-prefix">৳</span>
+              <div className="field-block">
+                <div className="sum-line">
+                  <span className="text-muted">{t(language, 'Cash Received')}</span>
+                  <span className="inline-amount">
+                    <span className="prefix">৳</span>
                     <input
                       type="number"
-                      className="summary-input"
                       value={cashReceived}
                       onChange={e => setCashReceived(e.target.value)}
                       min="0"
                       placeholder={String(total)}
                     />
-                  </div>
+                  </span>
                 </div>
 
-                {/* Quick Cash Presets */}
                 {total > 0 && (
-                  <div className="cash-presets-row">
-                    <span className="text-muted text-xs" style={{ fontWeight: 600 }}>Notes:</span>
+                  <div className="cash-presets">
                     {getCashPresets(total).map((amt, idx) => (
                       <button
                         key={idx}
@@ -800,7 +763,7 @@ const POS = () => {
                         className={`preset-chip ${Number(cashReceived) === amt ? 'active' : ''}`}
                         onClick={() => setCashReceived(String(amt))}
                       >
-                        {amt === total ? `Exact ৳${amt}` : `৳${amt}`}
+                        {amt === total ? `${language === 'bn' ? 'পুরো' : 'Exact'} ৳${amt}` : `৳${amt}`}
                       </button>
                     ))}
                   </div>
@@ -808,230 +771,170 @@ const POS = () => {
 
                 {cashReceived !== '' && Number(cashReceived) > 0 && (
                   Number(cashReceived) < total ? (
-                    <div className="change-alert alert-danger">
-                      ⚠️ {language === 'bn'
-                        ? `৳${(total - Number(cashReceived)).toLocaleString()} বাকি — বাকির জন্য Partial বেছে নিন`
-                        : `৳${(total - Number(cashReceived)).toLocaleString()} short — choose Partial to record due`}
+                    <div className="pos-alert bad">
+                      <span>
+                        {language === 'bn'
+                          ? `৳${(total - Number(cashReceived)).toLocaleString()} কম — বাকির জন্য Partial বেছে নিন`
+                          : `৳${(total - Number(cashReceived)).toLocaleString()} short — choose Partial to record due`}
+                      </span>
                     </div>
                   ) : (
-                    <div className="change-alert alert-success">
-                      <span className="change-label font-bold">{t(language, 'Change to Return')}:</span>
-                      <span className="change-val">৳{(Number(cashReceived) - total).toLocaleString()}</span>
+                    <div className="pos-alert ok">
+                      <span>{t(language, 'Change to Return')}</span>
+                      <span>৳{(Number(cashReceived) - total).toLocaleString()}</span>
                     </div>
                   )
                 )}
               </div>
             )}
 
-            {/* Partial Payment Mode Flow */}
+            {/* Partial */}
             {paymentType === 'Partial' && (
-              <div className="partial-payment-box">
-                <div className="summary-line">
-                  <span className="font-bold" style={{ fontSize: '0.88rem' }}>{t(language, 'Paid Amount')}</span>
-                  <div className="cash-input-box">
-                    <span className="currency-prefix">৳</span>
+              <div className="field-block">
+                <div className="sum-line">
+                  <span className="text-muted">{t(language, 'Paid Amount')}</span>
+                  <span className="inline-amount">
+                    <span className="prefix">৳</span>
                     <input
                       type="number"
-                      className="summary-input"
                       value={paidAmount || ''}
                       onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)}
                       min="0"
                       max={total}
                       placeholder="0"
                     />
-                  </div>
-                </div>
-                <div className="summary-line due-highlight-row">
-                  <span>{t(language, 'Due Amount')}</span>
-                  <span className="text-danger font-bold" style={{ fontSize: '1.25rem' }}>
-                    ৳{Math.max(0, total - paidAmount).toLocaleString()}
                   </span>
                 </div>
-                {paidAmount > total && (
-                  <div className="change-alert alert-danger">
-                    {language === 'bn'
-                      ? `মোটের চেয়ে ৳${paidAmount - total} বেশি দেওয়া হয়েছে`
-                      : `Paid is ৳${paidAmount - total} more than the total`}
-                  </div>
-                )}
+                <div className={`pos-alert ${paidAmount > total ? 'bad' : 'info'}`}>
+                  {paidAmount > total ? (
+                    <span>
+                      {language === 'bn'
+                        ? `মোটের চেয়ে ৳${paidAmount - total} বেশি`
+                        : `৳${paidAmount - total} more than the total`}
+                    </span>
+                  ) : (
+                    <>
+                      <span>{t(language, 'Due Amount')}</span>
+                      <span>৳{Math.max(0, total - paidAmount).toLocaleString()}</span>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Baki Mode Flow */}
+            {/* Baki */}
             {paymentType === 'Baki' && (
-              <div className="baki-notice-box">
-                📝 {language === 'bn' 
-                  ? `সম্পূর্ণ ৳${total.toLocaleString()} কাস্টমারের বাকি হিসেবে যুক্ত হবে।` 
-                  : `Full amount (৳${total.toLocaleString()}) will be recorded as Customer Due.`}
+              <div className="pos-alert info">
+                <span>{language === 'bn' ? 'পুরোটাই কাস্টমারের বাকি' : 'Recorded as customer due'}</span>
+                <span>৳{total.toLocaleString()}</span>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Pinned Checkout Actions */}
-        <div className="checkout-actions">
-          <button 
-            type="button"
-            className="btn-primary checkout-btn" 
-            onClick={handleCheckout} 
-            disabled={!canCheckout}
-          >
-            <span>{editingSaleId ? t(language, 'Update Sale & Print') : t(language, 'Process Sale & Print')}</span>
-            {canCheckout && <span className="btn-total">৳{total.toLocaleString()}</span>}
-          </button>
-
-          {!canCheckout && (
-            <p className="checkout-hint">
-              {cart.length === 0
-                ? (language === 'bn' ? 'কার্টে পণ্য যোগ করুন' : 'Add an item to the cart first')
-                : (
-                  <span>
-                    {language === 'bn' ? 'কাস্টমারের নাম লিখুন বা ' : 'Enter customer name or tap '}
-                    <strong 
-                      style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} 
-                      onClick={handleWalkInCustomer}
-                    >
-                      {language === 'bn' ? 'ওয়াক-ইন কাস্টমার' : 'Walk-in Customer'}
-                    </strong>
-                  </span>
-                )}
-            </p>
-          )}
-
-          {!editingSaleId && (
+          {/* Pinned: the action bar never scrolls away */}
+          <div className="order-actions">
             <button
               type="button"
-              className="btn-outline checkout-btn flex-align-gap"
-              style={{ justifyContent: 'center', padding: '0.65rem 1rem', fontSize: '0.9rem' }}
-              onClick={handleSaveDraft}
-              disabled={cart.length === 0}
+              className="proceed-btn"
+              onClick={handleCheckout}
+              disabled={!canCheckout}
             >
-              <FilePlus size={16} /> {t(language, 'Save Draft')}
+              <span className="pb-label">
+                <Printer size={17} />
+                {editingSaleId ? t(language, 'Update Sale & Print') : t(language, 'Process Sale & Print')}
+              </span>
+              <span className="pb-amount">৳{total.toLocaleString()}</span>
             </button>
-          )}
 
-          {editingSaleId && (
-            <button 
-              type="button"
-              className="btn-outline text-danger checkout-btn" 
-              style={{ padding: '0.65rem 1rem', fontSize: '0.9rem' }}
-              onClick={() => {
-                setEditingSaleId(null);
-                clearCart();
-                setCustomerInfo({ name: '', phone: '', location: '' });
-                setInvoiceDiscount(0);
-                setPaidAmount(0);
-                setCashReceived('');
-              }}
-            >
-              {t(language, 'Cancel Edit')}
-            </button>
-          )}
-        </div>
-      </div>
+            {!canCheckout && (
+              <p className="checkout-hint">
+                {cart.length === 0
+                  ? (language === 'bn' ? 'আগে কার্টে পণ্য যোগ করুন' : 'Add an item to the cart first')
+                  : (
+                    <span>
+                      {language === 'bn' ? 'কাস্টমারের নাম লিখুন বা ' : 'Enter customer name or tap '}
+                      <strong
+                        style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={handleWalkInCustomer}
+                      >
+                        {language === 'bn' ? 'ওয়াক-ইন কাস্টমার' : 'Walk-in Customer'}
+                      </strong>
+                    </span>
+                  )}
+              </p>
+            )}
 
-      {/* Invoice Drawer */}
+            <div className="checkout-secondary">
+              {!editingSaleId && (
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={handleSaveDraft}
+                  disabled={cart.length === 0}
+                >
+                  <FilePlus size={15} /> {t(language, 'Save Draft')}
+                </button>
+              )}
+
+              {editingSaleId && (
+                <button
+                  type="button"
+                  className="btn-outline text-danger"
+                  onClick={() => {
+                    setEditingSaleId(null);
+                    clearCart();
+                    setCustomerInfo({ name: '', phone: '', location: '' });
+                    setInvoiceDiscount(0);
+                    setPaidAmount(0);
+                    setCashReceived('');
+                  }}
+                >
+                  {t(language, 'Cancel Edit')}
+                </button>
+              )}
+            </div>
+          </div>
+        </aside>
+
+      {/* The invoice, the moment the sale goes through */}
       {completedSale && createPortal(
         <div className="drawer-overlay">
-          <div className="drawer-container">
-            <div className="drawer-header" style={{ backgroundColor: '#f1f5f9' }}>
-              <h3 style={{ margin: 0 }}>Sale Receipt</h3>
+          <div className="drawer-container" style={{ maxWidth: '780px' }}>
+            <div className="drawer-header">
+              <h3>
+                {language === 'bn' ? 'চালান' : 'Invoice'} {completedSale.invoiceId}
+              </h3>
               <button className="drawer-close-btn" onClick={() => setCompletedSale(null)}>
-                <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
+                <X size={20} />
               </button>
             </div>
-            
-            <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
-              <div id="printable-invoice" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   Receipt: {completedSale.invoiceId}<br/>
-                   Date: {new Date(completedSale.date).toLocaleString()}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 {completedSale.customerInfo.name && (
-                   <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem', color: '#333' }}>
-                     <strong>Customer:</strong> {completedSale.customerInfo.name}<br/>
-                     {completedSale.customerInfo.phone && <><br/><strong>Phone:</strong> {completedSale.customerInfo.phone}</>}
-                     {completedSale.customerInfo.location && <><br/><strong>Location:</strong> {completedSale.customerInfo.location}</>}
-                   </div>
-                 )}
 
-                 <table style={{ width: '100%', fontSize: '0.85rem', marginBottom: '1.5rem', color: '#000', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #eee' }}>
-                        <th style={{textAlign: 'left', paddingBottom: '0.5rem'}}>Item</th>
-                        <th style={{textAlign: 'right', paddingBottom: '0.5rem'}}>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {completedSale.cartItems.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
-                          <td style={{ padding: '0.75rem 0' }}>
-                            {item.name} {item.isGift && '(Gift)'} <br/> 
-                            <small style={{ color: '#666' }}>{item.quantity} x ৳{item.price} {item.itemDiscount > 0 ? `(-৳${item.itemDiscount})` : ''}</small>
-                          </td>
-                          <td style={{textAlign: 'right', padding: '0.75rem 0'}}>
-                            ৳{item.isGift ? 0 : (item.price - (item.itemDiscount || 0)) * item.quantity}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                 </table>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#333', marginTop: '0.5rem' }}>
-                    <span>Subtotal:</span>
-                    <span>৳{completedSale.subtotal}</span>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#333' }}>
-                    <span>Discount:</span>
-                    <span>৳{completedSale.invoiceDiscount}</span>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.9rem', marginTop: '1rem', color: '#000' }}>
-                    <span>Total Payable:</span>
-                    <span>৳{completedSale.total}</span>
-                 </div>
-                 {completedSale.changeGiven > 0 && (
-                   <>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#333', marginTop: '0.35rem' }}>
-                        <span>Cash Received:</span>
-                        <span>৳{completedSale.cashReceived}</span>
-                     </div>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.9rem', color: '#000' }}>
-                        <span>Change Returned:</span>
-                        <span>৳{completedSale.changeGiven}</span>
-                     </div>
-                   </>
-                 )}
-                 {completedSale.dueAmount > 0 && (
-                   <>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#333', marginTop: '0.35rem' }}>
-                        <span>Paid:</span>
-                        <span>৳{completedSale.paidAmount}</span>
-                     </div>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.9rem', color: '#000' }}>
-                        <span>Due:</span>
-                        <span>৳{completedSale.dueAmount}</span>
-                     </div>
-                   </>
-                 )}
-                 <div style={{ textAlign: 'center', marginTop: '2.5rem', fontSize: '0.9rem', color: '#555' }}>
-                    <p style={{ marginBottom: '0.2rem' }}>Payment: {completedSale.paymentType}</p>
-                    <p style={{ marginBottom: '0.5rem' }}>Salesman: {completedSale.salesman?.name}</p>
-                    <p>Thank you for shopping with us!</p>
-                 </div>
+            <div className="drawer-body" style={{ padding: 0, background: '#fff' }}>
+              <InvoiceDocument
+                sale={fromCompletedSale(completedSale)}
+                shopProfile={shopProfile}
+                language={language}
+                domId="printable-invoice"
+              />
+            </div>
+
+            <div className="drawer-footer" style={{ justifyContent: 'space-between' }}>
+              <span className="text-muted" style={{ fontSize: '0.8125rem' }}>
+                {completedSale.dueAmount > 0
+                  ? `${language === 'bn' ? 'বকেয়া' : 'Due'}: ৳${Number(completedSale.dueAmount).toLocaleString()}`
+                  : (language === 'bn' ? 'সম্পূর্ণ পরিশোধিত' : 'Fully paid')}
+              </span>
+              <div className="flex-align-gap">
+                <button className="btn-outline" onClick={() => setCompletedSale(null)}>
+                  {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`)}
+                >
+                  <Printer size={16} /> {language === 'bn' ? 'চালান প্রিন্ট' : 'Print Invoice'}
+                </button>
               </div>
-            </div>
-
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-invoice', 'POS');
-              }}>
-                <Printer size={20} /> Print Receipt
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-invoice', `Receipt_${completedSale.invoiceId}.pdf`)}>
-                <Download size={20} /> Download PDF
-              </button>
             </div>
           </div>
         </div>,
@@ -1062,9 +965,6 @@ const POS = () => {
                  printElement('printable-all-sales-details', 'POS');
             }}>
               <Printer size={16} /> Print All Details
-            </button>
-            <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-all-sales-details', 'Sales_History.pdf')}>
-              <Download size={16} /> Download PDF
             </button>
           </div>
         </div>
@@ -1169,67 +1069,35 @@ const POS = () => {
       </div>
       )}
 
-      {/* History Print Drawer */}
+      {/* Reprint an invoice from the history tab */}
       {selectedInvoice && createPortal(
         <div className="drawer-overlay">
-          <div className="drawer-container">
-            <div className="drawer-header" style={{ backgroundColor: '#f1f5f9' }}>
-              <h3 style={{ margin: 0 }}>Sale Receipt</h3>
+          <div className="drawer-container" style={{ maxWidth: '780px' }}>
+            <div className="drawer-header">
+              <h3>{language === 'bn' ? 'চালান' : 'Invoice'} {selectedInvoice.id}</h3>
               <button className="drawer-close-btn" onClick={() => setSelectedInvoice(null)}>
-                <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
+                <X size={20} />
               </button>
             </div>
-            
-            <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
-              <div id="printable-single-invoice-pos" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   Sale Receipt: {selectedInvoice.id}<br/>
-                   Date: {new Date(selectedInvoice.date).toLocaleString()}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem', color: '#333' }}>
-                   {selectedInvoice.customerName && <><strong>Customer:</strong> {selectedInvoice.customerName}<br/></>}
-                   <strong>Payment:</strong> {selectedInvoice.paymentType}
-                 </div>
 
-                 <table style={{ width: '100%', fontSize: '0.85rem', marginBottom: '1.5rem', color: '#000', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #eee' }}>
-                        <th style={{textAlign: 'left', paddingBottom: '0.5rem'}}>Item</th>
-                        <th style={{textAlign: 'right', paddingBottom: '0.5rem'}}>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedInvoice.items.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
-                          <td style={{ padding: '0.75rem 0' }}>
-                            {item.name} <br/> 
-                            <small style={{ color: '#666' }}>{item.quantity} x ৳{item.price}</small>
-                          </td>
-                          <td style={{textAlign: 'right', padding: '0.75rem 0'}}>
-                            ৳{item.price * item.quantity}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                 </table>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.9rem', marginTop: '1rem', color: '#000' }}>
-                    <span>Total:</span>
-                    <span>৳{selectedInvoice.total}</span>
-                 </div>
-              </div>
+            <div className="drawer-body" style={{ padding: 0, background: '#fff' }}>
+              <InvoiceDocument
+                sale={fromApiInvoice(selectedInvoice, customers)}
+                shopProfile={shopProfile}
+                language={language}
+                domId="printable-single-invoice-pos"
+              />
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-single-invoice-pos', 'POS');
-              }}>
-                <Printer size={20} /> Print Receipt
+            <div className="drawer-footer">
+              <button className="btn-outline" onClick={() => setSelectedInvoice(null)}>
+                {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
               </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-invoice-pos', `Receipt_${selectedInvoice.id}.pdf`)}>
-                <Download size={20} /> Download PDF
+              <button
+                className="btn-primary"
+                onClick={() => printElement('printable-single-invoice-pos', `Invoice-${selectedInvoice.id}`)}
+              >
+                <Printer size={16} /> {language === 'bn' ? 'চালান প্রিন্ট' : 'Print Invoice'}
               </button>
             </div>
           </div>

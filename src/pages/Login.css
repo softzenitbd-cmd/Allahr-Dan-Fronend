@@ -1,56 +1,79 @@
+/* ==========================================================================
+   Sign in
+   --------------------------------------------------------------------------
+   The first thing anyone sees, so it sets the tone for the rest: a single
+   quiet card on a neutral ground. It was previously a black page with pale
+   blue fields, which matched nothing else in the app.
+   ========================================================================== */
+
 .login-container {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background-color: #000000;
-  background-image: none;
-  padding: 1rem;
+  padding: var(--sp-6) var(--sp-4);
+  background: var(--bg-main);
+  position: relative;
+  overflow: hidden;
+}
+
+/* A single soft wash of the shop's accent behind the card -- enough to feel
+   deliberate, not enough to compete with the form. */
+.login-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60rem 32rem at 50% -12%, var(--primary-soft), transparent 70%);
+  pointer-events: none;
 }
 
 .card.login-card {
+  position: relative;
   width: 100%;
-  max-width: 440px;
-  padding: 3.5rem 3rem;
-  background: rgba(15, 20, 20, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-  color: #ffffff;
-}
-
-.card.login-card:hover {
-  background: rgba(15, 20, 20, 0.98);
-  transform: translateY(-4px);
-  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.9);
-  border-color: rgba(255, 255, 255, 0.2);
+  max-width: 400px;
+  padding: var(--sp-8) var(--sp-8) var(--sp-6);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: var(--sp-6);
 }
 
+.login-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin: 0 auto var(--sp-4);
+  background: var(--n-0);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.login-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
 .login-header h2 {
-  font-size: 2rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, #0ea5e9 0%, #ffffff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   letter-spacing: -0.02em;
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
 }
 
 .login-header p {
-  color: #D0D0E0;
-  font-size: 1.05rem;
-  font-weight: 500;
-  opacity: 0.8;
+  color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--sp-4);
 }
 
 .input-group {
@@ -61,103 +84,41 @@
 
 .input-icon {
   position: absolute;
-  left: 1.25rem;
-  color: #888888;
+  left: 0.85rem;
+  color: var(--text-subtle);
   pointer-events: none;
-  transition: var(--transition);
+  transition: color var(--transition);
 }
 
-.input-group:focus-within .input-icon {
-  color: var(--primary);
-}
+.input-group:focus-within .input-icon { color: var(--primary); }
 
 .input-group input {
   width: 100%;
-  padding-left: 3.25rem;
-  height: 3.5rem;
-  font-size: 1.05rem;
-  border-radius: var(--radius-full);
-  background-color: #f0f9ff !important;
-  border: 1px solid #38bdf8 !important;
-  color: #0c4a6e !important;
-  box-shadow: none !important;
-}
-
-.input-group input::placeholder {
-  color: #0369a1;
-  opacity: 0.7;
-}
-
-.input-group input:focus {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.3) !important;
-}
-
-.role-selector {
-  display: flex;
-  gap: 1.5rem;
-  justify-content: center;
-  margin: 0.5rem 0 1rem;
-}
-
-.role-selector label {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  cursor: pointer;
-  color: #aaaaaa;
-  font-weight: 600;
-  transition: var(--transition);
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-full);
-  border: 1px solid transparent;
-  background: transparent;
-}
-
-.role-selector label:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.role-selector input[type="radio"] {
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border: 2px solid #555555;
-  border-radius: 50%;
-  outline: none;
-  position: relative;
-  transition: var(--transition);
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.role-selector input[type="radio"]:checked {
-  border-color: var(--primary);
-}
-
-.role-selector input[type="radio"]:checked::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  right: 3px;
-  bottom: 3px;
-  background-color: var(--primary);
-  border-radius: 50%;
-  box-shadow: 0 0 10px var(--primary);
-}
-
-.role-selector input[type="radio"]:checked + span {
-  color: var(--primary);
+  height: 44px;
+  padding-left: 2.6rem;
+  font-size: 0.9375rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
 }
 
 .login-form .btn-primary {
   width: 100%;
-  padding: 1rem;
-  font-size: 1.1rem;
-  margin-top: 0.5rem;
+  height: 44px;
+  font-size: 0.9375rem;
+  margin-top: var(--sp-1);
+}
+
+.login-footer {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+@media (max-width: 480px) {
+  .card.login-card { padding: var(--sp-6) var(--sp-5); }
 }

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Printer, Eye, Download, Plus, Phone, Edit, Trash2 } from 'lucide-react';
+import { Search, Printer, Eye, Plus, Phone, Edit, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 const Suppliers = () => {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, purchases, settlements } = useStore();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, purchases, settlements, language } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPerson, setSelectedPerson] = useState(null);
 
@@ -77,7 +78,7 @@ const Suppliers = () => {
     if (res?.ok) {
       setNewSupplier({ name: '', company: '', phone: '', email: '', location: '', due: '', notes: '' });
       setShowAddModal(false);
-      toast.success(language === 'bn' ? 'সাপ্লায়ার সফলভাবে যুক্ত হয়েছে!' : 'Supplier added successfully!');
+      showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার সফলভাবে যুক্ত হয়েছে!' : 'Supplier added successfully!');
     }
   };
 
@@ -91,15 +92,22 @@ const Suppliers = () => {
     const res = await updateSupplier(editingPerson.id, { ...editingPerson, name: editingPerson.name.trim(), due });
     if (res?.ok) {
       setEditingPerson(null);
-      toast.success(language === 'bn' ? 'সাপ্লায়ার তথ্য আপডেট হয়েছে!' : 'Updated successfully!');
+      showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার তথ্য আপডেট হয়েছে!' : 'Updated successfully!');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm(language === 'bn' ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার ডিলিট করতে চান?' : 'Are you sure you want to delete this record? This action cannot be undone.')) {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'সাপ্লায়ার ডিলিট করবেন?' : 'Delete Supplier?',
+      text: language === 'bn' ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার ডিলিট করতে চান? এই রেকর্ডটি স্থায়ীভাবে মুছে যাবে।' : 'Are you sure you want to delete this record? This action cannot be undone.',
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, ডিলিট করুন' : 'Yes, delete',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (isConfirmed) {
       const res = await deleteSupplier(id);
       if (res?.ok) {
-        toast.success(language === 'bn' ? 'সাপ্লায়ার ডিলিট করা হয়েছে!' : 'Deleted successfully!');
+        showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার ডিলিট করা হয়েছে!' : 'Deleted successfully!');
       }
     }
   };
@@ -130,9 +138,6 @@ const Suppliers = () => {
             </button>
             <button className="btn-outline flex-align-gap" onClick={() => window.print()}>
               <Printer size={16} /> Print List
-            </button>
-            <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-suppliers-list', 'Suppliers_List.pdf')}>
-              <Download size={16} /> Download PDF
             </button>
           </div>
         </div>
@@ -350,7 +355,7 @@ const Suppliers = () => {
       {selectedPerson && createPortal(
         <div className="drawer-overlay">
           <div className="drawer-container">
-            <div className="drawer-header" style={{ backgroundColor: '#f1f5f9' }}>
+            <div className="drawer-header">
               <h3 style={{ margin: 0 }}>Supplier Statement</h3>
               <button className="drawer-close-btn" onClick={() => setSelectedPerson(null)}>
                 <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
@@ -371,18 +376,18 @@ const Suppliers = () => {
                    <p><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
                    <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
                    
-                   <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid #e2e8f0', marginTop: '1rem' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-subtle)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid var(--border-color)', marginTop: '1rem' }}>
                      <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.25rem' }}>Total Purchase (মাল কেনা)</p>
-                       <p style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a' }}>৳{totalPurchased.toLocaleString()}</p>
+                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Purchase (মাল কেনা)</p>
+                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>৳{totalPurchased.toLocaleString()}</p>
                      </div>
                      <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.25rem' }}>Total Paid (জমা)</p>
-                       <p style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#10b981' }}>৳{totalPaid.toLocaleString()}</p>
+                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Paid (জমা)</p>
+                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)' }}>৳{totalPaid.toLocaleString()}</p>
                      </div>
                      <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.25rem' }}>Current Due (বাকি)</p>
-                       <p style={{ fontSize: '1.1rem', fontWeight: 'bold', color: selectedPerson.due > 0 ? '#ef4444' : '#10b981' }}>৳{selectedPerson.due.toLocaleString()}</p>
+                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Current Due (বাকি)</p>
+                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: selectedPerson.due > 0 ? 'var(--danger)' : 'var(--success)' }}>৳{selectedPerson.due.toLocaleString()}</p>
                      </div>
                    </div>
                    
@@ -391,7 +396,7 @@ const Suppliers = () => {
                        <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.75rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>Transaction History (লেনদেন)</h4>
                        <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
                          <thead>
-                           <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                           <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-color)' }}>
                              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
                              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Details</th>
                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount</th>
@@ -399,7 +404,7 @@ const Suppliers = () => {
                          </thead>
                          <tbody>
                            {selectedPersonTransactions.map(t => (
-                             <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                             <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                <td style={{ padding: '0.5rem' }}>{new Date(t.date).toLocaleDateString()}</td>
                                <td style={{ padding: '0.5rem' }}>{t.description}</td>
                                <td style={{ padding: '0.5rem', textAlign: 'right', color: t.isCredit ? 'red' : 'green' }}>
@@ -420,9 +425,6 @@ const Suppliers = () => {
                  printElement('printable-single-person', 'Suppliers');
               }}>
                 <Printer size={20} /> Print Document
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-person', `Supplier_${selectedPerson.name}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Minus, Search, Trash2, Database, List, Printer, FilePlus, Eye, Download, FileText, Edit } from 'lucide-react';
+import { Plus, Minus, Search, Trash2, Database, List, Printer, FilePlus, Eye, FileText, Edit } from 'lucide-react';
 import useStore from '../store/useStore';
-import { downloadAsPDF, printElement } from '../utils/pdfGenerator';
+import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Purchase.css';
@@ -375,9 +375,6 @@ const Purchase = () => {
             }}>
               <Printer size={16} /> Print All Details
             </button>
-            <button className="btn-outline flex-align-gap text-info" onClick={() => downloadAsPDF('printable-all-purchases-details', 'Purchase_History.pdf')}>
-              <Download size={16} /> Download PDF
-            </button>
           </div>
         </div>
         <div className="table-responsive mt-4">
@@ -560,9 +557,6 @@ const Purchase = () => {
                  printElement('printable-single-invoice-pur', 'Purchase');
               }}>
                 <Printer size={20} /> Print Receipt
-              </button>
-              <button className="btn-outline flex-align-gap text-info" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => downloadAsPDF('printable-single-invoice-pur', `Purchase_${selectedInvoice.id}.pdf`)}>
-                <Download size={20} /> Download PDF
               </button>
             </div>
           </div>

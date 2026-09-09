@@ -4,6 +4,7 @@ import { Check, Edit, Plus, Trash2, X } from 'lucide-react';
 import useStore from '../store/useStore';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 /**
  * Managing the two reference tables behind the product form.
@@ -81,7 +82,14 @@ const ReferenceDataDrawer = ({ onClose }) => {
       );
       return;
     }
-    if (!window.confirm(`Delete "${row.name}"?`)) return;
+    const isConfirmed = await showConfirmDialog({
+      title: `"${row.name}" মুছবেন?`,
+      text: 'আপনি কি নিশ্চিত এটি মুছে ফেলতে চান?',
+      confirmButtonText: 'হ্যাঁ, মুছুন',
+      cancelButtonText: 'বাতিল',
+      isDanger: true,
+    });
+    if (!isConfirmed) return;
     await run(
       () => (isCategories ? deleteCategory(row.id) : deleteUnit(row.id)),
       `"${row.name}" deleted.`

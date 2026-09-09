@@ -3,6 +3,7 @@ import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, Ref
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import './Dashboard.css';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -144,254 +145,156 @@ const Dashboard = () => {
     });
   }
 
-  const activeChartData = chartTimeframe === 'Weekly' 
+  const activeChartData = chartTimeframe === 'Weekly'
     ? (dashboardSummary?.chartData && dashboardSummary.chartData.length > 0 ? dashboardSummary.chartData : computedWeeklyChartData)
     : computedMonthlyChartData;
 
   return (
-    <div className="dashboard-page animate-fade-in" style={{ padding: '0.5rem' }}>
-      
-      {/* Header Section */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '2.5rem' }}>
+    <div className="dashboard-page animate-fade-in">
+
+      {/* Header */}
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '2.4rem', fontWeight: '800', letterSpacing: '-1px', color: 'var(--text-main)', marginBottom: '0.5rem' }}>{language === 'bn' ? 'ওভারভিউ' : 'Overview'}</h1>
-          <p className="text-muted" style={{ fontSize: '1.1rem' }}>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্টে স্বাগতম। আজকের কাজের সারাংশ এখানে।' : "Welcome back to Allah Dan Gents Point. Here is what's happening today."}</p>
+          <h1>{language === 'bn' ? 'ওভারভিউ' : 'Overview'}</h1>
+          <p className="text-muted">
+            {language === 'bn'
+              ? 'আল্লাহর দান জেন্টস পয়েন্টে স্বাগতম। আজকের কাজের সারাংশ এখানে।'
+              : "Welcome back to Allah Dan Gents Point. Here is what's happening today."}
+          </p>
         </div>
 
-        <div className="card" style={{
-          padding: '1rem 1.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1.25rem',
-          minWidth: 'fit-content',
-          borderRadius: '20px'
-        }}>
-          <div style={{
-            background: 'var(--primary)',
-            padding: '12px',
-            borderRadius: '16px',
-            color: 'white',
-            boxShadow: '0 8px 16px rgba(139, 92, 246, 0.25)'
-          }}>
-            <Clock size={28} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{
-              fontSize: '1.6rem',
-              fontWeight: '700',
-              color: 'var(--text-main)',
-              lineHeight: '1.1',
-              fontVariantNumeric: 'tabular-nums'
-            }}>
+        <div className="dash-clock">
+          <div className="icon"><Clock size={19} /></div>
+          <div>
+            <div className="time">
               {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
-              <span style={{ fontSize: '1rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                {currentTime.toLocaleTimeString('en-US', { hour12: true, second: '2-digit' }).split(' ')[0].slice(-2)} {currentTime.toLocaleTimeString('en-US', { hour12: true }).split(' ')[1]}
-              </span>
-            </span>
-            <span className="text-muted" style={{ fontSize: '0.9rem', fontWeight: '500', marginTop: '2px' }}>
+            </div>
+            <div className="date">
               {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* --- PREMIUM bKash Style Services Grid --- */}
-      <div className="card" style={{ 
-        marginBottom: '2.5rem', 
-        padding: '2rem', 
-        borderRadius: '24px', 
-        border: 'none', 
-        background: 'var(--bg-card)',
-        boxShadow: 'var(--shadow-md)'
-      }}>
-        <h2 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main)' }}>{language === 'bn' ? 'কুইক সার্ভিস' : 'Quick Services'}</h2>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', 
-          gap: '1.5rem',
-          justifyItems: 'center'
-        }}>
+      {/* Quick services */}
+      <div className="card mb-6">
+        <div className="dash-section-title">{language === 'bn' ? 'কুইক সার্ভিস' : 'Quick Services'}</div>
+        <div className="quick-services">
           {allServices.map((service, index) => (
-            <div
-              key={index}
-              onClick={() => navigate(service.path)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                cursor: 'pointer',
-                width: '100%',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-5px)';
-                e.currentTarget.children[0].style.boxShadow = '0 12px 20px rgba(233, 30, 99, 0.25)';
-                e.currentTarget.children[0].style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.children[0].style.boxShadow = '0 4px 12px rgba(233, 30, 99, 0.15)';
-                e.currentTarget.children[0].style.transform = 'scale(1)';
-              }}
-            >
-              <div style={{
-                width: '68px',
-                height: '68px',
-                borderRadius: '22px', // Squircle shape
-                backgroundColor: '#fdf2f8', // Soft pink background
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '12px',
-                color: '#e91e63',
-                boxShadow: '0 4px 12px rgba(233, 30, 99, 0.15)',
-                transition: 'all 0.3s ease',
-                border: '1px solid rgba(233, 30, 99, 0.1)'
-              }}>
-                <service.icon size={30} strokeWidth={1.5} />
-              </div>
-              <span style={{ 
-                fontSize: '0.85rem', 
-                fontWeight: '600', 
-                textAlign: 'center',
-                color: 'var(--text-main)',
-                letterSpacing: '0.2px'
-              }}>
-                {service.name}
-              </span>
-            </div>
+            <button key={index} type="button" className="quick-service" onClick={() => navigate(service.path)}>
+              <span className="tile"><service.icon size={20} strokeWidth={1.9} /></span>
+              <span>{service.name}</span>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* --- PREMIUM ACTIVE BORDER LAYOUT --- */}
-      <h2 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-main)' }}>{language === 'bn' ? 'সারসংক্ষেপ' : 'Business Summary'}</h2>
-      <div className="grid responsive-grid" style={{ marginBottom: '2.5rem', gap: '1.25rem' }}>
+      {/* Summary */}
+      <div className="dash-section-title">{language === 'bn' ? 'সারসংক্ষেপ' : 'Business Summary'}</div>
+      <div className="stat-grid mb-6">
         {stats.map((stat, idx) => (
-          <div key={idx} className="card" style={{ 
-            flexDirection: 'column', 
-            alignItems: 'flex-start',
-            borderRadius: '20px',
-            transition: 'all 0.3s ease',
-            padding: '1.5rem',
-            position: 'relative',
-            overflow: 'hidden'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 20px 40px -10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.02)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 10px 30px -10px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.02)';
-          }}
-          >
-            {/* Subtle color glow in the corner */}
-            <div style={{
-              position: 'absolute',
-              top: '-20px',
-              right: '-20px',
-              width: '100px',
-              height: '100px',
-              background: `radial-gradient(circle, ${stat.color}25 0%, transparent 70%)`,
-              borderRadius: '50%',
-              pointerEvents: 'none'
-            }} />
-            
-            <div className="flex-align-gap w-full" style={{ justifyContent: 'space-between', width: '100%', position: 'relative', zIndex: 1 }}>
-               <h3 style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{stat.label}</h3>
-               <div style={{ padding: '8px', borderRadius: '12px', background: `${stat.color}15`, color: stat.color }}>
-                 <stat.icon size={20} strokeWidth={2} />
-               </div>
+          <div key={idx} className="stat-card">
+            <div className="head">
+              <span className="label">{stat.label}</span>
+              <span className="icon" style={{ background: `${stat.color}1a`, color: stat.color }}>
+                <stat.icon size={16} strokeWidth={2} />
+              </span>
             </div>
-            <p style={{ 
-              fontSize: '2rem', 
-              fontWeight: '800', 
-              marginTop: '1rem', 
-              color: 'var(--text-main)',
-              letterSpacing: '-1px',
-              position: 'relative',
-              zIndex: 1
-            }}>
-              {stat.value}
-            </p>
+            <div className="value">{stat.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid responsive-grid-2" style={{ marginBottom: '2rem', gap: '1.5rem' }}>
-        <div className="card" style={{ gridColumn: '1 / -1' }}>
-          <div className="flex-align-gap" style={{ justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-            <div>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: '600' }}>{language === 'bn' ? 'বিক্রয় অ্যানালিটিক্স' : 'Sales Analytics'}</h3>
-              <p className="text-muted text-sm mt-1">{chartTimeframe === 'Weekly' ? (language === 'bn' ? 'গত ৭ দিনের আয় এবং লাভ' : 'Revenue and Profit over the last 7 days') : (language === 'bn' ? 'গত ৪ সপ্তাহের আয় এবং লাভ' : 'Revenue and Profit over the last 4 weeks')}</p>
-            </div>
-            <div className="segmented-control">
-              <button className={chartTimeframe === 'Weekly' ? 'active' : ''} onClick={() => setChartTimeframe('Weekly')}>Weekly</button>
-              <button className={chartTimeframe === 'Monthly' ? 'active' : ''} onClick={() => setChartTimeframe('Monthly')}>Monthly</button>
-            </div>
+      {/* Sales analytics */}
+      <div className="card mb-6">
+        <div className="dash-panel-head">
+          <div>
+            <h3>{language === 'bn' ? 'বিক্রয় অ্যানালিটিক্স' : 'Sales Analytics'}</h3>
+            <p className="dash-panel-sub" style={{ marginBottom: 0 }}>
+              {chartTimeframe === 'Weekly'
+                ? (language === 'bn' ? 'গত ৭ দিনের আয় এবং লাভ' : 'Revenue and profit over the last 7 days')
+                : (language === 'bn' ? 'গত ৪ সপ্তাহের আয় এবং লাভ' : 'Revenue and profit over the last 4 weeks')}
+            </p>
           </div>
-          <div style={{ width: '100%', height: 350 }}>
-            <ResponsiveContainer>
-              <AreaChart data={activeChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--success)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="var(--success)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', backdropFilter: 'blur(20px)', boxShadow: 'var(--shadow-lg)' }}
-                  itemStyle={{ color: 'var(--text-main)', fontWeight: 'bold' }}
-                />
-                <Area type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
-                <Area type="monotone" dataKey="profit" stroke="var(--success)" strokeWidth={3} fillOpacity={1} fill="url(#colorProfit)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="segmented-control">
+            <button className={chartTimeframe === 'Weekly' ? 'active' : ''} onClick={() => setChartTimeframe('Weekly')}>
+              {language === 'bn' ? 'সাপ্তাহিক' : 'Weekly'}
+            </button>
+            <button className={chartTimeframe === 'Monthly' ? 'active' : ''} onClick={() => setChartTimeframe('Monthly')}>
+              {language === 'bn' ? 'মাসিক' : 'Monthly'}
+            </button>
           </div>
+        </div>
+
+        <div style={{ width: '100%', height: 300, marginTop: '1rem' }}>
+          <ResponsiveContainer>
+            <AreaChart data={activeChartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--success)" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="var(--success)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} dy={8} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} width={62} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'var(--bg-card)',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-color)',
+                  boxShadow: 'var(--shadow-lg)',
+                  fontSize: '0.8125rem',
+                }}
+                labelStyle={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}
+                itemStyle={{ color: 'var(--text-main)', fontWeight: 600 }}
+              />
+              <Area type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorSales)" />
+              <Area type="monotone" dataKey="profit" stroke="var(--success)" strokeWidth={2} fillOpacity={1} fill="url(#colorProfit)" />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="grid responsive-grid-2" style={{ gap: '1.5rem' }}>
+      <div className="responsive-grid-2">
 
-        {/* Customer Dues (Accounts Receivable) */}
+        {/* Customer dues (receivable) */}
         <div className="card">
-          <div className="flex-align-gap" style={{ justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: 'var(--warning)' }}>Accounts Receivable</h3>
-            <span className="badge warning">Customer Due</span>
+          <div className="dash-panel-head">
+            <h3>{language === 'bn' ? 'প্রাপ্য হিসাব' : 'Accounts Receivable'}</h3>
+            <span className="badge bg-warning">{language === 'bn' ? 'কাস্টমার বকেয়া' : 'Customer Due'}</span>
           </div>
-          <p className="text-muted text-sm mb-3">Total money owed to you by customers.</p>
-          <div className="table-responsive" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '0.9rem' }}>
+          <p className="dash-panel-sub">
+            {language === 'bn' ? 'কাস্টমারদের কাছে আপনার মোট পাওনা।' : 'Total money owed to you by customers.'}
+          </p>
+          <div className="table-responsive dash-scroll">
+            <table className="data-table">
               <thead>
                 <tr>
-                  <th>Customer Name</th>
-                  <th>Phone</th>
-                  <th style={{ textAlign: 'right' }}>Due Amount</th>
+                  <th>{language === 'bn' ? 'কাস্টমার' : 'Customer'}</th>
+                  <th>{language === 'bn' ? 'ফোন' : 'Phone'}</th>
+                  <th className="num">{language === 'bn' ? 'বকেয়া' : 'Due'}</th>
                 </tr>
               </thead>
               <tbody>
                 {customers.filter(c => c.due > 0).length > 0 ? (
                   customers.filter(c => c.due > 0).map(customer => (
                     <tr key={customer.id}>
-                      <td style={{ fontWeight: '500' }}>{customer.name}</td>
-                      <td>{customer.phone}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--warning)' }}>
+                      <td style={{ fontWeight: 500 }}>{customer.name}</td>
+                      <td className="text-muted">{customer.phone}</td>
+                      <td className="num" style={{ fontWeight: 700, color: 'var(--warning)' }}>
                         ৳{customer.due.toLocaleString()}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="3" style={{ textAlign: 'center', padding: '1.5rem' }} className="text-muted">
-                      No customer dues at the moment.
+                    <td colSpan="3" className="text-center text-muted" style={{ padding: '1.75rem' }}>
+                      {language === 'bn' ? 'এই মুহূর্তে কোনো কাস্টমার বকেয়া নেই।' : 'No customer dues at the moment.'}
                     </td>
                   </tr>
                 )}
@@ -400,37 +303,39 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Supplier Dues (Accounts Payable) */}
+        {/* Supplier dues (payable) */}
         <div className="card">
-          <div className="flex-align-gap" style={{ justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: 'var(--danger)' }}>Accounts Payable</h3>
-            <span className="badge danger">Supplier Due</span>
+          <div className="dash-panel-head">
+            <h3>{language === 'bn' ? 'প্রদেয় হিসাব' : 'Accounts Payable'}</h3>
+            <span className="badge bg-danger">{language === 'bn' ? 'সাপ্লায়ার বকেয়া' : 'Supplier Due'}</span>
           </div>
-          <p className="text-muted text-sm mb-3">Total money you owe to suppliers.</p>
-          <div className="table-responsive" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '0.9rem' }}>
+          <p className="dash-panel-sub">
+            {language === 'bn' ? 'সাপ্লায়ারদের কাছে আপনার মোট দেনা।' : 'Total money you owe to suppliers.'}
+          </p>
+          <div className="table-responsive dash-scroll">
+            <table className="data-table">
               <thead>
                 <tr>
-                  <th>Supplier Name</th>
-                  <th>Phone</th>
-                  <th style={{ textAlign: 'right' }}>Due Amount</th>
+                  <th>{language === 'bn' ? 'সাপ্লায়ার' : 'Supplier'}</th>
+                  <th>{language === 'bn' ? 'ফোন' : 'Phone'}</th>
+                  <th className="num">{language === 'bn' ? 'বকেয়া' : 'Due'}</th>
                 </tr>
               </thead>
               <tbody>
                 {suppliers.filter(s => s.due > 0).length > 0 ? (
                   suppliers.filter(s => s.due > 0).map(supplier => (
                     <tr key={supplier.id}>
-                      <td style={{ fontWeight: '500' }}>{supplier.name}</td>
-                      <td>{supplier.phone}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--danger)' }}>
+                      <td style={{ fontWeight: 500 }}>{supplier.name}</td>
+                      <td className="text-muted">{supplier.phone}</td>
+                      <td className="num" style={{ fontWeight: 700, color: 'var(--danger)' }}>
                         ৳{supplier.due.toLocaleString()}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="3" style={{ textAlign: 'center', padding: '1.5rem' }} className="text-muted">
-                      No supplier dues at the moment.
+                    <td colSpan="3" className="text-center text-muted" style={{ padding: '1.75rem' }}>
+                      {language === 'bn' ? 'এই মুহূর্তে কোনো সাপ্লায়ার বকেয়া নেই।' : 'No supplier dues at the moment.'}
                     </td>
                   </tr>
                 )}
@@ -445,3 +350,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+

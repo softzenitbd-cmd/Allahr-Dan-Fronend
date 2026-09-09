@@ -58,6 +58,8 @@ export const SaleService = {
   list: (params) => apiClient.get(ENDPOINTS.INVOICES, { params }),
   create: (payload) => apiClient.post(ENDPOINTS.INVOICES, payload),
   remove: (id) => apiClient.delete(ENDPOINTS.INVOICE(id)),
+  // Money collected later against one invoice sold on Baki or Partial.
+  payDue: (id, payload) => apiClient.post(ENDPOINTS.INVOICE_PAY_DUE(id), payload),
 };
 
 export const DraftService = {
@@ -138,6 +140,8 @@ export const SMSService = {
 export const ReportService = {
   summary: () => apiClient.get(ENDPOINTS.REPORTS_SUMMARY),
   details: (params) => apiClient.get(ENDPOINTS.REPORTS_DETAILS, { params }),
+  // Trading result, cash movement and the shop's position, in one call.
+  balanceSheet: (params) => apiClient.get(ENDPOINTS.REPORTS_BALANCE_SHEET, { params }),
 };
 
 export const CoreService = {

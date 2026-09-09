@@ -32,19 +32,11 @@ const Login = () => {
     <div className="login-container">
       <div className="login-card card animate-fade-in">
         <div className="login-header">
-          <div style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            overflow: 'hidden',
-            margin: '0 auto 1rem',
-            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
-            background: 'white'
-          }}>
-            <img src={logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <div className="login-logo">
+            <img src={logo} alt="" />
           </div>
-          <h2>Allah Dan Gents Point</h2>
-          <p>{t(language, 'Login to your account' || 'Login to your account')}</p>
+          <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
+          <p>{language === 'bn' ? 'আপনার অ্যাকাউন্টে সাইন ইন করুন' : 'Sign in to your account'}</p>
         </div>
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
@@ -71,6 +63,12 @@ const Login = () => {
             {busy ? t(language, 'Signing in...') : t(language, 'Sign In')}
           </button>
         </form>
+
+        <div className="login-footer">
+          {language === 'bn'
+            ? 'সমস্যা হলে দোকানের এডমিনের সাথে যোগাযোগ করুন।'
+            : 'Trouble signing in? Ask the shop admin for your details.'}
+        </div>
       </div>
     </div>
   );

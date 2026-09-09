@@ -22,10 +22,10 @@
   grid-template-columns: 2fr 1fr 1fr auto;
   gap: 1rem;
   align-items: end;
-  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.05), rgba(var(--secondary-rgb), 0.05));
+  background: var(--bg-subtle);
   padding: 1rem;
   border-radius: var(--radius-md);
-  border: 1px dashed var(--primary);
+  border: 1px solid var(--border-color);
   margin-bottom: 1.5rem;
 }
 
