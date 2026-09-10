@@ -47,6 +47,8 @@ export const ENDPOINTS = {
   SETTLEMENT: (code) => `/ledger/settlements/${encodeURIComponent(code)}/`,
   SETTLE_DUE: '/ledger/settle-due/',
   STATEMENT: (type, id) => `/ledger/statement/${type}/${encodeURIComponent(id)}/`,
+  PARTY_LEDGER: (type, id) => `/ledger/party/${type}/${encodeURIComponent(id)}/`,
+  PAY_ALL: '/ledger/pay-all/',
 
   // Expenses
   EXPENSES: '/expenses/',
@@ -86,6 +88,7 @@ export const ENDPOINTS = {
   REPORTS_SUMMARY: '/reports/summary/',
   REPORTS_DETAILS: '/reports/details/',
   REPORTS_BALANCE_SHEET: '/reports/balance-sheet/',
+  REPORTS_DAY_BOOK: '/reports/day-book/',
 
   // Core
   SHOP_PROFILE: '/core/shop-profile/',

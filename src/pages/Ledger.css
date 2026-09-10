@@ -1,0 +1,367 @@
+/* ==========================================================================
+   Ledger
+   --------------------------------------------------------------------------
+   A directory on the left, one party's whole account on the right. The list
+   is for finding a name; everything that follows is about that name alone.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Who and when: kind, the party dropdown, the date window
+   -------------------------------------------------------------------------- */
+
+.ledger-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.party-picker { position: relative; flex: 1 1 340px; min-width: 260px; }
+
+.pp-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 48px;
+  padding: 0 0.75rem;
+  text-align: left;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.pp-trigger:hover { border-color: var(--border-strong); }
+.pp-trigger.open { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+.pp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pp-name { font-size: 0.9375rem; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-sub { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-placeholder { flex: 1; display: inline-flex; align-items: center; gap: 0.5rem; color: var(--text-subtle); font-size: 0.9375rem; }
+.pp-chev { color: var(--text-subtle); flex: 0 0 auto; }
+
+.pp-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.pp-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-subtle);
+}
+
+.pp-search input { flex: 1; border: none; background: transparent; min-height: 0; height: 30px; padding: 0; box-shadow: none; }
+.pp-search input:focus { box-shadow: none; }
+
+.pp-list { max-height: 340px; overflow-y: auto; }
+
+.ll-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
+}
+
+.ll-row:last-child { border-bottom: none; }
+.ll-row:hover { background: var(--bg-hover); }
+.ll-row.active { background: var(--primary-soft); border-left-color: var(--primary); }
+
+.ledger-range {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border-color);
+}
+
+.ledger-dates { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+.ledger-dates input { height: 34px; min-height: 0; font-size: 0.8125rem; }
+
+.cb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cb-chip:hover { border-color: var(--text-subtle); color: var(--text-main); }
+.cb-chip.active { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+
+.ll-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8125rem;
+}
+
+.ll-row.active .ll-avatar { background: var(--primary); color: var(--on-primary); }
+
+.ll-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+.ll-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ll-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ll-due {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ll-due.zero { color: var(--text-subtle); font-weight: 500; }
+.ll-due.owed { color: var(--danger); }
+
+.ll-empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
+/* --------------------------------------------------------------------------
+   Detail
+   -------------------------------------------------------------------------- */
+
+.ledger-detail { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+
+.ld-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.ld-identity { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1 1 320px; }
+
+.ld-avatar {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+}
+
+.ld-identity h2 { margin: 0 0 0.15rem; font-size: 1.25rem; }
+
+.ld-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.ld-meta span { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+.ld-due-box {
+  text-align: right;
+  min-width: 170px;
+  flex: 0 0 auto;
+}
+
+.ld-due-box .lbl {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+}
+
+.ld-due-box .amt {
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-due-box .amt.owed { color: var(--danger); }
+.ld-due-box .amt.clear { color: var(--success); }
+
+.ld-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
+
+.ld-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2);
+}
+
+.ld-tile {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  padding: 0.65rem 0.8rem;
+  min-width: 0;
+}
+
+.ld-tile .t-label {
+  font-size: 0.6563rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ld-tile .t-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+}
+
+.ld-tile .t-value.good { color: var(--success); }
+.ld-tile .t-value.bad { color: var(--danger); }
+.ld-tile .t-value.info { color: var(--info); }
+
+.ld-tabs { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--border-color); }
+
+.ld-tab {
+  padding: 0.55rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ld-tab:hover { color: var(--text-main); }
+.ld-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.ld-tab .n {
+  font-size: 0.6875rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+}
+
+.ld-tab.active .n { background: var(--primary-soft); color: var(--primary); }
+
+.ld-empty-detail {
+  padding: var(--sp-10) var(--sp-4);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.ld-empty-detail svg { color: var(--text-subtle); margin-bottom: var(--sp-3); }
+
+.balance-cell { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+@media (max-width: 1000px) {
+  .ledger-layout { grid-template-columns: 1fr; }
+  .ledger-list { position: static; max-height: 360px; }
+}
+
+/* The payment form is portalled outside the page, so its rules live here. */
+.ledger-pay-form label { display: block; margin-bottom: 0.3rem; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+.ledger-pay-form small { display: block; margin-top: 0.3rem; font-size: 0.72rem; color: var(--text-subtle); line-height: 1.4; }
+.ledger-pay-form input, .ledger-pay-form select { width: 100%; }
+
+/* --------------------------------------------------------------------------
+   Sections, pager, notes
+   -------------------------------------------------------------------------- */
+
+.ld-section-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.ld-tiles.period .ld-tile { background: var(--primary-soft); border-color: transparent; }
+
+.ld-window-note {
+  margin-left: auto;
+  align-self: center;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  padding: 0 0.5rem;
+}
+
+.ld-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--border-color);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.ld-pager-btns { display: inline-flex; align-items: center; gap: 0.25rem; }
+.ld-pager-num { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-main); padding: 0 0.5rem; }
+
+.ld-payall-note {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .ledger-dates { margin-left: 0; width: 100%; }
+}

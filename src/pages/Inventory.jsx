@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon, 
-  Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, 
-  Loader2 
+import {
+  Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
+  Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Loader2, FileDown,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
@@ -24,10 +24,14 @@ const getProductImageUrl = (img) => {
 };
 
 const Inventory = () => {
-  const { 
-    inventory, categories, units, addInventoryItem, updateInventoryItem, 
-    deleteInventoryItem, language, shopProfile, refresh 
+  const {
+    inventory, categories, units, addInventoryItem, updateInventoryItem,
+    deleteInventoryItem, language, shopProfile, refresh, user,
   } = useStore();
+  // The buying price is the shop's margin. The server already withholds it
+  // from anyone but an Admin; the screen simply does not draw the column or
+  // the field for anyone else.
+  const isAdmin = user?.role === 'Admin';
 
   // Server-side pagination & filter states
   const [paginatedProducts, setPaginatedProducts] = useState([]);
@@ -40,6 +44,7 @@ const Inventory = () => {
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedSubCategory, setSelectedSubCategory] = useState('');
   const [stockStatus, setStockStatus] = useState('All');
   const [ordering, setOrdering] = useState('newest');
 
@@ -52,11 +57,39 @@ const Inventory = () => {
   const [editProductImage, setEditProductImage] = useState(null);
   const [editProductImagePreview, setEditProductImagePreview] = useState(null);
 
+  // The category tree as the server keeps it: top-level ones, and under each
+  // the sub-categories that point at it. Names not yet registered as a
+  // Category row (typed straight onto a product) are treated as top-level.
+  const categoryRows = (categories || []).filter((c) => c && typeof c === 'object');
+  const topCategories = categoryRows.filter((c) => !c.parent).map((c) => c.name);
+  const subCategoriesOf = (parentName) =>
+    categoryRows.filter((c) => c.parent_name === parentName).map((c) => c.name);
+  const looseNames = Array.from(new Set(
+    (inventory || []).map((i) => i.category).filter(Boolean)
+  )).filter((name) => !categoryRows.some((c) => c.name === name));
+
   const availableCategories = Array.from(new Set([
-    'Panjabi', 'Shirt', 'Pant', 'T-Shirt', 'Polo', 'Pajama', 'Blazer', 'Accessories', 'Fabric',
-    ...(categories || []).map(c => typeof c === 'string' ? c : c.name).filter(Boolean),
-    ...(inventory || []).map(i => i.category).filter(Boolean)
-  ].map(c => (c || '').trim()).filter(Boolean)));
+    ...topCategories,
+    ...categoryRows.filter((c) => c.parent).map((c) => c.name),
+    ...looseNames,
+  ].map((c) => (c || '').trim()).filter(Boolean)));
+
+  /** The category <select> for the product form: sub-categories under their parent. */
+  const renderCategoryOptions = () => (
+    <>
+      {[...topCategories, ...looseNames].map((top) => {
+        const subs = subCategoriesOf(top);
+        return subs.length === 0
+          ? <option key={top} value={top}>{top}</option>
+          : (
+            <optgroup key={top} label={top}>
+              <option value={top}>{top} ({language === 'bn' ? 'সাধারণ' : 'general'})</option>
+              {subs.map((sub) => <option key={sub} value={sub}>{top} › {sub}</option>)}
+            </optgroup>
+          );
+      })}
+    </>
+  );
 
   const availableUnits = Array.from(new Set([
     'Pcs', 'Set', 'Box', 'Packet', 'Meter', 'Yard',
@@ -65,7 +98,7 @@ const Inventory = () => {
   ]));
 
   const [newProduct, setNewProduct] = useState({
-    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0
+    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0, cost_price: ''
   });
 
   const calculateEan13CheckDigit = (twelveDigits) => {
@@ -102,7 +135,10 @@ const Inventory = () => {
         page_size: pageSize,
       };
       if (searchTerm && searchTerm.trim()) params.search = searchTerm.trim();
-      if (selectedCategory && selectedCategory !== 'All') params.category = selectedCategory;
+      // A sub-category narrows to itself; a top-level one brings its subs along
+      // (the server includes children when given a parent's name).
+      const categoryParam = selectedSubCategory || selectedCategory;
+      if (categoryParam && categoryParam !== 'All') params.category = categoryParam;
       if (stockStatus && stockStatus !== 'All') params.stock_status = stockStatus;
       if (ordering) params.ordering = ordering;
 
@@ -122,7 +158,7 @@ const Inventory = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, pageSize, searchTerm, selectedCategory, stockStatus, ordering]);
+  }, [currentPage, pageSize, searchTerm, selectedCategory, selectedSubCategory, stockStatus, ordering]);
 
   const isFirstRender = useRef(true);
 
@@ -138,7 +174,7 @@ const Inventory = () => {
       fetchPaginatedProducts(1);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchTerm, selectedCategory, stockStatus, ordering, pageSize]);
+  }, [searchTerm, selectedCategory, selectedSubCategory, stockStatus, ordering, pageSize]);
 
   const handlePageChange = (newPage) => {
     if (newPage < 1 || newPage > totalPages || newPage === currentPage) return;
@@ -169,7 +205,8 @@ const Inventory = () => {
       stock: 0,
       mrp: 0,
       discount_price: 0,
-      price: 0
+      price: 0,
+      cost_price: ''
     });
     setNewProductImage(null);
     setNewProductImagePreview(null);
@@ -226,6 +263,7 @@ const Inventory = () => {
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
+      if (isAdmin) formData.append('cost_price', parseFloat(editingItem.cost_price) || 0);
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
@@ -235,6 +273,7 @@ const Inventory = () => {
         discount_price: discVal || saleVal,
         price: saleVal,
         stock: parseInt(editingItem.stock) || 0,
+        ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
       };
       res = await updateInventoryItem(editingItem.id, payload);
     }
@@ -292,6 +331,7 @@ const Inventory = () => {
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
+      if (isAdmin) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
       formData.append('image', newProductImage);
       res = await addInventoryItem(formData);
     } else {
@@ -303,13 +343,14 @@ const Inventory = () => {
         discount_price: discVal || saleVal,
         price: saleVal,
         stock: parseInt(newProduct.stock) || 0,
+        ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
       };
       res = await addInventoryItem(payload);
     }
 
     if (res?.ok) {
       setShowAddModal(false);
-      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0 });
+      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0, cost_price: '' });
       setNewProductImage(null);
       setNewProductImagePreview(null);
       showSuccessAlert(language === 'bn' ? 'নতুন পণ্য সফলভাবে যুক্ত হয়েছে!' : 'Product added successfully!');
@@ -332,6 +373,26 @@ const Inventory = () => {
     printElement('printable-inventory-list', 'Inventory');
   };
 
+  // What the shelves are worth at what the shop paid for them. Built from the
+  // full catalogue in the store rather than the current page, so a filter on
+  // screen never shrinks the total on paper.
+  const valuationRows = (inventory || []).map((p) => {
+    const qty = Number(p.stock) || 0;
+    const cost = Number(p.cost_price) || 0;
+    const retail = Number(p.discount_price) > 0 ? Number(p.discount_price) : (Number(p.price) || 0);
+    return { ...p, qty, cost, retail, costValue: qty * cost, retailValue: qty * retail };
+  });
+  const valuation = valuationRows.reduce((acc, r) => ({
+    units: acc.units + r.qty,
+    costValue: acc.costValue + r.costValue,
+    retailValue: acc.retailValue + r.retailValue,
+    missingCost: acc.missingCost + (r.qty > 0 && r.cost <= 0 ? 1 : 0),
+  }), { units: 0, costValue: 0, retailValue: 0, missingCost: 0 });
+
+  const handleDownloadValuation = () => {
+    printElement('printable-valuation', `Inventory-Valuation-${new Date().toISOString().slice(0, 10)}`);
+  };
+
   return (
     <div className="inventory-page animate-fade-in">
       <div className="page-header">
@@ -343,26 +404,84 @@ const Inventory = () => {
           <button className="btn-outline flex-align-gap" onClick={handlePrintInventoryList}>
             <Printer size={18} /> {t(language, 'Print List' || 'Print')}
           </button>
+          {isAdmin && (
+            <button
+              className="btn-outline flex-align-gap"
+              onClick={handleDownloadValuation}
+              title={language === 'bn' ? 'সব পণ্যের ক্রয়মূল্যসহ মোট স্টক ভ্যালুয়েশন (PDF)' : 'Every product at cost price, with the total stock valuation (PDF)'}
+            >
+              <FileDown size={18} /> {language === 'bn' ? 'ভ্যালুয়েশন PDF' : 'Valuation PDF'}
+            </button>
+          )}
           <button className="btn-primary flex-align-gap" style={{ width: 'fit-content', whiteSpace: 'nowrap' }} onClick={handleOpenAddModal}>
             <Plus size={18} /> {t(language, 'Add New Item')}
           </button>
         </div>
       </div>
 
+      {/* Category browse: top-level categories, then the sub-categories of
+          the one chosen. Products under the chosen branch fill the table. */}
+      <div className="category-browse">
+        <div className="cb-row">
+          <span className="cb-label">{language === 'bn' ? 'ক্যাটাগরি' : 'Category'}</span>
+          <button
+            type="button"
+            className={`cb-chip ${selectedCategory === 'All' ? 'active' : ''}`}
+            onClick={() => { setSelectedCategory('All'); setSelectedSubCategory(''); }}
+          >
+            {language === 'bn' ? 'সব' : 'All'}
+          </button>
+          {[...topCategories, ...looseNames].map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              className={`cb-chip ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => { setSelectedCategory(cat); setSelectedSubCategory(''); }}
+            >
+              {cat}
+              {subCategoriesOf(cat).length > 0 && <span className="cb-count">{subCategoriesOf(cat).length}</span>}
+            </button>
+          ))}
+        </div>
+
+        {selectedCategory !== 'All' && subCategoriesOf(selectedCategory).length > 0 && (
+          <div className="cb-row sub">
+            <span className="cb-label">{language === 'bn' ? 'সাব-ক্যাটাগরি' : 'Sub-category'}</span>
+            <button
+              type="button"
+              className={`cb-chip ${!selectedSubCategory ? 'active' : ''}`}
+              onClick={() => setSelectedSubCategory('')}
+            >
+              {language === 'bn' ? `সব ${selectedCategory}` : `All ${selectedCategory}`}
+            </button>
+            {subCategoriesOf(selectedCategory).map((sub) => (
+              <button
+                key={sub}
+                type="button"
+                className={`cb-chip ${selectedSubCategory === sub ? 'active' : ''}`}
+                onClick={() => setSelectedSubCategory(sub)}
+              >
+                {sub}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="card">
         <div className="card-toolbar">
           <div className="search-bar">
             <Search size={18} className="text-muted" />
-            <input 
-              type="text" 
-              placeholder={language === 'bn' ? 'নাম বা বারকোড দিয়ে খুঁজুন...' : 'Search by name or barcode...'} 
+            <input
+              type="text"
+              placeholder={language === 'bn' ? 'নাম বা বারকোড দিয়ে খুঁজুন...' : 'Search by name or barcode...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             {searchTerm && (
-              <button 
-                type="button" 
-                onClick={() => setSearchTerm('')} 
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', color: 'var(--text-muted)' }}
               >
                 <X size={15} />
@@ -370,43 +489,10 @@ const Inventory = () => {
             )}
           </div>
           <div className="toolbar-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {/* Category Filter */}
-            <select 
-              className="w-full" 
-              style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '140px' }}
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              title={language === 'bn' ? 'ক্যাটাগরি ফিল্টার' : 'Filter by Category'}
-            >
-              <option value="All">{t(language, 'All Categories')}</option>
-              {availableCategories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-
-            {selectedCategory !== 'All' && (
-              <button 
-                type="button"
-                className="btn-outline flex-align-gap" 
-                style={{ 
-                  padding: '0.35rem 0.65rem', 
-                  borderRadius: '8px', 
-                  fontSize: '0.85rem', 
-                  color: 'var(--primary)', 
-                  borderColor: 'var(--primary)',
-                  backgroundColor: 'rgba(59, 130, 246, 0.08)' 
-                }}
-                onClick={() => setSelectedCategory('All')}
-                title={language === 'bn' ? 'ক্যাটাগরি ফিল্টার রিসেট করুন' : 'Clear Category Filter'}
-              >
-                <span>{selectedCategory}</span>
-                <X size={14} />
-              </button>
-            )}
-
+            {/* Category filter lives in the browse strip below the toolbar */}
             {/* Stock Status Filter */}
-            <select 
-              className="w-full" 
+            <select
+              className="w-full"
               style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '130px' }}
               value={stockStatus}
               onChange={(e) => setStockStatus(e.target.value)}
@@ -419,8 +505,8 @@ const Inventory = () => {
             </select>
 
             {/* Sort / Ordering Filter */}
-            <select 
-              className="w-full" 
+            <select
+              className="w-full"
               style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', width: 'auto', minWidth: '135px' }}
               value={ordering}
               onChange={(e) => setOrdering(e.target.value)}
@@ -461,6 +547,7 @@ const Inventory = () => {
                 <th>{t(language, 'Unit')}</th>
                 <th>{t(language, 'Stock')}</th>
                 <th>{t(language, 'Price')} (BDT)</th>
+                {isAdmin && <th>{language === 'bn' ? 'ক্রয় মূল্য' : 'Cost'} (BDT)</th>}
                 <th>{t(language, 'Actions')}</th>
               </tr>
             </thead>
@@ -485,10 +572,10 @@ const Inventory = () => {
                   <tr key={item.id}>
                     <td style={{ textAlign: 'center' }}>
                       {item.image ? (
-                        <img 
-                          src={getProductImageUrl(item.image)} 
-                          alt={item.name} 
-                          className="product-table-thumb" 
+                        <img
+                          src={getProductImageUrl(item.image)}
+                          alt={item.name}
+                          className="product-table-thumb"
                           onError={(e) => { e.currentTarget.style.display = 'none'; }}
                         />
                       ) : (
@@ -529,10 +616,17 @@ const Inventory = () => {
                         </span>
                       )}
                     </td>
+                    {isAdmin && (
+                      <td>
+                        <span style={{ fontVariantNumeric: 'tabular-nums', color: Number(item.cost_price) > 0 ? 'var(--text-main)' : 'var(--text-subtle)' }}>
+                          {Number(item.cost_price) > 0 ? `৳${Number(item.cost_price).toLocaleString()}` : '—'}
+                        </span>
+                      </td>
+                    )}
                     <td>
                       <div className="table-actions">
-                        <button 
-                          className="btn-icon text-secondary" 
+                        <button
+                          className="btn-icon text-secondary"
                           title="Print Barcode"
                           onClick={() => handlePrintBarcode(item)}
                         >
@@ -570,7 +664,7 @@ const Inventory = () => {
           <div className="pagination-controls">
             <label className="flex-align-gap" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               <span>{language === 'bn' ? 'প্রতি পেজে:' : 'Per page:'}</span>
-              <select 
+              <select
                 className="pagination-size-select"
                 value={pageSize}
                 onChange={(e) => {
@@ -587,7 +681,7 @@ const Inventory = () => {
             </label>
 
             <div className="pagination-pages">
-              <button 
+              <button
                 type="button"
                 className="pagination-btn"
                 onClick={() => handlePageChange(1)}
@@ -596,7 +690,7 @@ const Inventory = () => {
               >
                 <ChevronsLeft size={16} />
               </button>
-              <button 
+              <button
                 type="button"
                 className="pagination-btn"
                 onClick={() => handlePageChange(currentPage - 1)}
@@ -610,7 +704,7 @@ const Inventory = () => {
                 p === '...' ? (
                   <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
                 ) : (
-                  <button 
+                  <button
                     key={`page-${p}`}
                     type="button"
                     className={`pagination-btn ${p === currentPage ? 'active' : ''}`}
@@ -622,7 +716,7 @@ const Inventory = () => {
                 )
               ))}
 
-              <button 
+              <button
                 type="button"
                 className="pagination-btn"
                 onClick={() => handlePageChange(currentPage + 1)}
@@ -631,7 +725,7 @@ const Inventory = () => {
               >
                 <ChevronRight size={16} />
               </button>
-              <button 
+              <button
                 type="button"
                 className="pagination-btn"
                 onClick={() => handlePageChange(totalPages)}
@@ -646,6 +740,82 @@ const Inventory = () => {
       </div>
 
       {/* Hidden Printable Inventory List (Excel Style) */}
+      {isAdmin && (
+        <div style={{ display: 'none' }}>
+          <div id="printable-valuation" style={{ padding: '1.25rem', background: '#fff', color: '#111827', fontSize: '12px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopProfile?.shop_name || 'Allah Dan Gents Point'}</div>
+              {shopProfile?.address && <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile.address}</div>}
+              <div style={{ marginTop: '6px', fontWeight: 700, letterSpacing: '0.1em', fontSize: '13px' }}>INVENTORY VALUATION SUMMARY</div>
+              <div style={{ fontSize: '11px', color: '#4b5563' }}>
+                As on {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · Confidential — cost prices
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', margin: '10px 0 12px' }}>
+              {[
+                ['Products', valuationRows.length.toLocaleString()],
+                ['Units in stock', valuation.units.toLocaleString()],
+                ['Stock value at cost', `৳ ${valuation.costValue.toLocaleString()}`],
+                ['Stock value at retail', `৳ ${valuation.retailValue.toLocaleString()}`],
+                ['Potential profit', `৳ ${(valuation.retailValue - valuation.costValue).toLocaleString()}`],
+              ].map(([label, value]) => (
+                <div key={label} style={{ flex: 1, border: '1px solid #d1d5db', borderRadius: '4px', padding: '6px 8px' }}>
+                  <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#6b7280', fontWeight: 700 }}>{label}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, marginTop: '2px' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+              <thead>
+                <tr style={{ background: '#f3f4f6' }}>
+                  {['#', 'Code', 'Product', 'Category', 'Qty', 'Cost', 'Cost Value', 'Retail', 'Retail Value'].map((h, i) => (
+                    <th key={h} style={{ border: '1px solid #d1d5db', padding: '5px 6px', textAlign: i >= 4 ? 'right' : 'left', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {valuationRows.map((r, i) => (
+                  <tr key={r.id}>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', color: '#6b7280' }}>{i + 1}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px' }}>{r.id}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', fontWeight: 600 }}>{r.name}{r.variant ? ` — ${r.variant}` : ''}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px' }}>{r.parent_category ? `${r.parent_category} › ` : ''}{r.category}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', textAlign: 'right' }}>{r.qty} {r.unit}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', textAlign: 'right', color: r.cost > 0 ? '#111827' : '#b91c1c' }}>{r.cost > 0 ? r.cost.toLocaleString() : 'not set'}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>{r.costValue.toLocaleString()}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', textAlign: 'right' }}>{r.retail.toLocaleString()}</td>
+                    <td style={{ border: '1px solid #d1d5db', padding: '4px 6px', textAlign: 'right' }}>{r.retailValue.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#f3f4f6', fontWeight: 800 }}>
+                  <td colSpan={4} style={{ border: '1px solid #d1d5db', padding: '6px' }}>TOTAL</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '6px', textAlign: 'right' }}>{valuation.units.toLocaleString()}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '6px' }} />
+                  <td style={{ border: '1px solid #d1d5db', padding: '6px', textAlign: 'right' }}>৳ {valuation.costValue.toLocaleString()}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '6px' }} />
+                  <td style={{ border: '1px solid #d1d5db', padding: '6px', textAlign: 'right' }}>৳ {valuation.retailValue.toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            </table>
+
+            {valuation.missingCost > 0 && (
+              <div style={{ marginTop: '8px', fontSize: '10px', color: '#92400e' }}>
+                Note: {valuation.missingCost} product{valuation.missingCost === 1 ? '' : 's'} in stock have no cost price set, so they count as ৳0 above and the total is understated.
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '32px', fontSize: '11px' }}>
+              <div style={{ borderTop: '1px solid #111827', paddingTop: '3px', width: '160px', textAlign: 'center' }}>Prepared by</div>
+              <div style={{ borderTop: '1px solid #111827', paddingTop: '3px', width: '160px', textAlign: 'center' }}>Proprietor</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div id="printable-inventory-list" style={{ display: 'none' }}>
         <div style={{ padding: '1.5rem', background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
@@ -653,7 +823,7 @@ const Inventory = () => {
           <p style={{ textAlign: 'center', fontSize: '0.9rem', marginBottom: '1.5rem', color: '#666' }}>
             {selectedCategory !== 'All' ? `Category: ${selectedCategory}` : 'All Categories'}
           </p>
-          
+
           <table style={{ width: '100%', fontSize: '0.85rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
@@ -723,9 +893,9 @@ const Inventory = () => {
                     {newProductImagePreview ? (
                       <div className="product-image-preview-wrapper">
                         <img src={newProductImagePreview} alt="Preview" className="product-image-preview-img" />
-                        <button 
-                          type="button" 
-                          className="remove-preview-btn" 
+                        <button
+                          type="button"
+                          className="remove-preview-btn"
                           onClick={() => { setNewProductImage(null); setNewProductImagePreview(null); }}
                           title="Remove image"
                         >
@@ -734,10 +904,10 @@ const Inventory = () => {
                       </div>
                     ) : (
                       <label className="product-image-dropzone">
-                        <input 
-                          type="file" 
-                          accept="image/png, image/jpeg, image/webp" 
-                          onChange={e => handleImageSelect(e.target.files?.[0], false)} 
+                        <input
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          onChange={e => handleImageSelect(e.target.files?.[0], false)}
                           style={{ display: 'none' }}
                         />
                         <div className="dropzone-content">
@@ -754,60 +924,58 @@ const Inventory = () => {
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
                       <label className="text-muted text-sm">{t(language, 'ID/Barcode' || 'Product ID / Barcode')} *</label>
-                      <button 
-                        type="button" 
-                        className="text-xs text-info" 
+                      <button
+                        type="button"
+                        className="text-xs text-info"
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
                         onClick={() => setNewProduct({ ...newProduct, id: getNextProductId() })}
                       >
                         {language === 'bn' ? 'আইডি অটো-জেনারেট করুন' : 'Auto Generate ID'}
                       </button>
                     </div>
-                    <input 
-                      type="text" 
-                      className="w-full" 
+                    <input
+                      type="text"
+                      className="w-full"
                       required
                       placeholder="e.g. 8941170000013"
-                      value={newProduct.id} 
-                      onChange={(e) => setNewProduct({...newProduct, id: e.target.value})} 
+                      value={newProduct.id}
+                      onChange={(e) => setNewProduct({...newProduct, id: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
-                    <input 
-                      type="text" 
-                      className="w-full" 
+                    <input
+                      type="text"
+                      className="w-full"
                       required
                       placeholder="e.g. Silk Punjabi"
-                      value={newProduct.name} 
-                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})} 
+                      value={newProduct.name}
+                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Category')} *</label>
-                    <select 
+                    <select
                       className="w-full"
                       value={newProduct.category}
                       onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
                     >
-                      {availableCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                      {renderCategoryOptions()}
                     </select>
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full" 
+                    <input
+                      type="text"
+                      className="w-full"
                       placeholder="e.g. XL, Red, 42"
-                      value={newProduct.variant} 
-                      onChange={(e) => setNewProduct({...newProduct, variant: e.target.value})} 
+                      value={newProduct.variant}
+                      onChange={(e) => setNewProduct({...newProduct, variant: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
-                    <select 
+                    <select
                       className="w-full"
                       value={newProduct.unit}
                       onChange={(e) => setNewProduct({...newProduct, unit: e.target.value})}
@@ -819,42 +987,58 @@ const Inventory = () => {
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       required
                       min="0"
-                      value={newProduct.stock} 
-                      onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})} 
+                      value={newProduct.stock}
+                      onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})}
                     />
                   </div>
+                  {isAdmin && (
+                    <div>
+                      <label className="text-muted text-sm block mb-1">
+                        {language === 'bn' ? 'ক্রয় মূল্য (শুধু এডমিন)' : 'Original / Cost Price (admin only)'} (BDT)
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full"
+                        min="0"
+                        step="any"
+                        placeholder="e.g. 900"
+                        value={newProduct.cost_price ?? ''}
+                        onChange={(e) => setNewProduct({...newProduct, cost_price: e.target.value})}
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       min="0"
                       step="any"
                       placeholder="e.g. 1500"
-                      value={newProduct.mrp} 
-                      onChange={(e) => setNewProduct({...newProduct, mrp: e.target.value})} 
+                      value={newProduct.mrp}
+                      onChange={(e) => setNewProduct({...newProduct, mrp: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'বিক্রয় মূল্য (Discount/Sale Price)' : 'Discount/Sale Price'} (BDT) *
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       required
                       min="0"
                       step="any"
                       placeholder="e.g. 1400"
-                      value={newProduct.discount_price} 
-                      onChange={(e) => setNewProduct({...newProduct, discount_price: e.target.value, price: e.target.value})} 
+                      value={newProduct.discount_price}
+                      onChange={(e) => setNewProduct({...newProduct, discount_price: e.target.value, price: e.target.value})}
                     />
                   </div>
                 </div>
@@ -892,9 +1076,9 @@ const Inventory = () => {
                     {editProductImagePreview ? (
                       <div className="product-image-preview-wrapper">
                         <img src={editProductImagePreview} alt="Preview" className="product-image-preview-img" />
-                        <button 
-                          type="button" 
-                          className="remove-preview-btn" 
+                        <button
+                          type="button"
+                          className="remove-preview-btn"
                           onClick={() => { setEditProductImage(null); setEditProductImagePreview(null); }}
                           title="Remove image"
                         >
@@ -904,10 +1088,10 @@ const Inventory = () => {
                           <label className="change-preview-label">
                             <Upload size={13} />
                             <span>{language === 'bn' ? 'ছবি পরিবর্তন' : 'Change'}</span>
-                            <input 
-                              type="file" 
-                              accept="image/png, image/jpeg, image/webp" 
-                              onChange={e => handleImageSelect(e.target.files?.[0], true)} 
+                            <input
+                              type="file"
+                              accept="image/png, image/jpeg, image/webp"
+                              onChange={e => handleImageSelect(e.target.files?.[0], true)}
                               style={{ display: 'none' }}
                             />
                           </label>
@@ -915,10 +1099,10 @@ const Inventory = () => {
                       </div>
                     ) : (
                       <label className="product-image-dropzone">
-                        <input 
-                          type="file" 
-                          accept="image/png, image/jpeg, image/webp" 
-                          onChange={e => handleImageSelect(e.target.files?.[0], true)} 
+                        <input
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          onChange={e => handleImageSelect(e.target.files?.[0], true)}
                           style={{ display: 'none' }}
                         />
                         <div className="dropzone-content">
@@ -938,38 +1122,36 @@ const Inventory = () => {
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
-                    <input 
-                      type="text" 
-                      className="w-full" 
+                    <input
+                      type="text"
+                      className="w-full"
                       required
-                      value={editingItem.name} 
-                      onChange={(e) => setEditingItem({...editingItem, name: e.target.value})} 
+                      value={editingItem.name}
+                      onChange={(e) => setEditingItem({...editingItem, name: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Category')} *</label>
-                    <select 
+                    <select
                       className="w-full"
                       value={editingItem.category}
                       onChange={(e) => setEditingItem({...editingItem, category: e.target.value})}
                     >
-                      {availableCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                      {renderCategoryOptions()}
                     </select>
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full" 
-                      value={editingItem.variant || ''} 
-                      onChange={(e) => setEditingItem({...editingItem, variant: e.target.value})} 
+                    <input
+                      type="text"
+                      className="w-full"
+                      value={editingItem.variant || ''}
+                      onChange={(e) => setEditingItem({...editingItem, variant: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
-                    <select 
+                    <select
                       className="w-full"
                       value={editingItem.unit}
                       onChange={(e) => setEditingItem({...editingItem, unit: e.target.value})}
@@ -981,42 +1163,58 @@ const Inventory = () => {
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       required
                       min="0"
-                      value={editingItem.stock} 
-                      onChange={(e) => setEditingItem({...editingItem, stock: e.target.value})} 
+                      value={editingItem.stock}
+                      onChange={(e) => setEditingItem({...editingItem, stock: e.target.value})}
                     />
                   </div>
+                  {isAdmin && (
+                    <div>
+                      <label className="text-muted text-sm block mb-1">
+                        {language === 'bn' ? 'ক্রয় মূল্য (শুধু এডমিন)' : 'Original / Cost Price (admin only)'} (BDT)
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full"
+                        min="0"
+                        step="any"
+                        placeholder="e.g. 900"
+                        value={editingItem.cost_price ?? ''}
+                        onChange={(e) => setEditingItem({...editingItem, cost_price: e.target.value})}
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       min="0"
                       step="any"
                       placeholder="e.g. 1500"
-                      value={editingItem.mrp || ''} 
-                      onChange={(e) => setEditingItem({...editingItem, mrp: e.target.value})} 
+                      value={editingItem.mrp || ''}
+                      onChange={(e) => setEditingItem({...editingItem, mrp: e.target.value})}
                     />
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'বিক্রয় মূল্য (Discount/Sale Price)' : 'Discount/Sale Price'} (BDT) *
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
+                    <input
+                      type="number"
+                      className="w-full"
                       required
                       min="0"
                       step="any"
                       placeholder="e.g. 1400"
-                      value={editingItem.discount_price || editingItem.price || ''} 
-                      onChange={(e) => setEditingItem({...editingItem, discount_price: e.target.value, price: e.target.value})} 
+                      value={editingItem.discount_price || editingItem.price || ''}
+                      onChange={(e) => setEditingItem({...editingItem, discount_price: e.target.value, price: e.target.value})}
                     />
                   </div>
                 </div>
@@ -1037,8 +1235,8 @@ const Inventory = () => {
 
       {/* Reference Data Drawer */}
       {showReferenceDrawer && (
-        <ReferenceDataDrawer 
-          onClose={() => setShowReferenceDrawer(false)} 
+        <ReferenceDataDrawer
+          onClose={() => setShowReferenceDrawer(false)}
         />
       )}
     </div>

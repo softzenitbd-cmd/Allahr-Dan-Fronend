@@ -86,6 +86,10 @@ export const LedgerService = {
   settlements: (params) => apiClient.get(ENDPOINTS.SETTLEMENTS, { params }),
   settleDue: (payload) => apiClient.post(ENDPOINTS.SETTLE_DUE, payload),
   statement: (type, id) => apiClient.get(ENDPOINTS.STATEMENT(type, id)),
+  // Everything about one customer, supplier or salesman, in one call.
+  party: (type, id, params) => apiClient.get(ENDPOINTS.PARTY_LEDGER(type, id), { params }),
+  // One payment spread across every invoice still owing, oldest first.
+  payAll: (payload) => apiClient.post(ENDPOINTS.PAY_ALL, payload),
 };
 
 export const ExpenseService = {
@@ -142,6 +146,7 @@ export const ReportService = {
   details: (params) => apiClient.get(ENDPOINTS.REPORTS_DETAILS, { params }),
   // Trading result, cash movement and the shop's position, in one call.
   balanceSheet: (params) => apiClient.get(ENDPOINTS.REPORTS_BALANCE_SHEET, { params }),
+  dayBook: (params) => apiClient.get(ENDPOINTS.REPORTS_DAY_BOOK, { params }),
 };
 
 export const CoreService = {

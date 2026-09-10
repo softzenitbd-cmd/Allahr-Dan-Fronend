@@ -22,7 +22,9 @@ import {
   ArrowLeft,
   Landmark,
   Scale,
+  BookOpen,
   Calendar,
+  CalendarDays,
   ClipboardList,
   ReceiptText,
   Menu,
@@ -37,6 +39,8 @@ const ROUTE_SLICES = {
   '/': ['dashboard', 'sales', 'expenses', 'treasury', 'inventory', 'customers', 'suppliers'],
   '/pos': ['inventory', 'customers', 'drafts', 'staff', 'sales'],
   '/pos-history': ['sales', 'customers', 'settlements', 'treasury'],
+  // The day book fetches its own figures; the slices are for acting on rows.
+  '/day-book': ['sales', 'customers', 'expenses'],
   '/inventory': ['categories', 'units'],
   '/purchases': ['purchases', 'suppliers', 'inventory'],
   '/returns': ['returns', 'inventory'],
@@ -48,6 +52,7 @@ const ROUTE_SLICES = {
   '/accounts': ['treasury'],
   // The balance sheet fetches its own figures for the chosen range.
   '/balance-sheet': [],
+  '/ledger': ['customers', 'suppliers', 'staff'],
   '/reports': ['dashboard', 'sales', 'inventory', 'purchases', 'expenses', 'customers', 'suppliers', 'staff', 'payrolls', 'returns', 'attendance', 'leaves', 'treasury', 'settlements'],
   '/hr': ['staff', 'attendance', 'leaves', 'payrolls'],
   '/sms': ['sms', 'customers'],
@@ -113,6 +118,7 @@ const Layout = () => {
 
   const allServices = [
     { name: language === 'bn' ? 'ড্যাশবোর্ড' : 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: language === 'bn' ? 'আজকের হিসাব' : 'Day Book', path: '/day-book', icon: CalendarDays },
     { name: language === 'bn' ? 'বিক্রয়' : 'POS', path: '/pos', icon: ShoppingCart },
     { name: language === 'bn' ? 'পিওএস ইতিহাস' : 'POS History', path: '/pos-history', icon: ReceiptText },
     { name: language === 'bn' ? 'স্টক' : 'Inventory', path: '/inventory', icon: Package },
@@ -127,6 +133,7 @@ const Layout = () => {
 
   const adminServices = user?.role === 'Admin' ? [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
+    { name: language === 'bn' ? 'খাতা' : 'Ledger', icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'ব্যালেন্স শিট' : 'Balance Sheet', icon: Scale, path: '/balance-sheet' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },

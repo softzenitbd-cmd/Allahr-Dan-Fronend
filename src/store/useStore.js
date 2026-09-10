@@ -46,6 +46,7 @@ const CACHE_TTL_MS = 90 * 1000;
 // Tracks the epoch timestamp (ms) when each slice was last fetched
 // Holds back the accent save while the colour picker is being dragged.
 let accentSaveTimer = null;
+let cardColorSaveTimer = null;
 
 const lastFetchedTimestamps = new Map();
 // Deduplicates concurrent in-flight requests for the same slice
@@ -85,6 +86,8 @@ const useStore = create(
       isLoading: false,
       shopProfile: null,
       accentColor: '',
+      // Per-card colour overrides for the dashboard summary, keyed by card id.
+      dashboardCardColors: {},
       dashboardSummary: null,
       _cacheTimestamps: {},
 
@@ -347,6 +350,7 @@ const useStore = create(
               theme: settings.theme_mode || state.theme,
               themeGradient: settings.active_theme_class || state.themeGradient,
               accentColor: settings.accentColor ?? state.accentColor,
+              dashboardCardColors: settings.dashboardCardColors ?? state.dashboardCardColors,
               language: settings.language || state.language,
               smsSettings: settings.smsSettings || state.smsSettings,
               _cacheTimestamps: { ...(state._cacheTimestamps || {}), _userSettings: Date.now() },
@@ -385,6 +389,28 @@ const useStore = create(
         accentSaveTimer = setTimeout(() => {
           get().saveSettings({ accentColor: value });
         }, 450);
+      },
+
+      /**
+       * One dashboard card's colour. An empty hex removes the override so the
+       * card returns to its default. Saved the same debounced way as the
+       * accent, since it is driven by the same picker.
+       */
+      setDashboardCardColor: (cardKey, hex) => {
+        const next = { ...(get().dashboardCardColors || {}) };
+        if (hex) next[cardKey] = hex;
+        else delete next[cardKey];
+        set({ dashboardCardColors: next });
+
+        clearTimeout(cardColorSaveTimer);
+        cardColorSaveTimer = setTimeout(() => {
+          get().saveSettings({ dashboardCardColors: next });
+        }, 450);
+      },
+
+      resetDashboardCardColors: () => {
+        set({ dashboardCardColors: {} });
+        get().saveSettings({ dashboardCardColors: {} });
       },
 
       setLanguage: (lang) => {
@@ -597,27 +623,74 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       // Dues and settlements
       // ---------------------------------------------------------------- //
-      settleCustomerDue: (customerId, amount, dateStr) => enqueue(async () => {
+      settleCustomerDue: (customerId, amount, dateStr, opts = {}) => enqueue(async () => {
         try {
           await LedgerService.settleDue({
             targetId: customerId, type: 'Customer', amount,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
+            method: opts.method || undefined,
+            notes: opts.notes || undefined,
           });
-          await get().refresh('customers', 'settlements', 'treasury');
+          await get().refresh('customers', 'sales', 'settlements', 'treasury');
           return { ok: true };
         } catch (error) {
           return fail(error, 'The payment could not be recorded.');
         }
       }),
 
-      settleSupplierDue: (supplierId, amount, dateStr) => enqueue(async () => {
+      settleSupplierDue: (supplierId, amount, dateStr, opts = {}) => enqueue(async () => {
         try {
           await LedgerService.settleDue({
             targetId: supplierId, type: 'Supplier', amount,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
+            method: opts.method || undefined,
+            notes: opts.notes || undefined,
           });
-          await get().refresh('suppliers', 'settlements', 'treasury');
+          await get().refresh('suppliers', 'purchases', 'settlements', 'treasury');
           return { ok: true };
+        } catch (error) {
+          return fail(error, 'The payment could not be recorded.');
+        }
+      }),
+
+      /** An SR's shortfall coming back into the drawer. */
+      settleStaffDue: (staffId, amount, dateStr, opts = {}) => enqueue(async () => {
+        try {
+          await LedgerService.settleDue({
+            targetId: staffId, type: 'Staff', amount,
+            date: dateStr ? String(dateStr).split('T')[0] : undefined,
+            method: opts.method || undefined,
+            notes: opts.notes || undefined,
+          });
+          await get().refresh('staff', 'settlements', 'treasury');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'The recovery could not be recorded.');
+        }
+      }),
+
+      /** The full ledger of one party. Fetched on demand, never cached in a slice. */
+      fetchPartyLedger: async (type, id, params = {}) => {
+        try {
+          const data = await LedgerService.party(type, id, params);
+          return { ok: true, data };
+        } catch (error) {
+          return fail(error, 'Could not load the ledger.');
+        }
+      },
+
+      /** Clear an account in one go; for a customer it lands on each due invoice. */
+      payAll: (type, targetId, { amount, date, method, notes } = {}) => enqueue(async () => {
+        try {
+          const res = await LedgerService.payAll({
+            type, targetId,
+            amount: amount ?? undefined,
+            date: date ? String(date).split('T')[0] : undefined,
+            method: method || 'Cash',
+            notes: notes || undefined,
+          });
+          await get().refresh('customers', 'suppliers', 'staff', 'sales', 'purchases', 'settlements', 'treasury');
+          return { ok: true, result: res };
         } catch (error) {
           return fail(error, 'The payment could not be recorded.');
         }
@@ -912,6 +985,16 @@ const useStore = create(
         }
       },
 
+      /** Everything that happened on one date, with that day's totals. */
+      fetchDayBook: async (date) => {
+        try {
+          const data = await ReportService.dayBook(date ? { date } : {});
+          return { ok: true, data };
+        } catch (error) {
+          return fail(error, 'Could not load the day book.');
+        }
+      },
+
       // ---------------------------------------------------------------- //
       // Parked carts
       // ---------------------------------------------------------------- //
@@ -946,9 +1029,10 @@ const useStore = create(
       // Categories and units. The product form creates these implicitly by
       // name; these let someone correct a typo or drop one that is unused.
       // ---------------------------------------------------------------- //
-      addCategory: (name) => enqueue(async () => {
+      addCategory: (nameOrPayload) => enqueue(async () => {
         try {
-          await ProductService.createCategory({ name });
+          const payload = typeof nameOrPayload === 'string' ? { name: nameOrPayload } : nameOrPayload;
+          await ProductService.createCategory(payload);
           await get().refresh('inventory');
           return { ok: true };
         } catch (error) {
@@ -956,9 +1040,10 @@ const useStore = create(
         }
       }),
 
-      renameCategory: (id, name) => enqueue(async () => {
+      renameCategory: (id, nameOrPayload) => enqueue(async () => {
         try {
-          await ProductService.updateCategory(id, { name });
+          const payload = typeof nameOrPayload === 'string' ? { name: nameOrPayload } : nameOrPayload;
+          await ProductService.updateCategory(id, payload);
           await get().refresh('inventory');
           return { ok: true };
         } catch (error) {
@@ -1074,6 +1159,7 @@ const useStore = create(
         cart: state.cart,
         shopProfile: state.shopProfile,
         accentColor: state.accentColor,
+        dashboardCardColors: state.dashboardCardColors,
         _cacheTimestamps: state._cacheTimestamps,
         // Persist tables so page reload does not blank out data and force full refetches
         inventory: state.inventory,

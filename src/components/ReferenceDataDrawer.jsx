@@ -26,11 +26,26 @@ const ReferenceDataDrawer = ({ onClose }) => {
 
   const [tab, setTab] = useState('Categories');
   const [newName, setNewName] = useState('');
-  const [editing, setEditing] = useState(null); // { id, name }
+  // '' means top-level; otherwise the id of the parent category.
+  const [newParent, setNewParent] = useState('');
+  const [editing, setEditing] = useState(null); // { id, name, parent }
   const [busy, setBusy] = useState(false);
 
   const isCategories = tab === 'Categories';
   const rows = isCategories ? (categories || []) : (units || []);
+
+  // Only a top-level category can be a parent; the server refuses a third
+  // level, so the list offered here never contains one.
+  const parentOptions = (categories || []).filter((c) => !c.parent);
+
+  // Categories listed as a tree: each parent followed by its children.
+  const orderedRows = isCategories
+    ? [...rows].sort((a, b) => {
+        const ka = `${a.parent_name || a.name}\u0000${a.parent ? 1 : 0}${a.name}`;
+        const kb = `${b.parent_name || b.name}\u0000${b.parent ? 1 : 0}${b.name}`;
+        return ka.localeCompare(kb);
+      })
+    : rows;
 
   // How many products each one is attached to, so nothing in use is deleted
   // by accident.
@@ -59,21 +74,33 @@ const ReferenceDataDrawer = ({ onClose }) => {
       return;
     }
     await run(
-      () => (isCategories ? addCategory(name) : addUnit(name)),
+      () => (isCategories
+        ? addCategory({ name, parent: newParent ? Number(newParent) : null })
+        : addUnit(name)),
       `${isCategories ? 'Category' : 'Unit'} "${name}" added.`
     );
+    setNewParent('');
   };
 
   const handleRename = async () => {
     const name = (editing.name || '').trim();
     if (!name) return;
     await run(
-      () => (isCategories ? renameCategory(editing.id, name) : renameUnit(editing.id, name)),
-      'Renamed.'
+      () => (isCategories
+        ? renameCategory(editing.id, { name, parent: editing.parent ? Number(editing.parent) : null })
+        : renameUnit(editing.id, name)),
+      'Saved.'
     );
   };
 
   const handleDelete = async (row) => {
+    if (isCategories && row.children_count > 0) {
+      toast.error(
+        `"${row.name}" has ${row.children_count} sub-categor${row.children_count > 1 ? 'ies' : 'y'}. ` +
+        'Move or delete them first.'
+      );
+      return;
+    }
     const used = usageOf(row.name);
     if (used > 0) {
       toast.error(
@@ -124,6 +151,19 @@ const ReferenceDataDrawer = ({ onClose }) => {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
+            {isCategories && (
+              <select
+                value={newParent}
+                onChange={(e) => setNewParent(e.target.value)}
+                title={language === 'bn' ? 'কোন ক্যাটাগরির অধীনে' : 'Under which category'}
+                style={{ minWidth: '160px' }}
+              >
+                <option value="">{language === 'bn' ? '— মূল ক্যাটাগরি —' : '— Top-level —'}</option>
+                {parentOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{language === 'bn' ? `${c.name} এর অধীনে` : `Under ${c.name}`}</option>
+                ))}
+              </select>
+            )}
             <button type="submit" className="btn-primary flex-align-gap" disabled={busy || !newName.trim()}>
               <Plus size={16} /> {t(language, 'Add')}
             </button>
@@ -139,28 +179,50 @@ const ReferenceDataDrawer = ({ onClose }) => {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {orderedRows.length === 0 ? (
                   <tr><td colSpan="3" className="text-center text-muted" style={{ padding: '1.5rem' }}>
                     {language === 'bn' ? 'কিছু নেই।' : 'Nothing here yet.'}
                   </td></tr>
                 ) : (
-                  rows.map((row) => {
+                  orderedRows.map((row) => {
                     const used = usageOf(row.name);
                     const isEditing = editing?.id === row.id;
                     return (
                       <tr key={row.id}>
                         <td>
                           {isEditing ? (
-                            <input
-                              type="text"
-                              value={editing.name}
-                              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
-                              style={{ width: '100%' }}
-                              autoFocus
-                            />
+                            <div className="flex-align-gap" style={{ gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <input
+                                type="text"
+                                value={editing.name}
+                                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
+                                style={{ flex: '1 1 140px' }}
+                                autoFocus
+                              />
+                              {isCategories && (
+                                <select
+                                  value={editing.parent || ''}
+                                  onChange={(e) => setEditing({ ...editing, parent: e.target.value })}
+                                  style={{ flex: '0 0 auto' }}
+                                >
+                                  <option value="">{language === 'bn' ? 'মূল' : 'Top-level'}</option>
+                                  {parentOptions.filter((c) => c.id !== row.id).map((c) => (
+                                    <option key={c.id} value={c.id}>{language === 'bn' ? `${c.name} এর অধীনে` : `Under ${c.name}`}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           ) : (
-                            <span className="font-bold">{row.name}</span>
+                            <span className="font-bold" style={row.parent ? { paddingLeft: '1.25rem', display: 'inline-block' } : undefined}>
+                              {row.parent ? <span className="text-muted" style={{ fontWeight: 400 }}>{row.parent_name} › </span> : null}
+                              {row.name}
+                              {isCategories && row.children_count > 0 && (
+                                <span className="badge" style={{ marginLeft: '0.4rem' }}>
+                                  {row.children_count} {language === 'bn' ? 'সাব' : 'sub'}
+                                </span>
+                              )}
+                            </span>
                           )}
                         </td>
                         <td style={{ textAlign: 'center' }} className={used ? '' : 'text-muted'}>
@@ -182,7 +244,7 @@ const ReferenceDataDrawer = ({ onClose }) => {
                                 <button
                                   className="btn-icon text-info"
                                   title="Rename"
-                                  onClick={() => setEditing({ id: row.id, name: row.name })}
+                                  onClick={() => setEditing({ id: row.id, name: row.name, parent: row.parent || '' })}
                                 >
                                   <Edit size={16} />
                                 </button>
@@ -208,8 +270,8 @@ const ReferenceDataDrawer = ({ onClose }) => {
 
           <p className="text-muted text-sm mt-4">
             {language === 'bn'
-              ? 'নতুন পণ্য যোগ করার সময় নতুন নাম লিখলে সেটি নিজে থেকেই এখানে যুক্ত হয়। ব্যবহৃত কোনোটি মোছা যাবে না।'
-              : 'Typing a new name on a product adds it here automatically. Anything still in use cannot be deleted.'}
+              ? 'সাব-ক্যাটাগরি বানাতে নাম লিখে "কোন ক্যাটাগরির অধীনে" বেছে নিন। ব্যবহৃত কোনোটি মোছা যাবে না।'
+              : 'To make a sub-category, type its name and choose which category it sits under. Anything still in use cannot be deleted.'}
           </p>
         </div>
 

@@ -7,6 +7,18 @@ import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Purchase.css';
 
+// What has been paid on a purchase is what went out at the time plus every
+// supplier payment filed against it since; the API sends both as totalPaid /
+// dueRemaining, and older rows without them fall back to the original split.
+const purchasePaid = (p) => {
+  if (p.totalPaid !== undefined && p.totalPaid !== null) return Number(p.totalPaid) || 0;
+  return Number(p.paidAmount !== undefined ? p.paidAmount : p.total) || 0;
+};
+const purchaseDue = (p) => {
+  if (p.dueRemaining !== undefined && p.dueRemaining !== null) return Number(p.dueRemaining) || 0;
+  return Math.max(0, Number(p.total) - purchasePaid(p));
+};
+
 const Purchase = () => {
   const { suppliers, inventory, purchases, processPurchase, deletePurchase, user, language } = useStore();
   // Deleting a purchase un-receives goods and lowers the payable, so the
@@ -401,8 +413,8 @@ const Purchase = () => {
                   <td>{p.items.reduce((acc, i) => acc + i.quantity, 0)} items</td>
                   <td><span className={`badge ${p.paymentType === 'Cash' ? 'bg-success' : 'bg-warning'}`}>{p.paymentType}</span></td>
                   <td className="font-bold">৳{p.total.toLocaleString()}</td>
-                  <td className="text-success font-bold">৳{(p.paidAmount !== undefined ? p.paidAmount : p.total).toLocaleString()}</td>
-                  <td className="text-danger font-bold">৳{Math.max(0, p.total - (p.paidAmount !== undefined ? p.paidAmount : p.total)).toLocaleString()}</td>
+                  <td className="text-success font-bold">৳{purchasePaid(p).toLocaleString()}</td>
+                  <td className="text-danger font-bold">৳{purchaseDue(p).toLocaleString()}</td>
                   <td style={{textAlign:'center'}}>
                     <div className="flex-align-gap" style={{justifyContent:'center', flexWrap: 'nowrap'}}>
                       <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(p)}>
@@ -469,8 +481,8 @@ const Purchase = () => {
                         <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>৳{item.price * item.quantity}</td>
                         {idx === 0 && (
                           <>
-                            <td rowSpan={purchase.items.length} style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', verticalAlign: 'top'}}>৳{purchase.paidAmount !== undefined ? purchase.paidAmount : purchase.total}</td>
-                            <td rowSpan={purchase.items.length} style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', verticalAlign: 'top'}}>৳{Math.max(0, purchase.total - (purchase.paidAmount !== undefined ? purchase.paidAmount : purchase.total))}</td>
+                            <td rowSpan={purchase.items.length} style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', verticalAlign: 'top'}}>৳{purchasePaid(purchase)}</td>
+                            <td rowSpan={purchase.items.length} style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', verticalAlign: 'top'}}>৳{purchaseDue(purchase)}</td>
                           </>
                         )}
                       </tr>
@@ -543,11 +555,11 @@ const Purchase = () => {
                  </div>
                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginTop: '0.5rem', color: '#000' }}>
                     <span>Paid Amount:</span>
-                    <span>৳{selectedInvoice.paidAmount !== undefined ? selectedInvoice.paidAmount : selectedInvoice.total}</span>
+                    <span>৳{purchasePaid(selectedInvoice)}</span>
                  </div>
                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginTop: '0.5rem', color: '#000' }}>
                     <span>Due Amount:</span>
-                    <span>৳{Math.max(0, selectedInvoice.total - (selectedInvoice.paidAmount !== undefined ? selectedInvoice.paidAmount : selectedInvoice.total))}</span>
+                    <span>৳{purchaseDue(selectedInvoice)}</span>
                  </div>
               </div>
             </div>

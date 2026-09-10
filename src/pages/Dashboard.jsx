@@ -3,12 +3,13 @@ import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, Ref
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { DASHBOARD_CARDS, cardColor } from '../utils/dashboardCards';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance } = useStore();
+  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance, dashboardCardColors } = useStore();
   const isAdmin = user?.role === 'Admin';
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -61,18 +62,36 @@ const Dashboard = () => {
   ];
   */
 
-  // --- ACTIVE BORDER DESIGN ---
-  const stats = [
-    { label: language === 'bn' ? "মোট ব্যালেন্স (ক্যাশ + ব্যাংক)" : "Total Balance (Cash + Bank)", value: `৳${totalBalance.toLocaleString()}`, icon: DollarSign, color: "var(--success)" },
-    { label: language === 'bn' ? "আজকের বিক্রয়" : "Today's Sales", value: `৳${dailySales.toLocaleString()}`, icon: ShoppingCart, color: "var(--primary)" },
-    { label: language === 'bn' ? "আজকের খরচ" : "Today's Expense", value: `৳${dailyExpenses.toLocaleString()}`, icon: TrendingDown, color: "var(--danger)" },
-    { label: language === 'bn' ? "আজকের নিট লাভ" : "Today's Net Profit", value: `৳${dailyProfit.toLocaleString()}`, icon: TrendingUp, color: dailyProfit >= 0 ? "#10b981" : "var(--danger)" },
-    { label: language === 'bn' ? "মাসিক লাভ" : "Monthly Profit", value: `৳${monthlyProfit.toLocaleString()}`, icon: TrendingUp, color: monthlyProfit >= 0 ? "#10b981" : "var(--danger)" },
-    { label: language === 'bn' ? "মাসিক খরচ" : "Monthly Expense", value: `৳${monthlyExpenses.toLocaleString()}`, icon: DollarSign, color: "var(--warning)" },
-    { label: language === 'bn' ? "স্টক ভ্যালু" : "Inventory Value", value: `৳${totalInventoryValue.toLocaleString()}`, icon: Package, color: "var(--info)" },
-    { label: language === 'bn' ? "কাস্টমার বকেয়া" : "Customer Due", value: `৳${totalCustomerDue.toLocaleString()}`, icon: Users, color: "var(--warning)" },
-    { label: language === 'bn' ? "সাপ্লায়ার বকেয়া" : "Supplier Due", value: `৳${totalSupplierDue.toLocaleString()}`, icon: Users, color: "var(--danger)" }
-  ];
+  // Each card carries its own colour, chosen in Settings or falling back to
+  // the default the card ships with. A loss still turns the profit cards red
+  // whatever colour they were given: that signal is not a matter of taste.
+  const valueByKey = {
+    totalBalance: totalBalance,
+    todaySales: dailySales,
+    todayExpense: dailyExpenses,
+    todayProfit: dailyProfit,
+    monthlyProfit: monthlyProfit,
+    monthlyExpense: monthlyExpenses,
+    inventoryValue: totalInventoryValue,
+    customerDue: totalCustomerDue,
+    supplierDue: totalSupplierDue,
+  };
+  const iconByKey = {
+    totalBalance: DollarSign, todaySales: ShoppingCart, todayExpense: TrendingDown,
+    todayProfit: TrendingUp, monthlyProfit: TrendingUp, monthlyExpense: DollarSign,
+    inventoryValue: Package, customerDue: Users, supplierDue: Users,
+  };
+  const stats = DASHBOARD_CARDS.map((card) => {
+    const value = valueByKey[card.key] || 0;
+    const isLoss = (card.key === 'todayProfit' || card.key === 'monthlyProfit') && value < 0;
+    return {
+      key: card.key,
+      label: language === 'bn' ? card.bn : card.en,
+      value: `৳${value.toLocaleString()}`,
+      icon: isLoss ? TrendingDown : iconByKey[card.key],
+      color: isLoss ? '#dc2626' : cardColor(card, dashboardCardColors),
+    };
+  });
 
   const bkashServices = [
     { name: language === 'bn' ? 'বিক্রয়' : 'POS', path: '/pos', icon: ShoppingCart },
@@ -192,11 +211,11 @@ const Dashboard = () => {
       {/* Summary */}
       <div className="dash-section-title">{language === 'bn' ? 'সারসংক্ষেপ' : 'Business Summary'}</div>
       <div className="stat-grid mb-6">
-        {stats.map((stat, idx) => (
-          <div key={idx} className="stat-card">
+        {stats.map((stat) => (
+          <div key={stat.key} className="stat-card" style={{ '--card': stat.color }}>
             <div className="head">
               <span className="label">{stat.label}</span>
-              <span className="icon" style={{ background: `${stat.color}1a`, color: stat.color }}>
+              <span className="icon">
                 <stat.icon size={16} strokeWidth={2} />
               </span>
             </div>

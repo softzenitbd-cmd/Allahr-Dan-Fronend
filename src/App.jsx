@@ -25,6 +25,8 @@ const POSHistory = lazy(() => import('./pages/POSHistory'));
 const SMS = lazy(() => import('./pages/SMS'));
 const Accounts = lazy(() => import('./pages/Accounts'));
 const BalanceSheet = lazy(() => import('./pages/BalanceSheet'));
+const Ledger = lazy(() => import('./pages/Ledger'));
+const DayBook = lazy(() => import('./pages/DayBook'));
 const SR = lazy(() => import('./pages/SR'));
 const StockLog = lazy(() => import('./pages/StockLog'));
 
@@ -116,6 +118,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="pos" element={<POS />} />
             <Route path="pos-history" element={<POSHistory />} />
+            <Route path="day-book" element={<DayBook />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="purchases" element={<Purchase />} />
             <Route path="/returns" element={<Returns />} />
@@ -129,6 +132,7 @@ function App() {
             {/* Admin Only Routes */}
             <Route path="accounts" element={<ProtectedRoute requiredRole="Admin"><Accounts /></ProtectedRoute>} />
             <Route path="balance-sheet" element={<ProtectedRoute requiredRole="Admin"><BalanceSheet /></ProtectedRoute>} />
+            <Route path="ledger" element={<ProtectedRoute requiredRole="Admin"><Ledger /></ProtectedRoute>} />
             <Route path="hr" element={<ProtectedRoute requiredRole="Admin"><HR /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute requiredRole="Admin"><Reports /></ProtectedRoute>} />
             <Route path="settings" element={<ProtectedRoute requiredRole="Admin"><Settings /></ProtectedRoute>} />

@@ -120,3 +120,96 @@
 @media (max-width: 560px) {
   .cc-side { min-width: 0; }
 }
+
+/* --------------------------------------------------------------------------
+   Dashboard card colours
+   -------------------------------------------------------------------------- */
+
+.card-colour-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--sp-2);
+}
+
+.card-colour-row {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+/* An open row takes the full width so the picker has room. */
+.card-colour-row.open { grid-column: 1 / -1; }
+
+.card-colour-head {
+  --card: var(--primary);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  text-align: left;
+  position: relative;
+}
+
+.card-colour-head:hover { background: var(--bg-hover); }
+
+.ccr-bar {
+  width: 4px;
+  align-self: stretch;
+  background: var(--card);
+  border-radius: 0 2px 2px 0;
+  flex: 0 0 auto;
+}
+
+.ccr-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  flex: 0 0 auto;
+}
+
+.ccr-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8438rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ccr-hex {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ccr-changed {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.card-colour-body {
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+}
+
+.colour-plate.compact {
+  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  gap: 4px;
+  margin-bottom: 0;
+  flex: 1 1 320px;
+}
+
+.colour-plate.compact .swatch { min-height: 26px; border-radius: var(--radius-sm); }

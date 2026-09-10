@@ -36,6 +36,7 @@ const POS = () => {
   const [scannedItem, setScannedItem] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
 
   const customerSearchTerm = (customerInfo.name || '').trim().toLowerCase();
   const customerSuggestions = customerSearchTerm && showCustomerDropdown
@@ -44,6 +45,22 @@ const POS = () => {
         (c.phone && c.phone.includes(customerSearchTerm))
       ).slice(0, 5)
     : [];
+
+  // A regular customer is more often known by number than by name -- the
+  // number is what they read out. Typing digits into the phone box narrows
+  // the list by phone, and picking one fills the whole customer in.
+  const phoneSearchTerm = (customerInfo.phone || '').replace(/\D/g, '');
+  const phoneSuggestions = phoneSearchTerm.length >= 3 && showPhoneDropdown
+    ? (customers || []).filter(c =>
+        (c.phone || '').replace(/\D/g, '').includes(phoneSearchTerm)
+      ).slice(0, 5)
+    : [];
+
+  const chooseCustomer = (c) => {
+    setCustomerInfo({ name: c.name, phone: c.phone || '', location: c.location || '' });
+    setShowCustomerDropdown(false);
+    setShowPhoneDropdown(false);
+  };
 
   const handleWalkInCustomer = () => {
     setCustomerInfo({ name: 'Walk-in Customer', phone: '', location: '' });
@@ -693,14 +710,7 @@ const POS = () => {
                       <div
                         key={c.id}
                         className="customer-suggestion-item"
-                        onClick={() => {
-                          setCustomerInfo({
-                            name: c.name,
-                            phone: c.phone || '',
-                            location: c.location || ''
-                          });
-                          setShowCustomerDropdown(false);
-                        }}
+                        onClick={() => chooseCustomer(c)}
                       >
                         <div className="font-bold text-sm">{c.name}</div>
                         <div className="text-muted" style={{ fontSize: '0.7rem' }}>
@@ -717,10 +727,32 @@ const POS = () => {
                   <Phone size={13} />
                   <input
                     type="text"
-                    placeholder={language === 'bn' ? 'মোবাইল' : 'Phone'}
+                    placeholder={language === 'bn' ? 'মোবাইল দিয়ে খুঁজুন' : 'Phone (search)'}
                     value={customerInfo.phone}
-                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                    onChange={e => {
+                      setCustomerInfo({ ...customerInfo, phone: e.target.value });
+                      setShowPhoneDropdown(true);
+                    }}
+                    onFocus={() => setShowPhoneDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowPhoneDropdown(false), 150)}
+                    autoComplete="off"
                   />
+                  {phoneSuggestions.length > 0 && (
+                    <div className="customer-suggestions-dropdown">
+                      {phoneSuggestions.map(c => (
+                        <div
+                          key={c.id}
+                          className="customer-suggestion-item"
+                          onMouseDown={(e) => { e.preventDefault(); chooseCustomer(c); }}
+                        >
+                          <div className="font-bold text-sm">{c.phone}</div>
+                          <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                            {c.name}{c.due > 0 ? ` · ${language === 'bn' ? 'বকেয়া' : 'Due'} ৳${c.due}` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="input-with-icon">
                   <MapPin size={13} />
