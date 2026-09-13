@@ -131,6 +131,7 @@ const Customers = () => {
   const filteredList = currentList.filter(
     (person) =>
       (person.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (person.company || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (person.phone || '').includes(searchTerm) ||
       (person.id || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -186,7 +187,12 @@ const Customers = () => {
       return;
     }
     const due = parseFloat(editingPerson.due) || 0;
-    const payload = { ...editingPerson, name: editingPerson.name.trim(), due };
+    const payload = {
+      ...editingPerson,
+      name: editingPerson.name.trim(),
+      company: (editingPerson.company || '').trim(),
+      due,
+    };
     const res = activeTab === 'Customer' 
       ? await updateCustomer(editingPerson.id, payload)
       : await updateSupplier(editingPerson.id, payload);
@@ -354,6 +360,7 @@ const Customers = () => {
               <tr>
                 <th>ID</th>
                 <th>{t(language, 'Name')}</th>
+                {activeTab === 'Supplier' && <th>{language === 'bn' ? 'ব্র্যান্ড / কোম্পানি' : 'Brand / Company'}</th>}
                 <th>{t(language, 'Phone')}</th>
                 <th>{t(language, 'Total Due')}</th>
                 {activeTab === 'Deleted' && <th>{language === 'bn' ? 'মুছে ফেলার তারিখ' : 'Deleted At'}</th>}
@@ -362,7 +369,7 @@ const Customers = () => {
             </thead>
             <tbody>
               {filteredList.length === 0 ? (
-                <tr><td colSpan={activeTab === 'Deleted' ? 6 : 5} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
+                <tr><td colSpan={activeTab === 'Supplier' ? 6 : (activeTab === 'Deleted' ? 6 : 5)} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
               ) : (
                 filteredList.map((person) => {
                   const isSupplierRow = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(person.supplier_code)));
@@ -379,6 +386,17 @@ const Customers = () => {
                           )}
                         </div>
                       </td>
+                      {activeTab === 'Supplier' && (
+                        <td>
+                          {person.company ? (
+                            <span className="badge badge-secondary" style={{ fontSize: '0.8rem', padding: '2px 6px' }}>
+                              {person.company}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="flex-align-gap"><Phone size={14} className="text-muted" /> {person.phone || '-'}</td>
                       <td><span className="text-danger font-bold">৳{person.due}</span></td>
                       {activeTab === 'Deleted' && (
@@ -654,6 +672,20 @@ const Customers = () => {
                         type="text" 
                         value={editingPerson.location || ''} 
                         onChange={e => setEditingPerson({...editingPerson, location: e.target.value})} 
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  )}
+                  {activeTab === 'Supplier' && (
+                    <div>
+                      <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                        {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={editingPerson.company || ''} 
+                        onChange={e => setEditingPerson({...editingPerson, company: e.target.value})} 
+                        placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স' : 'e.g. Bata, Apex'}
                         style={{ width: '100%' }}
                       />
                     </div>

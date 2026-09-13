@@ -87,6 +87,7 @@ const Suppliers = () => {
   const filteredList = currentList.filter(
     (person) =>
       (person.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (person.company || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (person.phone && person.phone.includes(searchTerm)) ||
       (person.id && String(person.id).toLowerCase().includes(searchTerm.toLowerCase()))
   );
@@ -99,6 +100,7 @@ const Suppliers = () => {
     const supplierToSave = {
       ...newSupplier,
       name: newSupplier.name.trim(),
+      company: (newSupplier.company || '').trim(),
       due: parseFloat(newSupplier.due) || 0,
     };
     const res = await addSupplier(supplierToSave);
@@ -116,7 +118,14 @@ const Suppliers = () => {
       return;
     }
     const due = parseFloat(editingPerson.due) || 0;
-    const res = await updateSupplier(editingPerson.id, { ...editingPerson, name: editingPerson.name.trim(), due });
+    const res = await updateSupplier(editingPerson.id, {
+      ...editingPerson,
+      name: editingPerson.name.trim(),
+      company: (editingPerson.company || '').trim(),
+      phone: (editingPerson.phone || '').trim(),
+      location: (editingPerson.location || '').trim(),
+      due,
+    });
     if (res?.ok) {
       setEditingPerson(null);
       showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার তথ্য আপডেট হয়েছে!' : 'Updated successfully!');
@@ -232,6 +241,7 @@ const Suppliers = () => {
               <tr>
                 <th>ID</th>
                 <th>{language === 'bn' ? 'নাম' : 'Name'}</th>
+                <th>{language === 'bn' ? 'ব্র্যান্ড / কোম্পানি' : 'Brand / Company'}</th>
                 <th>{language === 'bn' ? 'ফোন' : 'Phone'}</th>
                 <th>{language === 'bn' ? 'মোট মাল কেনা' : 'Total Purchase'}</th>
                 <th>{language === 'bn' ? 'মোট জমা' : 'Total Paid'}</th>
@@ -242,7 +252,7 @@ const Suppliers = () => {
             </thead>
             <tbody>
               {filteredList.length === 0 ? (
-                <tr><td colSpan={activeTab === 'Deleted' ? 8 : 7} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
+                <tr><td colSpan={activeTab === 'Deleted' ? 9 : 8} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
               ) : (
                 filteredList.map((person) => {
                   const pt = getSupplierTransactions(person.id);
@@ -253,13 +263,22 @@ const Suppliers = () => {
                       <td>{person.id}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>{person.name}</span>
+                          <span style={{ fontWeight: 600 }}>{person.name}</span>
                           {activeTab === 'Deleted' && (
                             <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>
                               {language === 'bn' ? 'মুছে ফেলা' : 'Deleted'}
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td>
+                        {person.company ? (
+                          <span className="badge badge-secondary" style={{ fontSize: '0.82rem', fontWeight: 500, padding: '3px 8px' }}>
+                            {person.company}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
                       </td>
                       <td className="flex-align-gap"><Phone size={14} className="text-muted" /> {person.phone || 'N/A'}</td>
                       <td>৳{pTotalPurchased.toLocaleString()}</td>
@@ -281,7 +300,7 @@ const Suppliers = () => {
                           </button>
                           {activeTab === 'Active' && (
                             <>
-                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
+                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({ ...person, company: person.company || '' })}>
                                 <Edit size={16} />
                               </button>
                               <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id)}>
@@ -344,12 +363,14 @@ const Suppliers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Company / Brand</label>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
+                    </label>
                     <input 
                       type="text" 
                       value={newSupplier.company} 
                       onChange={e => setNewSupplier({...newSupplier, company: e.target.value})} 
-                      placeholder="e.g. Rahim Group of Industries" 
+                      placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স, রহিম টেক্স' : 'e.g. Bata, Apex, Rahim Group'} 
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -429,7 +450,9 @@ const Suppliers = () => {
               <div className="drawer-body">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Supplier Name *</label>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'সাপ্লায়ারের নাম' : 'Supplier Name'} *
+                    </label>
                     <input 
                       type="text" 
                       value={editingPerson.name} 
@@ -439,7 +462,21 @@ const Suppliers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Phone Number</label>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingPerson.company || ''} 
+                      onChange={e => setEditingPerson({...editingPerson, company: e.target.value})} 
+                      placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স, রহিম টেক্স' : 'e.g. Bata, Apex, Rahim Group'}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'ফোন নম্বর' : 'Phone Number'}
+                    </label>
                     <input 
                       type="text" 
                       value={editingPerson.phone || ''} 
@@ -448,7 +485,9 @@ const Suppliers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Location / Address</label>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'ঠিকানা / লোকেশন' : 'Location / Address'}
+                    </label>
                     <input 
                       type="text" 
                       value={editingPerson.location || ''} 
@@ -457,7 +496,9 @@ const Suppliers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Total Due (BDT)</label>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'বর্তমান বাকি' : 'Total Due'} (BDT)
+                    </label>
                     <input 
                       type="number" 
                       value={editingPerson.due} 
@@ -507,7 +548,11 @@ const Suppliers = () => {
                      )}
                    </div>
                    <p style={{ margin: 0 }}><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
-                   {selectedPerson.company && <p style={{ margin: 0 }}><strong>Company:</strong> {selectedPerson.company}</p>}
+                   {selectedPerson.company && (
+                     <p style={{ margin: 0 }}>
+                       <strong>{language === 'bn' ? 'ব্র্যান্ড / কোম্পানি:' : 'Company / Brand:'}</strong> {selectedPerson.company}
+                     </p>
+                   )}
                    {selectedPerson.deleted_at && (
                      <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
                        <strong>{language === 'bn' ? 'মুছে ফেলার তারিখ:' : 'Deleted At:'}</strong> {new Date(selectedPerson.deleted_at).toLocaleString()}
