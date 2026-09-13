@@ -1,20 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Printer, Eye, Plus, Phone, Edit, Trash2 } from 'lucide-react';
+import { Search, Printer, Eye, Plus, Phone, Edit, Trash2, RotateCcw, History } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 const Suppliers = () => {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, purchases, settlements, language } = useStore();
+  const { 
+    suppliers, 
+    deletedSuppliers, 
+    addSupplier, 
+    updateSupplier, 
+    deleteSupplier, 
+    restoreSupplier, 
+    permanentDeleteSupplier, 
+    purchases, 
+    settlements, 
+    language,
+    refresh,
+    ensureLoaded
+  } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('Active'); // Active or Deleted
   const [selectedPerson, setSelectedPerson] = useState(null);
+
+  useEffect(() => {
+    ensureLoaded?.('suppliers', 'purchases', 'settlements');
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'Deleted') {
+      refresh?.('deletedSuppliers');
+    }
+  }, [activeTab]);
 
   const getSupplierTransactions = (supplierId) => {
     if (!supplierId) return [];
     
-    const supplierPurchases = (purchases || []).filter(p => p.supplierId === supplierId).map(p => ({
+    const supplierPurchases = (purchases || []).filter(p => p.supplierId === supplierId || p.supplierId === selectedPerson?.supplier_code || String(p.supplierId) === String(supplierId)).map(p => ({
       id: p.id,
       date: p.date,
       type: 'Purchase',
@@ -27,7 +51,7 @@ const Suppliers = () => {
     // settlements made a cash purchase look entirely unpaid, even though the
     // Due column beside it correctly read zero.
     const paidOnPurchase = (purchases || [])
-      .filter(p => p.supplierId === supplierId && Number(p.paidAmount) > 0)
+      .filter(p => (p.supplierId === supplierId || p.supplierId === selectedPerson?.supplier_code || String(p.supplierId) === String(supplierId)) && Number(p.paidAmount) > 0)
       .map(p => ({
         id: `${p.id}-paid`,
         date: p.date,
@@ -37,7 +61,7 @@ const Suppliers = () => {
         isCredit: false
       }));
 
-    const supplierSettlements = (settlements || []).filter(s => s.targetId === supplierId && s.type === 'Supplier').map(s => ({
+    const supplierSettlements = (settlements || []).filter(s => (s.targetId === supplierId || s.targetId === selectedPerson?.supplier_code) && s.type === 'Supplier').map(s => ({
       id: s.id,
       date: s.date,
       type: 'Payment',
@@ -58,10 +82,13 @@ const Suppliers = () => {
   const [editingPerson, setEditingPerson] = useState(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', company: '', phone: '', email: '', location: '', due: '', notes: '' });
 
-  const filteredList = suppliers.filter(
+  const currentList = activeTab === 'Active' ? (suppliers || []) : (deletedSuppliers || []);
+
+  const filteredList = currentList.filter(
     (person) =>
-      person.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (person.phone && person.phone.includes(searchTerm))
+      (person.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (person.phone && person.phone.includes(searchTerm)) ||
+      (person.id && String(person.id).toLowerCase().includes(searchTerm.toLowerCase()))
   );
   const handleAddSupplier = async (e) => {
     e.preventDefault();
@@ -98,16 +125,54 @@ const Suppliers = () => {
 
   const handleDelete = async (id) => {
     const isConfirmed = await showConfirmDialog({
-      title: language === 'bn' ? 'সাপ্লায়ার ডিলিট করবেন?' : 'Delete Supplier?',
-      text: language === 'bn' ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার ডিলিট করতে চান? এই রেকর্ডটি স্থায়ীভাবে মুছে যাবে।' : 'Are you sure you want to delete this record? This action cannot be undone.',
-      confirmButtonText: language === 'bn' ? 'হ্যাঁ, ডিলিট করুন' : 'Yes, delete',
+      title: language === 'bn' ? 'সাপ্লায়ার মুছে ফেলবেন?' : 'Delete Supplier?',
+      text: language === 'bn' 
+        ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
+        : 'Are you sure you want to delete this supplier? Full purchase and transaction history will be safely preserved in the Deleted History tab.',
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
       isDanger: true,
     });
     if (isConfirmed) {
       const res = await deleteSupplier(id);
       if (res?.ok) {
-        showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার ডিলিট করা হয়েছে!' : 'Deleted successfully!');
+        showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার সফলভাবে মুছে ফেলা হয়েছে এবং হিস্ট্রিতে সংরক্ষিত রয়েছে!' : 'Deleted successfully! History is saved in Deleted History tab.');
+      }
+    }
+  };
+
+  const handleRestore = async (id) => {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'সাপ্লায়ার রিস্টোর করবেন?' : 'Restore Supplier?',
+      text: language === 'bn' 
+        ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
+        : 'Do you want to restore this supplier back to active status?',
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, রিস্টোর' : 'Yes, restore',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: false,
+    });
+    if (isConfirmed) {
+      const res = await restoreSupplier(id);
+      if (res?.ok) {
+        showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার সফলভাবে রিস্টোর হয়েছে!' : 'Supplier restored successfully!');
+      }
+    }
+  };
+
+  const handlePermanentDelete = async (id, name) => {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলবেন?' : 'Permanently Delete?',
+      text: language === 'bn' 
+        ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
+        : `Are you sure you want to permanently delete supplier '${name}' from the database? This action CANNOT be undone!`,
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, স্থায়ীভাবে মুছুন' : 'Yes, Delete Permanently',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (isConfirmed) {
+      const res = await permanentDeleteSupplier(id);
+      if (res?.ok) {
+        showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার স্থায়ীভাবে মুছে ফেলা হয়েছে!' : 'Supplier permanently deleted!');
       }
     }
   };
@@ -122,22 +187,41 @@ const Suppliers = () => {
       </div>
 
       <div className="card">
-        <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div className="segmented-control" style={{ maxWidth: '420px' }}>
+            <button 
+              className={activeTab === 'Active' ? 'active' : ''}
+              onClick={() => setActiveTab('Active')}
+            >
+              {language === 'bn' ? 'সক্রিয় সাপ্লায়ার' : 'Active Suppliers'} ({suppliers?.length || 0})
+            </button>
+            <button 
+              className={activeTab === 'Deleted' ? 'active' : ''}
+              onClick={() => setActiveTab('Deleted')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+            >
+              <History size={14} />
+              {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {deletedSuppliers?.length ? `(${deletedSuppliers.length})` : ''}
+            </button>
+          </div>
+
           <div className="search-bar">
             <Search size={18} className="text-muted" />
             <input 
               type="text" 
-              placeholder="Search suppliers by name or phone..." 
+              placeholder={language === 'bn' ? 'নাম বা ফোন দিয়ে খুঁজুন...' : 'Search suppliers by name or phone...'} 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="toolbar-actions" style={{ marginLeft: 'auto' }}>
-            <button className="btn-primary flex-align-gap" onClick={() => setShowAddModal(true)}>
-              <Plus size={16} /> New Supplier
-            </button>
+          <div className="toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            {activeTab === 'Active' && (
+              <button className="btn-primary flex-align-gap" onClick={() => setShowAddModal(true)}>
+                <Plus size={16} /> {language === 'bn' ? 'নতুন সাপ্লায়ার' : 'New Supplier'}
+              </button>
+            )}
             <button className="btn-outline flex-align-gap" onClick={() => window.print()}>
-              <Printer size={16} /> Print List
+              <Printer size={16} /> {language === 'bn' ? 'তালিকা প্রিন্ট' : 'Print List'}
             </button>
           </div>
         </div>
@@ -147,17 +231,18 @@ const Suppliers = () => {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Total Purchase</th>
-                <th>Total Paid</th>
-                <th>Total Due (BDT)</th>
-                <th>Actions</th>
+                <th>{language === 'bn' ? 'নাম' : 'Name'}</th>
+                <th>{language === 'bn' ? 'ফোন' : 'Phone'}</th>
+                <th>{language === 'bn' ? 'মোট মাল কেনা' : 'Total Purchase'}</th>
+                <th>{language === 'bn' ? 'মোট জমা' : 'Total Paid'}</th>
+                <th>{language === 'bn' ? 'বর্তমান বাকি' : 'Total Due (BDT)'}</th>
+                {activeTab === 'Deleted' && <th>{language === 'bn' ? 'মুছে ফেলার তারিখ' : 'Deleted At'}</th>}
+                <th>{language === 'bn' ? 'অ্যাকশন' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody>
               {filteredList.length === 0 ? (
-                <tr><td colSpan="7" className="text-center text-muted">No suppliers found.</td></tr>
+                <tr><td colSpan={activeTab === 'Deleted' ? 8 : 7} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
               ) : (
                 filteredList.map((person) => {
                   const pt = getSupplierTransactions(person.id);
@@ -166,22 +251,63 @@ const Suppliers = () => {
                   return (
                     <tr key={person.id}>
                       <td>{person.id}</td>
-                      <td>{person.name}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{person.name}</span>
+                          {activeTab === 'Deleted' && (
+                            <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>
+                              {language === 'bn' ? 'মুছে ফেলা' : 'Deleted'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="flex-align-gap"><Phone size={14} className="text-muted" /> {person.phone || 'N/A'}</td>
                       <td>৳{pTotalPurchased.toLocaleString()}</td>
                       <td>৳{pTotalPaid.toLocaleString()}</td>
                       <td><span className={person.due > 0 ? "text-danger font-bold" : "text-success font-bold"}>৳{person.due.toLocaleString()}</span></td>
+                      {activeTab === 'Deleted' && (
+                        <td style={{ fontSize: '0.85rem', color: '#666' }}>
+                          {person.deleted_at ? new Date(person.deleted_at).toLocaleString() : '-'}
+                        </td>
+                      )}
                       <td>
                         <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
-                          <button className="btn-icon" title="View & Print" onClick={() => setSelectedPerson(person)}>
+                          <button 
+                            className="btn-icon" 
+                            title={activeTab === 'Deleted' ? (language === 'bn' ? 'লেজার ও হিস্ট্রি দেখুন' : 'View Ledger History') : (language === 'bn' ? 'দেখুন ও প্রিন্ট' : 'View & Print')} 
+                            onClick={() => setSelectedPerson(person)}
+                          >
                             <Printer size={16} />
                           </button>
-                          <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
-                            <Edit size={16} />
-                          </button>
-                          <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id)}>
-                            <Trash2 size={16} />
-                          </button>
+                          {activeTab === 'Active' && (
+                            <>
+                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
+                                <Edit size={16} />
+                              </button>
+                              <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id)}>
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                          {activeTab === 'Deleted' && (
+                            <>
+                              <button 
+                                className="btn-outline flex-align-gap" 
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }} 
+                                title={language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier'} 
+                                onClick={() => handleRestore(person.id)}
+                              >
+                                <RotateCcw size={14} /> {language === 'bn' ? 'রিস্টোর' : 'Restore'}
+                              </button>
+                              <button 
+                                className="btn-icon text-danger" 
+                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'} 
+                                onClick={() => handlePermanentDelete(person.id, person.name)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -366,14 +492,27 @@ const Suppliers = () => {
               <div id="printable-single-person" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
                  <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
                  <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   Supplier Statement<br/>
+                   {(selectedPerson.is_deleted || activeTab === 'Deleted') ? 'Deleted Supplier Due & Transaction Statement' : 'Supplier Statement'}<br/>
                    Date: {new Date().toLocaleDateString()}
                  </p>
                  <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
                  
                  <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
-                   <p><strong>Name:</strong> {selectedPerson.name}</p>
-                   <p><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <p style={{ margin: 0 }}><strong>Name:</strong> {selectedPerson.name}</p>
+                     {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
+                       <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 'bold' }}>
+                         {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি (আর্কাইভ)' : 'Deleted Supplier Record'}
+                       </span>
+                     )}
+                   </div>
+                   <p style={{ margin: 0 }}><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
+                   {selectedPerson.company && <p style={{ margin: 0 }}><strong>Company:</strong> {selectedPerson.company}</p>}
+                   {selectedPerson.deleted_at && (
+                     <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
+                       <strong>{language === 'bn' ? 'মুছে ফেলার তারিখ:' : 'Deleted At:'}</strong> {new Date(selectedPerson.deleted_at).toLocaleString()}
+                     </p>
+                   )}
                    <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
                    
                    <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-subtle)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid var(--border-color)', marginTop: '1rem' }}>
@@ -426,6 +565,30 @@ const Suppliers = () => {
               }}>
                 <Printer size={20} /> Print Document
               </button>
+              {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
+                <>
+                  <button 
+                    className="btn-outline flex-align-gap" 
+                    style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#059669', borderColor: '#059669' }}
+                    onClick={async () => {
+                      await handleRestore(selectedPerson.id);
+                      setSelectedPerson(null);
+                    }}
+                  >
+                    <RotateCcw size={18} /> {language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier'}
+                  </button>
+                  <button 
+                    className="btn-outline flex-align-gap" 
+                    style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#dc2626', borderColor: '#dc2626' }}
+                    onClick={async () => {
+                      await handlePermanentDelete(selectedPerson.id, selectedPerson.name);
+                      setSelectedPerson(null);
+                    }}
+                  >
+                    <Trash2 size={18} /> {language === 'bn' ? 'স্থায়ীভাবে মুছুন' : 'Permanently Delete'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>,

@@ -105,7 +105,9 @@ const useStore = create(
       categories: [],
       units: [],
       customers: [],
+      deletedCustomers: [],
       suppliers: [],
+      deletedSuppliers: [],
       sales: [],
       purchases: [],
       returns: [],
@@ -190,7 +192,9 @@ const useStore = create(
           categories: () => ProductService.categories().then((r) => ({ categories: r })),
           units: () => ProductService.units().then((r) => ({ units: r })),
           customers: () => CustomerService.list().then((r) => ({ customers: r })),
+          deletedCustomers: () => CustomerService.listDeleted().then((r) => ({ deletedCustomers: r })),
           suppliers: () => SupplierService.list().then((r) => ({ suppliers: r })),
+          deletedSuppliers: () => SupplierService.listDeleted().then((r) => ({ deletedSuppliers: r })),
           sales: () => SaleService.list().then((r) => ({ sales: r })),
           purchases: () => PurchaseService.list().then((r) => ({ purchases: r })),
           returns: () => ReturnService.list().then((r) => ({ returns: r })),
@@ -725,10 +729,30 @@ const useStore = create(
       deleteCustomer: (customerId) => enqueue(async () => {
         try {
           await CustomerService.remove(customerId);
-          await get().refresh('customers');
+          await Promise.all([get().refresh('customers'), get().refresh('deletedCustomers')]);
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not delete the customer.');
+        }
+      }),
+
+      restoreCustomer: (customerId) => enqueue(async () => {
+        try {
+          await CustomerService.restore(customerId);
+          await Promise.all([get().refresh('customers'), get().refresh('deletedCustomers')]);
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not restore the customer.');
+        }
+      }),
+
+      permanentDeleteCustomer: (customerId) => enqueue(async () => {
+        try {
+          await CustomerService.hardDelete(customerId);
+          await get().refresh('deletedCustomers');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not permanently delete the customer.');
         }
       }),
 
@@ -755,10 +779,30 @@ const useStore = create(
       deleteSupplier: (supplierId) => enqueue(async () => {
         try {
           await SupplierService.remove(supplierId);
-          await get().refresh('suppliers');
+          await Promise.all([get().refresh('suppliers'), get().refresh('deletedSuppliers')]);
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not delete the supplier.');
+        }
+      }),
+
+      restoreSupplier: (supplierId) => enqueue(async () => {
+        try {
+          await SupplierService.restore(supplierId);
+          await Promise.all([get().refresh('suppliers'), get().refresh('deletedSuppliers')]);
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not restore the supplier.');
+        }
+      }),
+
+      permanentDeleteSupplier: (supplierId) => enqueue(async () => {
+        try {
+          await SupplierService.hardDelete(supplierId);
+          await get().refresh('deletedSuppliers');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not permanently delete the supplier.');
         }
       }),
 
@@ -1166,7 +1210,9 @@ const useStore = create(
         categories: state.categories,
         units: state.units,
         customers: state.customers,
+        deletedCustomers: state.deletedCustomers,
         suppliers: state.suppliers,
+        deletedSuppliers: state.deletedSuppliers,
         sales: state.sales,
         purchases: state.purchases,
         returns: state.returns,

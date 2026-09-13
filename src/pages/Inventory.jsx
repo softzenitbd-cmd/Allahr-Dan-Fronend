@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
   Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Loader2, FileDown,
+  Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
@@ -28,10 +28,19 @@ const Inventory = () => {
     inventory, categories, units, addInventoryItem, updateInventoryItem,
     deleteInventoryItem, language, shopProfile, refresh, user,
   } = useStore();
-  // The buying price is the shop's margin. The server already withholds it
-  // from anyone but an Admin; the screen simply does not draw the column or
-  // the field for anyone else.
-  const isAdmin = user?.role === 'Admin';
+  // The original/buying price is confidential to the business owner/admin.
+  // The server only returns cost_price for authenticated admins;
+  // the frontend securely renders the Original Price column & valuation only for admins.
+  const isAdmin = Boolean(
+    user && (
+      user.role === 'Admin' ||
+      String(user.role).toLowerCase() === 'admin' ||
+      user.is_superuser ||
+      user.is_staff ||
+      user.role === 'Owner' ||
+      user.role === 'SuperAdmin'
+    )
+  );
 
   // Server-side pagination & filter states
   const [paginatedProducts, setPaginatedProducts] = useState([]);
@@ -218,6 +227,7 @@ const Inventory = () => {
     const mrpPrice = item.mrp && Number(item.mrp) > 0 ? Number(item.mrp) : salePrice;
     setEditingItem({
       ...item,
+      cost_price: item.cost_price ?? item.costPrice ?? '',
       mrp: mrpPrice,
       discount_price: salePrice,
       price: salePrice,
@@ -419,6 +429,77 @@ const Inventory = () => {
         </div>
       </div>
 
+      {/* Inventory Stat Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(${isAdmin ? '210px' : '250px'}, 1fr))`,
+        gap: '1rem',
+        marginBottom: '1.25rem'
+      }}>
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }}>
+            <Package size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'মোট পণ্য' : 'Total Items'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              {totalCount || (inventory || []).length}
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', color: '#059669' }}>
+            <Boxes size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'মোট স্টক পরিমাণ' : 'Total Stock Qty'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              {valuation.units || totalItems}
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', color: '#d97706' }}>
+            <BadgeDollarSign size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'খুচরা স্টক মূল্য' : 'Retail Stock Value'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              ৳{(valuation.retailValue || totalValue).toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {isAdmin && (
+          <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0, borderLeft: '4px solid #059669' }}>
+            <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(5, 150, 105, 0.12)', color: '#059669' }}>
+              <ShieldCheck size={24} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  {language === 'bn' ? 'আসল স্টক মূল্য' : 'Original Stock Value'}
+                </span>
+                <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(5, 150, 105, 0.15)', color: '#059669', fontWeight: 600 }}>
+                  Admin
+                </span>
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#059669' }}>
+                ৳{valuation.costValue.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Category browse: top-level categories, then the sub-categories of
           the one chosen. Products under the chosen branch fill the table. */}
       <div className="category-browse">
@@ -547,14 +628,18 @@ const Inventory = () => {
                 <th>{t(language, 'Unit')}</th>
                 <th>{t(language, 'Stock')}</th>
                 <th>{t(language, 'Price')} (BDT)</th>
-                {isAdmin && <th>{language === 'bn' ? 'ক্রয় মূল্য' : 'Cost'} (BDT)</th>}
+                {isAdmin && (
+                  <th style={{ whiteSpace: 'nowrap', color: '#059669' }}>
+                    {language === 'bn' ? 'আসল দাম (Original)' : 'Original Price'} (BDT)
+                  </th>
+                )}
                 <th>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--primary)' }}>
+                  <td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--primary)' }}>
                     <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                       <Loader2 size={20} className="animate-spin" />
                       <span>{language === 'bn' ? 'পণ্য লোড হচ্ছে...' : 'Loading products...'}</span>
@@ -563,7 +648,7 @@ const Inventory = () => {
                 </tr>
               ) : paginatedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'এই ফিল্টারে কোনো পণ্য পাওয়া যায়নি।' : 'No products found matching the filter criteria.'}
                   </td>
                 </tr>
@@ -618,8 +703,10 @@ const Inventory = () => {
                     </td>
                     {isAdmin && (
                       <td>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', color: Number(item.cost_price) > 0 ? 'var(--text-main)' : 'var(--text-subtle)' }}>
-                          {Number(item.cost_price) > 0 ? `৳${Number(item.cost_price).toLocaleString()}` : '—'}
+                        <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#059669' }}>
+                          {Number(item.cost_price ?? item.costPrice) > 0
+                            ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}`
+                            : (language === 'bn' ? 'দেওয়া নেই' : '—')}
                         </span>
                       </td>
                     )}
@@ -833,6 +920,7 @@ const Inventory = () => {
                 <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Variant</th>
                 <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>Stock</th>
                 <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>Unit</th>
+                {isAdmin && <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669'}}>Original Price (BDT)</th>}
                 <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>Price (BDT)</th>
               </tr>
             </thead>
@@ -845,6 +933,11 @@ const Inventory = () => {
                   <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.variant || '-'}</td>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', fontWeight: 'bold'}}>{item.stock}</td>
                   <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>{item.unit}</td>
+                  {isAdmin && (
+                    <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 600, color: '#059669'}}>
+                      {Number(item.cost_price ?? item.costPrice) > 0 ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}` : '—'}
+                    </td>
+                  )}
                   <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>
                     {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
                       <>
@@ -858,7 +951,7 @@ const Inventory = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="7" style={{border: '1px solid #ccc', padding: '1rem', textAlign: 'center'}}>No items found.</td>
+                  <td colSpan={isAdmin ? 8 : 7} style={{border: '1px solid #ccc', padding: '1rem', textAlign: 'center'}}>No items found.</td>
                 </tr>
               )}
             </tbody>
@@ -867,6 +960,9 @@ const Inventory = () => {
                 <td colSpan="4" style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Totals:</td>
                 <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center'}}>{totalItems}</td>
                 <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center'}}>-</td>
+                {isAdmin && (
+                  <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: '#059669'}}>৳{valuation.costValue.toLocaleString()}</td>
+                )}
                 <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>৳{totalValue.toLocaleString()}</td>
               </tr>
             </tfoot>

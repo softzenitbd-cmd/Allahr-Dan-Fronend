@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
@@ -8,9 +8,33 @@ import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 const Customers = () => {
-  const { customers, suppliers, settleCustomerDue, settleSupplierDue, sales, purchases, settlements, sendSms, language, addCustomer, updateCustomer, deleteCustomer, updateSupplier, deleteSupplier } = useStore();
+  const { 
+    customers, 
+    deletedCustomers, 
+    suppliers, 
+    deletedSuppliers,
+    settleCustomerDue, 
+    settleSupplierDue, 
+    sales, 
+    purchases, 
+    settlements, 
+    sendSms, 
+    language, 
+    addCustomer, 
+    updateCustomer, 
+    deleteCustomer, 
+    restoreCustomer, 
+    permanentDeleteCustomer,
+    updateSupplier, 
+    deleteSupplier,
+    restoreSupplier,
+    permanentDeleteSupplier,
+    refresh,
+    ensureLoaded 
+  } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('Customer'); // Customer or Supplier
+  const [activeTab, setActiveTab] = useState('Customer'); // Customer, Supplier, or Deleted
+  const [deletedType, setDeletedType] = useState('Customer'); // Customer or Supplier in Deleted tab
   const [smsModal, setSmsModal] = useState({ show: false, target: null, message: '' });
   const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '' });
   const [selectedPerson, setSelectedPerson] = useState(null);
@@ -20,10 +44,29 @@ const Customers = () => {
   const [editingPerson, setEditingPerson] = useState(null);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', due: '', notes: '' });
 
+  // Fetch needed slices on mount & refresh deleted lists when switching to Deleted tab
+  useEffect(() => {
+    ensureLoaded?.('customers', 'suppliers', 'sales', 'purchases', 'settlements');
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'Deleted') {
+      refresh?.('deletedCustomers', 'deletedSuppliers');
+    }
+  }, [activeTab]);
+
   // Compute Ledger for selected person
   let personLedger = [];
   if (selectedPerson) {
-    const personSettlements = (settlements || []).filter(s => s.targetId === selectedPerson.id).map(s => ({
+    const isPersonCustomer = (activeTab === 'Customer') || 
+      (activeTab === 'Deleted' && (deletedType === 'Customer' || selectedPerson.customer_code)) ||
+      Boolean(selectedPerson.customer_code);
+
+    const personSettlements = (settlements || []).filter(s => 
+      s.targetId === selectedPerson.id || 
+      s.targetId === selectedPerson.customer_code || 
+      s.targetId === selectedPerson.supplier_code
+    ).map(s => ({
       id: s.id,
       date: s.date,
       description: 'Payment / Settlement',
@@ -31,31 +74,28 @@ const Customers = () => {
       type: 'payment' // decreases due
     }));
 
-    // What goes on the account is whatever a document left unpaid, whichever
-    // payment type produced it. Filtering on 'Baki' hid every partly-paid sale
-    // and purchase, and charging the full total over-stated the ones it kept.
-    if (activeTab === 'Customer') {
+    if (isPersonCustomer) {
       const personSales = (sales || [])
-        .filter(s => s.customerId === selectedPerson.id && Number(s.due_amount) > 0)
+        .filter(s => (s.customerId === selectedPerson.id || s.customerId === selectedPerson.customer_code || String(s.customerId) === String(selectedPerson.id)) && Number(s.due_amount) > 0)
         .map(s => ({
           id: s.id,
           date: s.date,
           description: Number(s.paid_amount) > 0
-            ? `Partial Sale (${s.items.length} items) - total ৳${s.total}, paid ৳${s.paid_amount}`
-            : `Baki Sale (${s.items.length} items)`,
+            ? `Partial Sale (${s.items?.length || 0} items) - total ৳${s.total}, paid ৳${s.paid_amount}`
+            : `Baki Sale (${s.items?.length || 0} items)`,
           amount: Number(s.due_amount),
           type: 'charge' // increases due
         }));
       personLedger = [...personSales, ...personSettlements];
     } else {
       const personPurchases = (purchases || [])
-        .filter(p => p.supplierId === selectedPerson.id && Number(p.dueAmount) > 0)
+        .filter(p => (p.supplierId === selectedPerson.id || p.supplierId === selectedPerson.supplier_code || String(p.supplierId) === String(selectedPerson.id)) && Number(p.dueAmount) > 0)
         .map(p => ({
           id: p.id,
           date: p.date,
           description: Number(p.paidAmount) > 0
-            ? `Partial Purchase (${p.items.length} items) - total ৳${p.total}, paid ৳${p.paidAmount}`
-            : `Baki Purchase (${p.items.length} items)`,
+            ? `Partial Purchase (${p.items?.length || 0} items) - total ৳${p.total}, paid ৳${p.paidAmount}`
+            : `Baki Purchase (${p.items?.length || 0} items)`,
           amount: Number(p.dueAmount),
           type: 'charge' // increases due
         }));
@@ -82,12 +122,17 @@ const Customers = () => {
     });
   }
 
-  const currentList = activeTab === 'Customer' ? customers : suppliers;
+  const currentList = activeTab === 'Customer'
+    ? (customers || [])
+    : activeTab === 'Supplier'
+      ? (suppliers || [])
+      : (deletedType === 'Customer' ? (deletedCustomers || []) : (deletedSuppliers || []));
 
   const filteredList = currentList.filter(
     (person) =>
-      person.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      person.phone.includes(searchTerm)
+      (person.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (person.phone || '').includes(searchTerm) ||
+      (person.id || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
   const handleSendSMS = async (e) => {
     e.preventDefault();
@@ -152,18 +197,78 @@ const Customers = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id, isSupplier = activeTab === 'Supplier') => {
     const isConfirmed = await showConfirmDialog({
-      title: language === 'bn' ? 'রেকর্ডটি মুছে ফেলবেন?' : 'Delete Record?',
-      text: language === 'bn' ? 'আপনি কি নিশ্চিত এই রেকর্ডটি মুছে ফেলতে চান? এই কাজটি আর ফিরিয়ে আনা যাবে না।' : 'Are you sure you want to delete this record? This action cannot be undone.',
+      title: isSupplier 
+        ? (language === 'bn' ? 'সাপ্লায়ার মুছে ফেলবেন?' : 'Delete Supplier?')
+        : (language === 'bn' ? 'কাস্টমার মুছে ফেলবেন?' : 'Delete Customer?'),
+      text: isSupplier
+        ? (language === 'bn' 
+            ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
+            : 'Are you sure you want to delete this supplier? Full purchase and transaction history will be safely preserved in the Deleted History tab.')
+        : (language === 'bn' 
+            ? 'আপনি কি নিশ্চিত এই কাস্টমার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল সেলস ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
+            : 'Are you sure you want to delete this customer? Full transaction and sales history will be safely preserved in the Deleted History tab.'),
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
       isDanger: true,
     });
     if (isConfirmed) {
-      const res = activeTab === 'Customer' ? await deleteCustomer(id) : await deleteSupplier(id);
+      const res = isSupplier ? await deleteSupplier(id) : await deleteCustomer(id);
       if (res?.ok) {
-        showSuccessAlert(language === 'bn' ? 'সফলভাবে মুছে ফেলা হয়েছে!' : 'Deleted successfully!');
+        showSuccessAlert(language === 'bn' ? 'সফলভাবে মুছে ফেলা হয়েছে এবং হিস্ট্রিতে সংরক্ষিত রয়েছে!' : 'Deleted successfully! History is saved in Deleted History tab.');
+      }
+    }
+  };
+
+  const handleRestore = async (id, isSupplier = (activeTab === 'Deleted' ? deletedType === 'Supplier' : activeTab === 'Supplier')) => {
+    const isConfirmed = await showConfirmDialog({
+      title: isSupplier
+        ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করবেন?' : 'Restore Supplier?')
+        : (language === 'bn' ? 'কাস্টমার রিস্টোর করবেন?' : 'Restore Customer?'),
+      text: isSupplier
+        ? (language === 'bn' 
+            ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
+            : 'Do you want to restore this supplier back to active status?')
+        : (language === 'bn' 
+            ? 'এই কাস্টমারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
+            : 'Do you want to restore this customer back to active status?'),
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, রিস্টোর' : 'Yes, restore',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: false,
+    });
+    if (isConfirmed) {
+      const res = isSupplier ? await restoreSupplier(id) : await restoreCustomer(id);
+      if (res?.ok) {
+        showSuccessAlert(isSupplier 
+          ? (language === 'bn' ? 'সাপ্লায়ার সফলভাবে রিস্টোর হয়েছে!' : 'Supplier restored successfully!')
+          : (language === 'bn' ? 'কাস্টমার সফলভাবে রিস্টোর হয়েছে!' : 'Customer restored successfully!')
+        );
+      }
+    }
+  };
+
+  const handlePermanentDelete = async (id, name, isSupplier = (activeTab === 'Deleted' ? deletedType === 'Supplier' : activeTab === 'Supplier')) => {
+    const isConfirmed = await showConfirmDialog({
+      title: language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলবেন?' : 'Permanently Delete?',
+      text: isSupplier
+        ? (language === 'bn' 
+            ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
+            : `Are you sure you want to permanently delete supplier '${name}' from the database? This action CANNOT be undone!`)
+        : (language === 'bn' 
+            ? `আপনি কি নিশ্চিত '${name}' কাস্টমারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
+            : `Are you sure you want to permanently delete customer '${name}' from the database? This action CANNOT be undone!`),
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, স্থায়ীভাবে মুছুন' : 'Yes, Delete Permanently',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (isConfirmed) {
+      const res = isSupplier ? await permanentDeleteSupplier(id) : await permanentDeleteCustomer(id);
+      if (res?.ok) {
+        showSuccessAlert(isSupplier
+          ? (language === 'bn' ? 'সাপ্লায়ার স্থায়ীভাবে মুছে ফেলা হয়েছে!' : 'Supplier permanently deleted!')
+          : (language === 'bn' ? 'কাস্টমার স্থায়ীভাবে মুছে ফেলা হয়েছে!' : 'Customer permanently deleted!')
+        );
       }
     }
   };
@@ -178,21 +283,47 @@ const Customers = () => {
       </div>
 
       <div className="card">
-        <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="segmented-control" style={{ maxWidth: '400px' }}>
+        <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div className="segmented-control" style={{ maxWidth: '540px' }}>
             <button 
               className={activeTab === 'Customer' ? 'active' : ''}
               onClick={() => setActiveTab('Customer')}
             >
-              {t(language, 'Customers Due')}
+              {t(language, 'Customers Due')} ({customers?.length || 0})
             </button>
             <button 
               className={activeTab === 'Supplier' ? 'active' : ''}
               onClick={() => setActiveTab('Supplier')}
             >
-              {t(language, 'Suppliers Due')}
+              {t(language, 'Suppliers Due')} ({suppliers?.length || 0})
+            </button>
+            <button 
+              className={activeTab === 'Deleted' ? 'active' : ''}
+              onClick={() => setActiveTab('Deleted')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+            >
+              <History size={14} />
+              {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0)) > 0 ? `(${((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0))})` : ''}
             </button>
           </div>
+
+          {activeTab === 'Deleted' && (
+            <div className="segmented-control" style={{ maxWidth: '320px' }}>
+              <button 
+                className={deletedType === 'Customer' ? 'active' : ''}
+                onClick={() => setDeletedType('Customer')}
+              >
+                {language === 'bn' ? 'কাস্টমার' : 'Customers'} ({deletedCustomers?.length || 0})
+              </button>
+              <button 
+                className={deletedType === 'Supplier' ? 'active' : ''}
+                onClick={() => setDeletedType('Supplier')}
+              >
+                {language === 'bn' ? 'সাপ্লায়ার' : 'Suppliers'} ({deletedSuppliers?.length || 0})
+              </button>
+            </div>
+          )}
+
           <div className="search-bar">
             <Search size={18} className="text-muted" />
             <input 
@@ -225,43 +356,88 @@ const Customers = () => {
                 <th>{t(language, 'Name')}</th>
                 <th>{t(language, 'Phone')}</th>
                 <th>{t(language, 'Total Due')}</th>
+                {activeTab === 'Deleted' && <th>{language === 'bn' ? 'মুছে ফেলার তারিখ' : 'Deleted At'}</th>}
                 <th>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {filteredList.length === 0 ? (
-                <tr><td colSpan="5" className="text-center text-muted">No records found.</td></tr>
+                <tr><td colSpan={activeTab === 'Deleted' ? 6 : 5} className="text-center text-muted">{language === 'bn' ? 'কোনো রেকর্ড পাওয়া যায়নি।' : 'No records found.'}</td></tr>
               ) : (
-                filteredList.map((person) => (
-                  <tr key={person.id}>
-                    <td>{person.id}</td>
-                    <td>{person.name}</td>
-                    <td className="flex-align-gap"><Phone size={14} className="text-muted" /> {person.phone}</td>
-                    <td><span className="text-danger font-bold">৳{person.due}</span></td>
-                    <td>
-                      <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
-                        <button className="btn-icon" title="View & Print" onClick={() => setSelectedPerson(person)}>
-                          <Printer size={16} />
-                        </button>
-                        <button className="btn-outline" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, date: new Date().toISOString().split('T')[0] })}>{t(language, 'Settle Due' || 'Settle')}</button>
-                        {activeTab === 'Customer' && (
+                filteredList.map((person) => {
+                  const isSupplierRow = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(person.supplier_code)));
+                  return (
+                    <tr key={person.id}>
+                      <td>{person.id}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{person.name}</span>
+                          {activeTab === 'Deleted' && (
+                            <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>
+                              {isSupplierRow ? (language === 'bn' ? 'মুছে ফেলা সাপ্লায়ার' : 'Deleted Supplier') : (language === 'bn' ? 'মুছে ফেলা কাস্টমার' : 'Deleted Customer')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="flex-align-gap"><Phone size={14} className="text-muted" /> {person.phone || '-'}</td>
+                      <td><span className="text-danger font-bold">৳{person.due}</span></td>
+                      {activeTab === 'Deleted' && (
+                        <td style={{ fontSize: '0.85rem', color: '#666' }}>
+                          {person.deleted_at ? new Date(person.deleted_at).toLocaleString() : '-'}
+                        </td>
+                      )}
+                      <td>
+                        <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
                           <button 
-                            className="btn-primary flex-align-gap" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}}
-                            onClick={() => setSmsModal({ show: true, target: person, message: `Dear ${person.name}, your due amount is ৳${person.due}. Please settle your account.` })}
+                            className="btn-icon" 
+                            title={activeTab === 'Deleted' ? (language === 'bn' ? 'লেজার ও হিস্ট্রি দেখুন' : 'View Ledger History') : 'View & Print'} 
+                            onClick={() => setSelectedPerson(person)}
                           >
-                            <MessageSquare size={14} /> SMS
+                            <Printer size={16} />
                           </button>
-                        )}
-                        <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
-                          <Edit size={16} />
-                        </button>
-                        <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id)}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {activeTab !== 'Deleted' && (
+                            <>
+                              <button className="btn-outline" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, date: new Date().toISOString().split('T')[0] })}>{t(language, 'Settle Due' || 'Settle')}</button>
+                              {activeTab === 'Customer' && (
+                                <button 
+                                  className="btn-primary flex-align-gap" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}}
+                                  onClick={() => setSmsModal({ show: true, target: person, message: `Dear ${person.name}, your due amount is ৳${person.due}. Please settle your account.` })}
+                                >
+                                  <MessageSquare size={14} /> SMS
+                                </button>
+                              )}
+                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
+                                <Edit size={16} />
+                              </button>
+                              <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id, isSupplierRow)}>
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                          {activeTab === 'Deleted' && (
+                            <>
+                              <button 
+                                className="btn-outline flex-align-gap" 
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }} 
+                                title={isSupplierRow ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier') : (language === 'bn' ? 'কাস্টমার রিস্টোর করুন' : 'Restore Customer')} 
+                                onClick={() => handleRestore(person.id, isSupplierRow)}
+                              >
+                                <RotateCcw size={14} /> {language === 'bn' ? 'রিস্টোর' : 'Restore'}
+                              </button>
+                              <button 
+                                className="btn-icon text-danger" 
+                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'} 
+                                onClick={() => handlePermanentDelete(person.id, person.name, isSupplierRow)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -546,60 +722,87 @@ const Customers = () => {
             </div>
             
             <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
-              <div id="printable-single-person" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   Due Statement<br/>
-                   Date: {new Date().toLocaleDateString()}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '1.6', marginBottom: '1.5rem' }}>
-                   <p><strong>Name:</strong> {selectedPerson.name}</p>
-                   <p><strong>Phone:</strong> {selectedPerson.phone}</p>
-                   <p><strong>Type:</strong> {activeTab}</p>
-                 </div>
+              {(() => {
+                const isSelectedSupplier = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(selectedPerson.supplier_code)));
+                return (
+                  <div id="printable-single-person" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
+                    <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+                    <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
+                      {(selectedPerson.is_deleted || activeTab === 'Deleted') 
+                        ? (isSelectedSupplier ? 'Deleted Supplier Due & Transaction Statement' : 'Deleted Customer Due & Transaction Statement')
+                        : (isSelectedSupplier ? 'Supplier Due Statement' : 'Due Statement')
+                      }<br/>
+                      Date: {new Date().toLocaleDateString()}
+                    </p>
+                    <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+                    
+                    <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <p style={{ margin: 0 }}><strong>Name:</strong> {selectedPerson.name}</p>
+                        {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
+                          <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 'bold' }}>
+                            {isSelectedSupplier 
+                              ? (language === 'bn' ? 'মুছে ফেলা সাপ্লায়ার হিস্ট্রি (আর্কাইভ)' : 'Deleted Supplier Record')
+                              : (language === 'bn' ? 'মুছে ফেলা কাস্টমার হিস্ট্রি (আর্কাইভ)' : 'Deleted Customer Record')
+                            }
+                          </span>
+                        )}
+                      </div>
+                      <p><strong>Phone:</strong> {selectedPerson.phone || '-'}</p>
+                      <p><strong>Type:</strong> {
+                        selectedPerson.is_deleted || activeTab === 'Deleted' 
+                          ? (isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার (মুছে ফেলা হিস্ট্রি)' : 'Supplier (Deleted Record)') : (language === 'bn' ? 'কাস্টমার (মুছে ফেলা হিস্ট্রি)' : 'Customer (Deleted Record)')) 
+                          : (isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার' : 'Supplier') : (language === 'bn' ? 'কাস্টমার' : 'Customer'))
+                      }</p>
+                      {selectedPerson.deleted_at && (
+                        <p style={{ fontSize: '0.85rem', color: '#666' }}>
+                          <strong>{language === 'bn' ? 'মুছে ফেলার তারিখ:' : 'Deleted At:'}</strong> {new Date(selectedPerson.deleted_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
 
-                 <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#000' }}>Transaction Ledger</h4>
-                 <table style={{ width: '100%', fontSize: '0.8rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
-                   <thead>
-                     <tr style={{ background: '#f8f9fa' }}>
-                       <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Date</th>
-                       <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Description</th>
-                       <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Charge (Baki)</th>
-                       <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Payment (Settle)</th>
-                       <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Balance</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     {personLedger.length > 0 ? (
-                       personLedger.map((tx) => (
-                         <tr key={tx.id}>
-                           <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{new Date(tx.date).toLocaleDateString()}</td>
-                           <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{tx.description}</td>
-                           <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'charge' ? 'red' : 'inherit' }}>
-                             {tx.type === 'charge' ? `৳${tx.amount.toLocaleString()}` : '-'}
-                           </td>
-                           <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'payment' ? 'green' : 'inherit' }}>
-                             {tx.type === 'payment' ? `৳${tx.amount.toLocaleString()}` : '-'}
-                           </td>
-                           <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 'bold' }}>
-                             ৳{Math.max(0, tx.balance).toLocaleString()}
-                           </td>
-                         </tr>
-                       ))
-                     ) : (
-                       <tr>
-                         <td colSpan="5" style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center', color: '#666' }}>No transactions found.</td>
-                       </tr>
-                     )}
-                   </tbody>
-                 </table>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#000' }}>Transaction Ledger</h4>
+                    <table style={{ width: '100%', fontSize: '0.8rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
+                      <thead>
+                        <tr style={{ background: '#f8f9fa' }}>
+                          <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Date</th>
+                          <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Description</th>
+                          <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Charge (Baki)</th>
+                          <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Payment (Settle)</th>
+                          <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {personLedger.length > 0 ? (
+                          personLedger.map((tx) => (
+                            <tr key={tx.id}>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{new Date(tx.date).toLocaleDateString()}</td>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{tx.description}</td>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'charge' ? 'red' : 'inherit' }}>
+                                {tx.type === 'charge' ? `৳${tx.amount.toLocaleString()}` : '-'}
+                              </td>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'payment' ? 'green' : 'inherit' }}>
+                                {tx.type === 'payment' ? `৳${tx.amount.toLocaleString()}` : '-'}
+                              </td>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 'bold' }}>
+                                ৳{Math.max(0, tx.balance).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="5" style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center', color: '#666' }}>No transactions found.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
 
-                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                   <p style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'red' }}><strong>Current Due:</strong> ৳{selectedPerson.due.toLocaleString()}</p>
-                 </div>
-              </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                      <p style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'red' }}><strong>Current Due:</strong> ৳{selectedPerson.due.toLocaleString()}</p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
@@ -608,6 +811,33 @@ const Customers = () => {
               }}>
                 <Printer size={20} /> Print Document
               </button>
+              {(selectedPerson.is_deleted || activeTab === 'Deleted') && (() => {
+                const isSelectedSupplier = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(selectedPerson.supplier_code)));
+                return (
+                  <>
+                    <button 
+                      className="btn-outline flex-align-gap" 
+                      style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#059669', borderColor: '#059669' }}
+                      onClick={async () => {
+                        await handleRestore(selectedPerson.id, isSelectedSupplier);
+                        setSelectedPerson(null);
+                      }}
+                    >
+                      <RotateCcw size={18} /> {isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier') : (language === 'bn' ? 'কাস্টমার রিস্টোর করুন' : 'Restore Customer')}
+                    </button>
+                    <button 
+                      className="btn-outline flex-align-gap" 
+                      style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#dc2626', borderColor: '#dc2626' }}
+                      onClick={async () => {
+                        await handlePermanentDelete(selectedPerson.id, selectedPerson.name, isSelectedSupplier);
+                        setSelectedPerson(null);
+                      }}
+                    >
+                      <Trash2 size={18} /> {language === 'bn' ? 'স্থায়ীভাবে মুছুন' : 'Permanently Delete'}
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>,

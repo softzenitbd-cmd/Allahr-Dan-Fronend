@@ -42,16 +42,22 @@ export const StockLogService = {
 
 export const CustomerService = {
   list: (params) => apiClient.get(ENDPOINTS.CUSTOMERS, { params }),
+  listDeleted: (params) => apiClient.get(ENDPOINTS.CUSTOMERS, { params: { ...params, is_deleted: 'true' } }),
   create: (payload) => apiClient.post(ENDPOINTS.CUSTOMERS, payload),
   update: (code, payload) => apiClient.patch(ENDPOINTS.CUSTOMER(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.CUSTOMER(code)),
+  restore: (code) => apiClient.post(ENDPOINTS.CUSTOMER_RESTORE(code)),
+  hardDelete: (code) => apiClient.delete(ENDPOINTS.CUSTOMER_HARD_DELETE(code)),
 };
 
 export const SupplierService = {
   list: (params) => apiClient.get(ENDPOINTS.SUPPLIERS, { params }),
+  listDeleted: (params) => apiClient.get(ENDPOINTS.SUPPLIERS, { params: { ...params, is_deleted: 'true' } }),
   create: (payload) => apiClient.post(ENDPOINTS.SUPPLIERS, payload),
   update: (code, payload) => apiClient.patch(ENDPOINTS.SUPPLIER(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.SUPPLIER(code)),
+  restore: (code) => apiClient.post(ENDPOINTS.SUPPLIER_RESTORE(code)),
+  hardDelete: (code) => apiClient.delete(ENDPOINTS.SUPPLIER_HARD_DELETE(code)),
 };
 
 export const SaleService = {
