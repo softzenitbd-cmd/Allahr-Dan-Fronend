@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Eye, Printer, Trash2, Wallet, Search, RefreshCcw, X,
-  FileText, Banknote, AlertCircle, Receipt, Download,
+  FileText, Banknote, AlertCircle, Receipt, Download, Edit,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
@@ -55,6 +56,11 @@ const POSHistory = () => {
   } = useStore();
 
   const isAdmin = user?.role === 'Admin';
+  const navigate = useNavigate();
+
+  const handleEditInvoice = (sale) => {
+    navigate('/pos', { state: { editSale: sale } });
+  };
 
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -314,7 +320,7 @@ const POSHistory = () => {
                 <th style={{ textAlign: 'right' }}>{t(language, 'Total')}</th>
                 <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'পরিশোধ' : 'Paid'}</th>
                 <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'বকেয়া' : 'Due'}</th>
-                <th style={{ textAlign: 'center' }}>{t(language, 'Actions')}</th>
+                <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -365,8 +371,8 @@ const POSHistory = () => {
                     }}>
                       ৳{money(remaining)}
                     </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
+                    <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                      <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                         <button
                           className="btn-icon"
                           title={language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
@@ -381,6 +387,15 @@ const POSHistory = () => {
                         >
                           <Eye size={16} />
                         </button>
+                        {isAdmin && (
+                          <button
+                            className="btn-icon text-info"
+                            title={language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
+                            onClick={() => handleEditInvoice(s)}
+                          >
+                            <Edit size={16} />
+                          </button>
+                        )}
                         {remaining > 0 && (
                           <button
                             className="btn-icon"
@@ -520,6 +535,19 @@ const POSHistory = () => {
                 >
                   <Download size={16} /> {language === 'bn' ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
                 </button>
+                {isAdmin && (
+                  <button
+                    className="btn-outline flex-align-gap text-info"
+                    style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                    onClick={() => {
+                      const saleToEdit = selected;
+                      setSelected(null);
+                      handleEditInvoice(saleToEdit);
+                    }}
+                  >
+                    <Edit size={16} /> {language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -150,7 +150,7 @@ const Expenses = () => {
                   <th>{t(language, 'Category')}</th>
                   <th>{t(language, 'Description')}</th>
                   <th>{t(language, 'Amount' || 'Amount')} (BDT)</th>
-                  <th style={{textAlign:'center'}}>{t(language, 'Actions')}</th>
+                  <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,8 +160,8 @@ const Expenses = () => {
                     <td>{exp.category}</td>
                     <td>{exp.description}</td>
                     <td className="text-danger font-bold">৳{exp.amount.toLocaleString()}</td>
-                    <td style={{textAlign:'center'}}>
-                      <div className="flex-align-gap" style={{justifyContent:'center', flexWrap: 'nowrap'}}>
+                    <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                      <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                         <button className="btn-icon" title="View & Print" onClick={() => setSelectedExpense(exp)}>
                           <Eye size={16} />
                         </button>

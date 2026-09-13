@@ -259,10 +259,20 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
                sale.paymentType}
             </span>
           </div>
-          {(sale.mfsTrxId || (sale.notes && sale.notes.includes('TrxID'))) && (
+          {(sale.splitDetails || (sale.notes && sale.notes.includes('Split:'))) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#000000', margin: '2px 0' }}>
+              <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'যৌথ বিবরণ:' : 'Split Info:'}</span>
+              <span style={{ fontWeight: 800, color: '#000000' }}>
+                {sale.splitDetails || (sale.notes ? sale.notes.split('|')[0].replace('Split:', '').trim() : '')}
+              </span>
+            </div>
+          )}
+          {(sale.mfsTrxId || (sale.notes && (sale.notes.includes('TrxID') || sale.notes.includes('Trx:')))) && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#000000' }}>
               <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'ট্রানজ্যাকশন আইডি:' : 'Trx ID:'}</span>
-              <span style={{ fontWeight: 800, color: '#000000' }}>{sale.mfsTrxId || sale.notes}</span>
+              <span style={{ fontWeight: 800, color: '#000000' }}>
+                {sale.mfsTrxId || (sale.notes.includes('Trx') ? sale.notes.match(/Trx(?:ID)?:?\s*([^\s\)|]+)/i)?.[1] || sale.notes : sale.notes)}
+              </span>
             </div>
           )}
 
@@ -306,6 +316,13 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
         <div style={{ fontSize: '9.5px', fontWeight: 700, fontStyle: 'italic', textAlign: 'center', margin: '2px 0', color: '#000000' }}>
           {takaInWords(sale.total)}
         </div>
+
+        {/* Edit History on thermal receipt */}
+        {sale.notes && (sale.notes.includes('[সম্পাদনা:') || sale.notes.includes('[Edited by:')) && (
+          <div style={{ fontSize: '8.5px', color: '#000000', margin: '2px 0', textAlign: 'center', fontWeight: 700 }}>
+            * {sale.notes.match(/\[(?:সম্পাদনা|Edited by):[^\]]+\]/g)?.slice(-1)[0]?.replace(/[\[\]]/g, '') || ''}
+          </div>
+        )}
 
         {/* Dashed divider */}
         <div style={{ borderTop: '1px dashed #000000', margin: '5px 0' }} />

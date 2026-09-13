@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import {
   Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
@@ -29,6 +30,8 @@ const MFS_OPTIONS = [
 ];
 
 const POS = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart, loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft, drafts, sales, customers, language, shopProfile } = useStore();
   // Editing or deleting a sale reverses stock and balances, which the server
   // only lets an Admin do. Hiding the controls keeps a salesman from
@@ -37,7 +40,9 @@ const POS = () => {
   const [activeTab, setActiveTab] = useState('New'); // 'New' or 'History'
   const [barcodeInput, setBarcodeInput] = useState('');
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '', location: '' });
-  const [paymentType, setPaymentType] = useState('Cash');
+  const [paymentType, setPaymentType] = useState('Cash'); // 'Cash' | 'Mobile Banking' | 'Split'
+  const [splitCash, setSplitCash] = useState('');
+  const [splitMfs, setSplitMfs] = useState('');
   const [mfsProvider, setMfsProvider] = useState('bKash');
   const [mfsTrxId, setMfsTrxId] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
@@ -99,6 +104,7 @@ const POS = () => {
 
   const [completedSale, setCompletedSale] = useState(null);
   const [editingSaleId, setEditingSaleId] = useState(null);
+  const [editingSale, setEditingSale] = useState(null);
   const [scannedItem, setScannedItem] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -317,12 +323,19 @@ const POS = () => {
       return;
     }
 
-    const rec = Number(cashReceived) || 0;
+    const isSplit = paymentType === 'Split';
+    const cashVal = isSplit ? (parseFloat(splitCash) || 0) : 0;
+    const mfsVal = isSplit ? (parseFloat(splitMfs) || 0) : 0;
+    const rec = isSplit ? (cashVal + mfsVal) : (cashReceived === '' ? total : (Number(cashReceived) || 0));
     const effectivePaid = (rec >= total && total > 0) ? total : (rec <= 0 ? 0 : rec);
     const effectiveDue = Math.max(0, total - effectivePaid);
 
     let effectiveMethodName;
-    if (rec <= 0) {
+    if (isSplit) {
+      effectiveMethodName = language === 'bn'
+        ? `ক্যাশ ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()}`
+        : `Cash ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()}`;
+    } else if (rec <= 0) {
       effectiveMethodName = language === 'bn' ? 'বাকি (Due)' : 'Due / Baki';
     } else if (rec < total) {
       effectiveMethodName = paymentType === 'Mobile Banking'
@@ -334,9 +347,44 @@ const POS = () => {
         : (language === 'bn' ? 'নগদ (Cash)' : 'Cash');
     }
 
+    // Previous sale reconciliation calculations (if editing)
+    const prevPaidAmount = editingSale ? (Number(editingSale.paid_amount ?? editingSale.totalPaid) || 0) : 0;
+    const prevTotalBill = editingSale ? (Number(editingSale.total ?? editingSale.grandTotal) || 0) : 0;
+    const billDiff = editingSale ? (total - prevTotalBill) : 0;
+    const diffAgainstPrevPaid = editingSale ? (total - prevPaidAmount) : 0;
+
     // SweetAlert confirmation modal before processing
     const alertHtml = `
       <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #1e293b;">
+        ${editingSale ? `
+        <div style="background: #fdf4ff; border: 1.5px solid #d8b4fe; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+          <div style="font-weight: 800; font-size: 13px; color: #7e22ce; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🔄 ${language === 'bn' ? 'পূর্ববর্তী চালানের হিসাব সমন্বয়' : 'Invoice Adjustment Breakdown'}</span>
+            <span style="font-size: 11px; background: #fae8ff; color: #a21caf; padding: 2px 6px; border-radius: 4px;">${editingSale.invoice_number || editingSale.invoiceId || editingSale.id}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 3px;">
+            <span style="color: #6b21a8;">${language === 'bn' ? 'আগের মোট বিল:' : 'Previous Total:'}</span>
+            <strong>৳${prevTotalBill.toLocaleString()}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 3px;">
+            <span style="color: #047857;">${language === 'bn' ? 'আগে পরিশোধিত (জমা):' : 'Previously Paid:'}</span>
+            <strong style="color: #047857;">৳${prevPaidAmount.toLocaleString()}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e9d5ff;">
+            <span style="font-weight: 700; color: ${diffAgainstPrevPaid > 0 ? '#b91c1c' : (diffAgainstPrevPaid < 0 ? '#047857' : '#475569')};">
+              ${diffAgainstPrevPaid > 0 
+                ? (language === 'bn' ? 'আগের জমার চেয়ে অতিরিক্ত দিতে হবে:' : 'Extra to Pay (vs Prev Paid):')
+                : (diffAgainstPrevPaid < 0 
+                    ? (language === 'bn' ? 'আগের জমার চেয়ে ফেরত দিতে হবে:' : 'Refund to Customer (vs Prev Paid):') 
+                    : (language === 'bn' ? 'আগের জমার সমান (কোনো পার্থক্য নেই)' : 'Settled with Previous Paid'))}
+            </span>
+            <strong style="font-size: 13px; color: ${diffAgainstPrevPaid > 0 ? '#b91c1c' : (diffAgainstPrevPaid < 0 ? '#047857' : '#475569')};">
+              ${diffAgainstPrevPaid > 0 ? `+৳${diffAgainstPrevPaid.toLocaleString()}` : (diffAgainstPrevPaid < 0 ? `−৳${Math.abs(diffAgainstPrevPaid).toLocaleString()}` : '৳0')}
+            </strong>
+          </div>
+        </div>
+        ` : ''}
+
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
             <span style="color: #64748b;">${language === 'bn' ? 'কাস্টমার:' : 'Customer:'}</span>
@@ -359,11 +407,11 @@ const POS = () => {
 
         <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px;">
           <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: #1e3a8a; margin-bottom: 4px;">
-            <span>${language === 'bn' ? 'সর্বমোট বিল:' : 'Total Bill:'}</span>
+            <span>${language === 'bn' ? 'নতুন মোট বিল:' : 'New Total Bill:'}</span>
             <span>৳${total.toLocaleString()}</span>
           </div>
           <div style="display: flex; justify-content: space-between; color: #047857; font-weight: 700; margin-bottom: 4px;">
-            <span>${language === 'bn' ? 'জমা / পরিশোধ:' : 'Paid Amount:'}</span>
+            <span>${language === 'bn' ? 'বর্তমান পরিশোধ/জমা:' : 'Paid Now / Accounted:'}</span>
             <span>৳${effectivePaid.toLocaleString()}</span>
           </div>
           ${effectiveDue > 0 ? `
@@ -408,7 +456,21 @@ const POS = () => {
     let autoPaidAmount;
     let autoDueAmount;
 
-    if (rec >= total && total > 0) {
+    if (isSplit) {
+      if (rec >= total && total > 0) {
+        autoPaymentType = `Split (Cash + ${mfsProvider})`;
+        autoPaidAmount = total;
+        autoDueAmount = 0;
+      } else if (rec <= 0) {
+        autoPaymentType = 'Baki';
+        autoPaidAmount = 0;
+        autoDueAmount = total;
+      } else {
+        autoPaymentType = 'Partial';
+        autoPaidAmount = rec;
+        autoDueAmount = total - rec;
+      }
+    } else if (rec >= total && total > 0) {
       autoPaymentType = paymentType === 'Mobile Banking' ? `Mobile Banking (${mfsProvider})` : 'Cash';
       autoPaidAmount = total;
       autoDueAmount = 0;
@@ -424,22 +486,65 @@ const POS = () => {
     }
 
     const salesmanObj = currentSalesman;
+    const splitDetailsText = isSplit ? `Cash: ৳${cashVal.toLocaleString()} + ${mfsProvider}: ৳${mfsVal.toLocaleString()}` : undefined;
     const saleData = {
       cartItems: cart,
       paymentType: autoPaymentType,
-      mfsProvider: paymentType === 'Mobile Banking' ? mfsProvider : undefined,
-      mfsTrxId: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
+      isSplit,
+      cashPaid: isSplit ? cashVal : (paymentType === 'Cash' ? autoPaidAmount : 0),
+      mfsPaid: isSplit ? mfsVal : (paymentType === 'Mobile Banking' ? autoPaidAmount : 0),
+      mfsProvider: (paymentType === 'Mobile Banking' || isSplit) ? mfsProvider : undefined,
+      mfsTrxId: (paymentType === 'Mobile Banking' || isSplit) && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
       customerInfo,
       invoiceDiscount,
       salesman: salesmanObj,
       paidAmount: autoPaidAmount,
-      account: paymentType === 'Mobile Banking' && autoPaidAmount > 0 ? 'Bank' : 'Cash',
-      notes: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? `TrxID: ${mfsTrxId.trim()}` : undefined,
+      account: isSplit ? 'Cash' : (paymentType === 'Mobile Banking' && autoPaidAmount > 0 ? 'Bank' : 'Cash'),
+      splitDetails: splitDetailsText,
     };
 
+    let computedNotes = isSplit
+      ? `Split: Cash ৳${cashVal}, ${mfsProvider} ৳${mfsVal}${mfsTrxId?.trim() ? ` (TrxID: ${mfsTrxId.trim()})` : ''}`
+      : (paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? `TrxID: ${mfsTrxId.trim()}` : '');
+
+    let originalInvoiceNumber = null;
+    let originalDate = null;
+
+    if (editingSale) {
+      originalInvoiceNumber = editingSale.invoice_number || editingSale.invoiceId || editingSale.id;
+      originalDate = editingSale.date;
+
+      const editorName = user?.name || user?.username || 'Admin';
+      const nowStr = new Date().toLocaleString('en-GB', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+      });
+      const editEntry = `[সম্পাদনা: ${editorName} | ${nowStr}]`;
+
+      const rawPast = (editingSale.notes || '').trim();
+      const priorLogs = rawPast.match(/\[সম্পাদনা:[^\]]+\]/g) || [];
+      const cleanedPast = rawPast.replace(/\[সম্পাদনা:[^\]]+\]/g, '').trim();
+
+      const combinedBase = [cleanedPast, computedNotes].filter(Boolean).join(' | ');
+      const allLogs = [...priorLogs, editEntry].join(' ');
+      computedNotes = combinedBase ? `${combinedBase} ${allLogs}` : allLogs;
+    }
+
+    saleData.notes = computedNotes || undefined;
+    if (originalInvoiceNumber) {
+      saleData.id = originalInvoiceNumber;
+      saleData.invoiceId = originalInvoiceNumber;
+    }
+    if (originalDate) {
+      saleData.date = originalDate;
+    }
+
     if (editingSaleId) {
-      await deleteSale(editingSaleId);
-      setEditingSaleId(null);
+      const delRes = await deleteSale(editingSaleId);
+      if (!delRes?.ok) {
+        toast.error(language === 'bn' ? 'পূর্বের চালান আপডেট প্রক্রিয়াকরণে সমস্যা হয়েছে।' : 'Failed to unwind previous sale for edit.');
+        return;
+      }
     }
     
     const res = await processSale(saleData);
@@ -448,12 +553,14 @@ const POS = () => {
         ...saleData,
         subtotal,
         total,
-        date: res.invoice?.date || new Date().toISOString(),
-        invoiceId: res.invoice?.id || res.invoice?.invoice_number,
+        date: res.invoice?.date || originalDate || new Date().toISOString(),
+        invoiceId: res.invoice?.invoice_number || res.invoice?.id || originalInvoiceNumber,
         paidAmount: Number(res.invoice?.paid_amount ?? autoPaidAmount) || 0,
         dueAmount: Number(res.invoice?.due_amount ?? autoDueAmount) || 0,
         cashReceived: rec > total ? rec : autoPaidAmount,
         changeGiven: rec > total ? rec - total : 0,
+        splitDetails: splitDetailsText,
+        notes: computedNotes,
       };
 
       setCompletedSale(completedObj);
@@ -462,10 +569,14 @@ const POS = () => {
       setInvoiceDiscount(0);
       setPaidAmount(0);
       setCashReceived('');
+      setSplitCash('');
+      setSplitMfs('');
       setPaymentType('Cash');
       setMfsProvider('bKash');
       setMfsTrxId('');
-      toast.success(editingSaleId ? 'Sale updated successfully!' : 'Sale processed successfully!');
+      setEditingSaleId(null);
+      setEditingSale(null);
+      toast.success(editingSale ? (language === 'bn' ? 'চালান সফলভাবে আপডেট করা হয়েছে!' : 'Invoice updated successfully!') : (language === 'bn' ? 'বিক্রয় সম্পন্ন হয়েছে!' : 'Sale processed successfully!'));
 
       // Automatically trigger thermal printer
       setTimeout(() => {
@@ -482,12 +593,22 @@ const POS = () => {
       return;
     }
     const salesmanObj = currentSalesman;
-    const actualPaymentType = paymentType === 'Mobile Banking' ? `Mobile Banking (${mfsProvider})` : paymentType;
+    const isSplit = paymentType === 'Split';
+    const actualPaymentType = isSplit
+      ? `Split (Cash + ${mfsProvider})`
+      : (paymentType === 'Mobile Banking' ? `Mobile Banking (${mfsProvider})` : paymentType);
     const res = await saveDraft({
-      cartItems: cart, customerInfo, paymentType: actualPaymentType, invoiceDiscount,
-      salesman: salesmanObj, total,
-      mfsProvider: paymentType === 'Mobile Banking' ? mfsProvider : undefined,
-      mfsTrxId: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
+      cartItems: cart,
+      customerInfo,
+      paymentType: actualPaymentType,
+      invoiceDiscount,
+      salesman: salesmanObj,
+      total,
+      isSplit,
+      cashPaid: isSplit ? splitCash : undefined,
+      mfsPaid: isSplit ? splitMfs : undefined,
+      mfsProvider: (paymentType === 'Mobile Banking' || isSplit) ? mfsProvider : undefined,
+      mfsTrxId: (paymentType === 'Mobile Banking' || isSplit) && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
     });
     if (res?.ok) {
       clearCart();
@@ -495,6 +616,8 @@ const POS = () => {
       setInvoiceDiscount(0);
       setPaidAmount(0);
       setCashReceived('');
+      setSplitCash('');
+      setSplitMfs('');
       setScannedItem(null);
       toast.success(`Draft ${res.draft?.id || ''} saved.`);
     }
@@ -507,11 +630,22 @@ const POS = () => {
     if (draft.salesman?.id || draft.salesman?.staff_code) {
       setSelectedSalesmanId(draft.salesman.id || draft.salesman.staff_code);
     }
-    if (draft.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) {
+    if (draft.isSplit || draft.paymentType?.startsWith('Split')) {
+      setPaymentType('Split');
+      setSplitCash(draft.cashPaid ? String(draft.cashPaid) : '');
+      setSplitMfs(draft.mfsPaid ? String(draft.mfsPaid) : '');
+      if (draft.mfsProvider) setMfsProvider(draft.mfsProvider);
+      else {
+        const match = draft.paymentType?.match(/Split \(Cash \+ ([^)]+)\)/);
+        if (match) setMfsProvider(match[1]);
+      }
+      if (draft.mfsTrxId) setMfsTrxId(draft.mfsTrxId);
+    } else if (draft.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) {
       setPaymentType('Mobile Banking');
       const match = draft.paymentType.match(/Mobile Banking \(([^)]+)\)/);
       if (match) setMfsProvider(match[1]);
       else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) setMfsProvider(draft.paymentType);
+      if (draft.mfsTrxId) setMfsTrxId(draft.mfsTrxId);
     } else {
       setPaymentType(draft.paymentType || 'Cash');
     }
@@ -528,27 +662,96 @@ const POS = () => {
     if (res?.ok) toast.success('Draft discarded.');
   };
 
+  const extractOriginalSplit = (sale) => {
+    if (!sale) return { cash: 0, mfs: 0, totalPaid: 0 };
+    let cash = sale.cashPaid !== undefined && sale.cashPaid !== null ? Number(sale.cashPaid) : 0;
+    let mfs = sale.mfsPaid !== undefined && sale.mfsPaid !== null ? Number(sale.mfsPaid) : 0;
+    const totalPaid = Number(sale.paid_amount ?? sale.totalPaid) || 0;
+
+    // If not directly stored on object, try extracting from notes e.g. "Split: Cash ৳1000, bKash ৳2000"
+    if (!cash && !mfs && sale.notes) {
+      const cashMatch = sale.notes.match(/Cash[:\s]+৳?\s*([\d,.]+)/i);
+      if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+      const mfsMatch = sale.notes.match(/(?:bKash|Nagad|Rocket|Binimoy|Upay|Cellfin|Tap|MFS)[:\s]+৳?\s*([\d,.]+)/i);
+      if (mfsMatch) mfs = parseFloat(mfsMatch[1].replace(/,/g, '')) || 0;
+    }
+
+    // If single payment or notes didn't specify split
+    if (!cash && !mfs && totalPaid > 0) {
+      if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
+        mfs = totalPaid;
+      } else {
+        cash = totalPaid;
+      }
+    }
+    return { cash, mfs, totalPaid };
+  };
+
   const handleEditSale = (sale) => {
-    setCart(sale.items);
-    const customer = customers.find(c => c.id === sale.customerId);
+    // Normalise items with numbers and safe fallbacks
+    const mappedItems = (sale.items || []).map((item, idx) => ({
+      id: item.id || item.product_code || `item-${idx}`,
+      product_code: item.product_code || item.id,
+      name: item.name || 'Product',
+      variant: item.variant || '',
+      unit: item.unit || 'pcs',
+      price: Number(item.price) || 0,
+      quantity: Number(item.quantity) || 1,
+      itemDiscount: Number(item.itemDiscount || item.item_discount) || 0,
+      isGift: Boolean(item.isGift || item.is_gift),
+    }));
+    setCart(mappedItems);
+
+    const customer = customers.find(c => c.id === sale.customerId || c.customer_code === sale.customerId);
     setCustomerInfo({
-       name: sale.customerName !== 'Walk-in Customer' ? sale.customerName : '',
-       phone: customer?.phone || '',
-       location: customer?.location || ''
+       name: sale.customerName !== 'Walk-in Customer' ? (sale.customerName || '') : '',
+       phone: customer?.phone || sale.customer_phone || '',
+       location: customer?.location || sale.customer_location || ''
     });
-    if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
+    if (sale.salesmanId || sale.salesman_id) {
+      setSelectedSalesmanId(sale.salesmanId || sale.salesman_id);
+    }
+
+    const { cash: origCash, mfs: origMfs, totalPaid: previousPaid } = extractOriginalSplit(sale);
+
+    if (sale.isSplit || sale.paymentType?.startsWith('Split')) {
+      setPaymentType('Split');
+      setSplitCash(origCash > 0 ? String(origCash) : (previousPaid > 0 ? String(previousPaid) : '0'));
+      setSplitMfs(origMfs > 0 ? String(origMfs) : '0');
+      if (sale.mfsProvider) setMfsProvider(sale.mfsProvider);
+      else {
+        const match = sale.paymentType?.match(/Split \(Cash \+ ([^)]+)\)/);
+        if (match) setMfsProvider(match[1]);
+      }
+      if (sale.mfsTrxId) setMfsTrxId(sale.mfsTrxId);
+    } else if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
       setPaymentType('Mobile Banking');
       const match = sale.paymentType.match(/Mobile Banking \(([^)]+)\)/);
       if (match) setMfsProvider(match[1]);
       else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) setMfsProvider(sale.paymentType);
+      if (sale.mfsTrxId) setMfsTrxId(sale.mfsTrxId);
+      setSplitCash('');
+      setSplitMfs('');
     } else {
       setPaymentType(sale.paymentType || 'Cash');
+      setSplitCash('');
+      setSplitMfs('');
     }
-    setPaidAmount(Number(sale.paid_amount) || 0);
-    setInvoiceDiscount(sale.invoiceDiscount || 0);
-    setEditingSaleId(sale.id);
+
+    setCashReceived(String(previousPaid));
+    setPaidAmount(previousPaid);
+    setInvoiceDiscount(Number(sale.invoiceDiscount ?? sale.invoice_discount) || 0);
+    setEditingSaleId(sale.id || sale.invoice_number);
+    setEditingSale(sale);
     setActiveTab('New');
   };
+
+  useEffect(() => {
+    if (location.state?.editSale) {
+      handleEditSale(location.state.editSale);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
 
   const handleDeleteSale = async (saleId) => {
     if (window.confirm('Are you sure you want to delete this sale? This action will reverse stock and cash balances.')) {
@@ -602,6 +805,60 @@ const POS = () => {
       </div>
 
       {activeTab === 'New' && (
+      <>
+        {editingSale && (
+          <div style={{
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            border: '1.5px solid #3b82f6',
+            borderRadius: '12px',
+            padding: '12px 18px',
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 3px 10px rgba(59, 130, 246, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '22px' }}>✏️</span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <strong style={{ color: '#1e3a8a', fontSize: '15px' }}>
+                    {language === 'bn' ? 'চালান সম্পাদনা মোড' : 'Invoice Edit Mode'}
+                  </strong>
+                  <span style={{ background: '#2563eb', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '12px' }}>
+                    #{editingSale.invoice_number || editingSale.id}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#1e40af', marginTop: '3px' }}>
+                  {language === 'bn' ? 'কাস্টমার:' : 'Customer:'} <strong>{customerInfo.name || editingSale.customerName || 'N/A'}</strong> | {language === 'bn' ? 'প্রয়োজনমতো পণ্য যোগ করুন বা বাদ দিন, মূল্য ও পরিশোধের হিসাব স্বয়ংক্রিয়ভাবে সামঞ্জস্য হবে।' : 'Add or remove products as needed; totals and balances will auto-adjust.'}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ borderColor: '#ef4444', color: '#ef4444', background: '#fff', fontSize: '12.5px', fontWeight: 700, padding: '6px 14px', borderRadius: '8px', cursor: 'pointer' }}
+              onClick={() => {
+                if (window.confirm(language === 'bn' ? 'আপনি কি এই চালানটির সম্পাদনা বাতিল করতে চান?' : 'Do you want to cancel editing this invoice?')) {
+                  setEditingSaleId(null);
+                  setEditingSale(null);
+                  clearCart();
+                  setCustomerInfo({ name: '', phone: '', location: '' });
+                  setInvoiceDiscount(0);
+                  setPaidAmount(0);
+                  setCashReceived('');
+                  setSplitCash('');
+                  setSplitMfs('');
+                  setPaymentType('Cash');
+                }
+              }}
+            >
+              ✕ {language === 'bn' ? 'সম্পাদনা বাতিল করুন' : 'Cancel Edit'}
+            </button>
+          </div>
+        )}
       <div className="pos-container animate-fade-in">
 
         {/* ---------------------------------------------------------------- */}
@@ -1086,7 +1343,14 @@ const POS = () => {
                   className={paymentType === 'Mobile Banking' ? 'active' : ''}
                   onClick={() => setPaymentType('Mobile Banking')}
                 >
-                  <Smartphone size={14} /> {language === 'bn' ? 'মোবাইল ব্যাংকিং' : 'Mobile Banking'}
+                  <Smartphone size={14} /> {language === 'bn' ? 'মোবাইল' : 'MFS'}
+                </button>
+                <button
+                  type="button"
+                  className={paymentType === 'Split' ? 'active' : ''}
+                  onClick={() => setPaymentType('Split')}
+                >
+                  <CreditCard size={14} /> {language === 'bn' ? 'ক্যাশ + MFS' : 'Cash + MFS'}
                 </button>
               </div>
             </div>
@@ -1148,6 +1412,60 @@ const POS = () => {
               </div>
             )}
 
+            {/* Split Payment MFS Setup */}
+            {paymentType === 'Split' && (
+              <div className="field-block" style={{ marginTop: '0.4rem', padding: '0.65rem 0.75rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <div style={{ marginBottom: '0.45rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: '0.25rem', color: 'var(--text-main)' }}>
+                    {language === 'bn' ? 'মোবাইল ব্যাংকিং নির্বাচন করুন' : 'Select Mobile Banking'}
+                  </label>
+                  <select
+                    className="form-control"
+                    value={mfsProvider}
+                    onChange={(e) => setMfsProvider(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-strong)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-main)',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      padding: '0 0.5rem',
+                    }}
+                  >
+                    {MFS_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn' ? 'MFS ট্রানজ্যাকশন আইডি / TrxID (অপশনাল)' : 'MFS TrxID (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. 9J4K8L7M2N"
+                    value={mfsTrxId}
+                    onChange={(e) => setMfsTrxId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '32px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-card)',
+                      padding: '0 0.5rem',
+                      fontSize: '0.8125rem',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* What it comes to */}
             <div className="sum-box">
               <div className="sum-line">
@@ -1175,100 +1493,380 @@ const POS = () => {
               </div>
             </div>
 
-            {/* Always visible Received Amount (Auto handles Paid / Partial / Baki) */}
-            <div className="field-block" style={{ marginTop: '0.4rem' }}>
-              <div className="sum-line">
-                <span className="text-muted" style={{ fontWeight: 600 }}>
-                  {paymentType === 'Mobile Banking'
-                    ? (language === 'bn' ? 'মোবাইলে প্রাপ্ত টাকা' : 'MFS Received')
-                    : t(language, 'Cash Received')}
-                </span>
-                <span className="inline-amount">
-                  <span className="prefix">৳</span>
-                  <input
-                    type="number"
-                    value={cashReceived}
-                    onChange={e => setCashReceived(e.target.value)}
-                    min="0"
-                    placeholder="0"
-                  />
-                </span>
-              </div>
+            {/* Invoice Reconciliation Card (Shown during Edit Sale) */}
+            {editingSale && (() => {
+              const prevPaid = Number(editingSale.paid_amount ?? editingSale.totalPaid) || 0;
+              const prevBill = Number(editingSale.total ?? editingSale.grandTotal) || 0;
+              const billDiff = total - prevBill;
+              const diffAgainstPrevPaid = total - prevPaid;
+              const { cash: origCash, mfs: origMfs } = extractOriginalSplit(editingSale);
 
-              {total > 0 && (
-                <div className="cash-presets" style={{ marginTop: '0.4rem' }}>
-                  <button
-                    type="button"
-                    className={`preset-chip ${Number(cashReceived) === total && cashReceived !== '' ? 'active' : ''}`}
-                    onClick={() => setCashReceived(String(total))}
-                  >
-                    {language === 'bn' ? 'পুরো পরিশোধ' : 'Exact'} ৳{total.toLocaleString()}
-                  </button>
-                  <button
-                    type="button"
-                    className={`preset-chip ${cashReceived === '' || Number(cashReceived) === 0 ? 'active' : ''}`}
-                    onClick={() => setCashReceived('0')}
-                    style={{ color: 'var(--danger)' }}
-                  >
-                    {language === 'bn' ? 'সম্পূর্ণ বাকি (৳0)' : 'Full Due (৳0)'}
-                  </button>
-                  {getCashPresets(total).filter(amt => amt !== total).slice(0, 3).map((amt, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={`preset-chip ${Number(cashReceived) === amt ? 'active' : ''}`}
-                      onClick={() => setCashReceived(String(amt))}
-                    >
-                      ৳{amt.toLocaleString()}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Dynamic Auto Status Alert */}
-              {(() => {
-                const rec = Number(cashReceived) || 0;
-                if (rec <= 0) {
-                  return (
-                    <div className="pos-alert bad" style={{ marginTop: '0.45rem' }}>
-                      <span>
-                        ℹ️ {language === 'bn'
-                          ? `সম্পূর্ণ বাকি (Full Due) — বকেয়া ৳${total.toLocaleString()}`
-                          : `Full Due — ৳${total.toLocaleString()} will be recorded as Baki`}
-                      </span>
+              return (
+                <div 
+                  className="edit-reconciliation-card" 
+                  style={{ 
+                    marginTop: '0.5rem', 
+                    padding: '0.75rem', 
+                    background: 'linear-gradient(135deg, rgba(243, 232, 255, 0.6) 0%, rgba(245, 243, 255, 0.9) 100%)', 
+                    border: '1.5px solid #d8b4fe', 
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: '0 2px 8px rgba(147, 51, 234, 0.08)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem', paddingBottom: '0.35rem', borderBottom: '1px solid rgba(216, 180, 254, 0.6)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#7e22ce', fontWeight: 700, fontSize: '0.8rem' }}>
+                      <FileText size={15} />
+                      <span>{language === 'bn' ? 'চালান হিসাব সমন্বয় (পূর্ববর্তী তথ্য)' : 'Invoice Reconciliation'}</span>
                     </div>
-                  );
-                }
-                if (rec > 0 && rec < total) {
-                  return (
-                    <div className="pos-alert info" style={{ marginTop: '0.45rem' }}>
-                      <span>
-                        ⚠️ {language === 'bn'
-                          ? `আংশিক জমা: ৳${rec.toLocaleString()} | বাকি (Due): ৳${(total - rec).toLocaleString()}`
-                          : `Partial: Paid ৳${rec.toLocaleString()} | Due: ৳${(total - rec).toLocaleString()}`}
-                      </span>
-                    </div>
-                  );
-                }
-                if (rec > total) {
-                  return (
-                    <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
-                      <span>{t(language, 'Change to Return')}</span>
-                      <span>৳{(rec - total).toLocaleString()}</span>
-                    </div>
-                  );
-                }
-                return (
-                  <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
-                    <span>
-                      ✓ {language === 'bn'
-                        ? `সম্পূর্ণ পরিশোধ (Paid) — ৳${total.toLocaleString()}`
-                        : `Full Paid — ৳${total.toLocaleString()}`}
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#9333ea', background: '#f3e8ff', padding: '1px 6px', borderRadius: '4px' }}>
+                      #{editingSale.invoice_number || editingSale.invoiceId || editingSale.id}
                     </span>
                   </div>
-                );
-              })()}
-            </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.75rem', marginBottom: '0.45rem' }}>
+                    <div style={{ background: '#ffffff', padding: '5px 7px', borderRadius: '6px', border: '1px solid #e9d5ff' }}>
+                      <div style={{ color: '#6b7280', fontSize: '0.68rem' }}>{language === 'bn' ? 'আগের মোট বিল' : 'Previous Total Bill'}</div>
+                      <strong style={{ color: '#374151', fontSize: '0.82rem' }}>৳{prevBill.toLocaleString()}</strong>
+                    </div>
+
+                    <div style={{ background: '#ffffff', padding: '5px 7px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                      <div style={{ color: '#15803d', fontSize: '0.68rem' }}>
+                        {language === 'bn' ? 'আগে পরিশোধিত (জমা)' : 'Previously Paid'}
+                      </div>
+                      <strong style={{ color: '#15803d', fontSize: '0.82rem' }}>৳{prevPaid.toLocaleString()}</strong>
+                      {(origCash > 0 || origMfs > 0) && (
+                        <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: '1px' }}>
+                          {origCash > 0 ? `ক্যাশ ৳${origCash.toLocaleString()}` : ''}
+                          {origCash > 0 && origMfs > 0 ? ' + ' : ''}
+                          {origMfs > 0 ? `MFS ৳${origMfs.toLocaleString()}` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bill variation indicator */}
+                  <div style={{ background: '#ffffff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #e9d5ff', marginBottom: '0.45rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem' }}>
+                      <span style={{ color: '#4b5563' }}>{language === 'bn' ? 'বিলের পরিবর্তন:' : 'Bill Change:'}</span>
+                      <strong style={{ color: billDiff > 0 ? '#b91c1c' : (billDiff < 0 ? '#15803d' : '#6b7280') }}>
+                        {billDiff > 0 ? `+৳${billDiff.toLocaleString()} (পণ্য বেড়েছে)` : (billDiff < 0 ? `−৳${Math.abs(billDiff).toLocaleString()} (পণ্য কমেছে)` : 'অপরিবর্তিত (৳0)')}
+                      </strong>
+                    </div>
+
+                    {/* Net Adjustment vs Previously Paid */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e5e7eb', fontSize: '0.77rem' }}>
+                      <span style={{ fontWeight: 700, color: diffAgainstPrevPaid > 0 ? '#b91c1c' : (diffAgainstPrevPaid < 0 ? '#15803d' : '#4b5563') }}>
+                        {diffAgainstPrevPaid > 0 
+                          ? (language === 'bn' ? '👉 আরও পরিশোধ করতে হবে:' : '👉 Extra to Pay:')
+                          : (diffAgainstPrevPaid < 0 
+                              ? (language === 'bn' ? '👉 কাস্টমারকে ফেরত দিতে হবে:' : '👉 Refund to Customer:') 
+                              : (language === 'bn' ? '👉 আগের জমার সাথে সম্পূর্ণ সমন্বয়:' : '👉 Fully Settled:'))}
+                      </span>
+                      <strong style={{ fontSize: '0.875rem', fontWeight: 800, color: diffAgainstPrevPaid > 0 ? '#b91c1c' : (diffAgainstPrevPaid < 0 ? '#15803d' : '#4b5563') }}>
+                        {diffAgainstPrevPaid > 0 ? `+৳${diffAgainstPrevPaid.toLocaleString()}` : (diffAgainstPrevPaid < 0 ? `−৳${Math.abs(diffAgainstPrevPaid).toLocaleString()}` : '৳0')}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* One-click Action Buttons for Reconciliation */}
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="preset-chip"
+                      style={{ fontSize: '0.68rem', padding: '3px 7px', background: '#f5f3ff', border: '1px solid #c084fc', color: '#6b21a8', fontWeight: 600 }}
+                      onClick={() => {
+                        if (paymentType === 'Split') {
+                          // Adjust difference onto Cash
+                          const diff = total - prevPaid;
+                          setSplitCash(String(Math.max(0, origCash + diff)));
+                          setSplitMfs(String(origMfs));
+                        } else {
+                          setCashReceived(String(total));
+                        }
+                      }}
+                      title={language === 'bn' ? 'নতুন সম্পূর্ণ বিল পরিশোধ হিসেবে সমন্বয় করুন' : 'Settle to new total'}
+                    >
+                      ✓ {language === 'bn' ? 'নতুন বিল পুরো সমন্বয়' : 'Settle Full Bill'} (৳{total.toLocaleString()})
+                    </button>
+
+                    <button
+                      type="button"
+                      className="preset-chip"
+                      style={{ fontSize: '0.68rem', padding: '3px 7px', background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontWeight: 600 }}
+                      onClick={() => {
+                        if (paymentType === 'Split') {
+                          setSplitCash(String(origCash));
+                          setSplitMfs(String(origMfs));
+                        } else {
+                          setCashReceived(String(prevPaid));
+                        }
+                      }}
+                      title={language === 'bn' ? 'আগের জমার পরিমাণ সেট করুন' : 'Keep original paid amount'}
+                    >
+                      ↺ {language === 'bn' ? 'আগের জমা রাখুন' : 'Keep Prev Paid'} (৳{prevPaid.toLocaleString()})
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Payment Received Box: Split vs Standard Single */}
+            {paymentType === 'Split' ? (
+              <div className="field-block" style={{ marginTop: '0.4rem', padding: '0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--primary)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CreditCard size={15} />
+                  <span>{language === 'bn' ? 'যৌথ পেমেন্ট বিভাজন (ক্যাশ + MFS)' : 'Split Payment (Cash + MFS)'}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--success)', marginBottom: '0.2rem' }}>
+                      💵 {language === 'bn' ? 'নগদ জমা (Cash)' : 'Cash Paid'}
+                    </label>
+                    <div className="inline-amount" style={{ width: '100%' }}>
+                      <span className="prefix">৳</span>
+                      <input
+                        type="number"
+                        placeholder="0"
+                        min="0"
+                        value={splitCash}
+                        onChange={(e) => setSplitCash(e.target.value)}
+                        style={{ width: '100%', fontWeight: 700, fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)', marginBottom: '0.2rem' }}>
+                      📱 {mfsProvider} {language === 'bn' ? 'জমা' : 'Paid'}
+                    </label>
+                    <div className="inline-amount" style={{ width: '100%' }}>
+                      <span className="prefix">৳</span>
+                      <input
+                        type="number"
+                        placeholder="0"
+                        min="0"
+                        value={splitMfs}
+                        onChange={(e) => setSplitMfs(e.target.value)}
+                        style={{ width: '100%', fontWeight: 700, fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick helper buttons */}
+                {total > 0 && (
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+                    <button
+                      type="button"
+                      className="preset-chip"
+                      style={{ fontSize: '0.7rem', padding: '3px 8px' }}
+                      onClick={() => {
+                        const curCash = Number(splitCash) || 0;
+                        setSplitMfs(String(Math.max(0, total - curCash)));
+                      }}
+                    >
+                      {language === 'bn' ? `বাকিটা MFS-এ (${Math.max(0, total - (Number(splitCash) || 0))})` : 'Balance to MFS'}
+                    </button>
+                    <button
+                      type="button"
+                      className="preset-chip"
+                      style={{ fontSize: '0.7rem', padding: '3px 8px' }}
+                      onClick={() => {
+                        const curMfs = Number(splitMfs) || 0;
+                        setSplitCash(String(Math.max(0, total - curMfs)));
+                      }}
+                    >
+                      {language === 'bn' ? `বাকিটা ক্যাশে (${Math.max(0, total - (Number(splitMfs) || 0))})` : 'Balance to Cash'}
+                    </button>
+                    <button
+                      type="button"
+                      className="preset-chip"
+                      style={{ fontSize: '0.7rem', padding: '3px 8px' }}
+                      onClick={() => {
+                        const half = Math.round(total / 2);
+                        setSplitCash(String(half));
+                        setSplitMfs(String(total - half));
+                      }}
+                    >
+                      50% / 50%
+                    </button>
+
+                    {/* Edit mode quick diff helper for split payment */}
+                    {editingSale && (() => {
+                      const prevPaid = Number(editingSale.paid_amount ?? editingSale.totalPaid) || 0;
+                      const diff = total - prevPaid;
+                      if (diff === 0) return null;
+                      return (
+                        <button
+                          type="button"
+                          className="preset-chip"
+                          style={{ fontSize: '0.7rem', padding: '3px 8px', background: diff > 0 ? '#fef2f2' : '#f0fdf4', color: diff > 0 ? '#b91c1c' : '#15803d', borderColor: diff > 0 ? '#fca5a5' : '#86efac' }}
+                          onClick={() => {
+                            const curCash = Number(splitCash) || 0;
+                            setSplitCash(String(Math.max(0, curCash + diff)));
+                          }}
+                        >
+                          {diff > 0 
+                            ? (language === 'bn' ? `+ অতিরিক্ত ৳${diff.toLocaleString()} ক্যাশে যোগ` : `+ Add ৳${diff.toLocaleString()} to Cash`)
+                            : (language === 'bn' ? `− ৳${Math.abs(diff).toLocaleString()} ক্যাশ থেকে কমান` : `− Reduce ৳${Math.abs(diff).toLocaleString()} from Cash`)}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Live Split Status Alert */}
+                {(() => {
+                  const cashVal = Number(splitCash) || 0;
+                  const mfsVal = Number(splitMfs) || 0;
+                  const rec = cashVal + mfsVal;
+
+                  if (rec <= 0) {
+                    return (
+                      <div className="pos-alert bad" style={{ marginTop: '0.35rem' }}>
+                        <span>
+                          ℹ️ {language === 'bn'
+                            ? `সম্পূর্ণ বাকি (Full Due) — বকেয়া ৳${total.toLocaleString()}`
+                            : `Full Due — ৳${total.toLocaleString()} will be recorded as Baki`}
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (rec > 0 && rec < total) {
+                    return (
+                      <div className="pos-alert info" style={{ marginTop: '0.35rem' }}>
+                        <span>
+                          ⚠️ {language === 'bn'
+                            ? `মোট প্রাপ্ত: ৳${rec.toLocaleString()} (ক্যাশ: ৳${cashVal.toLocaleString()} + ${mfsProvider}: ৳${mfsVal.toLocaleString()}) | বাকি (Due): ৳${(total - rec).toLocaleString()}`
+                            : `Total Received: ৳${rec.toLocaleString()} (Cash: ৳${cashVal.toLocaleString()} + ${mfsProvider}: ৳${mfsVal.toLocaleString()}) | Due: ৳${(total - rec).toLocaleString()}`}
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (rec > total) {
+                    return (
+                      <div className="pos-alert ok" style={{ marginTop: '0.35rem' }}>
+                        <div>
+                          <span>
+                            {language === 'bn'
+                              ? `মোট জমা: ৳${rec.toLocaleString()} (ক্যাশ: ৳${cashVal.toLocaleString()} + ${mfsProvider}: ৳${mfsVal.toLocaleString()})`
+                              : `Total Received: ৳${rec.toLocaleString()}`}
+                          </span>
+                          <div style={{ color: 'var(--primary)', fontWeight: 700, marginTop: '2px' }}>
+                            {t(language, 'Change to Return')}: ৳{(rec - total).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="pos-alert ok" style={{ marginTop: '0.35rem' }}>
+                      <span>
+                        ✓ {language === 'bn'
+                          ? `সম্পূর্ণ পরিশোধ (Paid) — ক্যাশ ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()} = মোট ৳${total.toLocaleString()}`
+                          : `Full Paid — Cash ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()} = Total ৳${total.toLocaleString()}`}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              /* Single Payment Received block (Cash or MFS) */
+              <div className="field-block" style={{ marginTop: '0.4rem' }}>
+                <div className="sum-line">
+                  <span className="text-muted" style={{ fontWeight: 600 }}>
+                    {paymentType === 'Mobile Banking'
+                      ? (language === 'bn' ? 'মোবাইলে প্রাপ্ত টাকা' : 'MFS Received')
+                      : t(language, 'Cash Received')}
+                  </span>
+                  <span className="inline-amount">
+                    <span className="prefix">৳</span>
+                    <input
+                      type="number"
+                      value={cashReceived}
+                      onChange={e => setCashReceived(e.target.value)}
+                      min="0"
+                      placeholder="0"
+                    />
+                  </span>
+                </div>
+
+                {total > 0 && (
+                  <div className="cash-presets" style={{ marginTop: '0.4rem' }}>
+                    <button
+                      type="button"
+                      className={`preset-chip ${Number(cashReceived) === total && cashReceived !== '' ? 'active' : ''}`}
+                      onClick={() => setCashReceived(String(total))}
+                    >
+                      {language === 'bn' ? 'পুরো পরিশোধ' : 'Exact'} ৳{total.toLocaleString()}
+                    </button>
+                    <button
+                      type="button"
+                      className={`preset-chip ${cashReceived === '' || Number(cashReceived) === 0 ? 'active' : ''}`}
+                      onClick={() => setCashReceived('0')}
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      {language === 'bn' ? 'সম্পূর্ণ বাকি (৳0)' : 'Full Due (৳0)'}
+                    </button>
+                    {getCashPresets(total).filter(amt => amt !== total).slice(0, 3).map((amt, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`preset-chip ${Number(cashReceived) === amt ? 'active' : ''}`}
+                        onClick={() => setCashReceived(String(amt))}
+                      >
+                        ৳{amt.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Dynamic Auto Status Alert */}
+                {(() => {
+                  const rec = Number(cashReceived) || 0;
+                  if (rec <= 0) {
+                    return (
+                      <div className="pos-alert bad" style={{ marginTop: '0.45rem' }}>
+                        <span>
+                          ℹ️ {language === 'bn'
+                            ? `সম্পূর্ণ বাকি (Full Due) — বকেয়া ৳${total.toLocaleString()}`
+                            : `Full Due — ৳${total.toLocaleString()} will be recorded as Baki`}
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (rec > 0 && rec < total) {
+                    return (
+                      <div className="pos-alert info" style={{ marginTop: '0.45rem' }}>
+                        <span>
+                          ⚠️ {language === 'bn'
+                            ? `আংশিক জমা: ৳${rec.toLocaleString()} | বাকি (Due): ৳${(total - rec).toLocaleString()}`
+                            : `Partial: Paid ৳${rec.toLocaleString()} | Due: ৳${(total - rec).toLocaleString()}`}
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (rec > total) {
+                    return (
+                      <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
+                        <span>{t(language, 'Change to Return')}</span>
+                        <span>৳{(rec - total).toLocaleString()}</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
+                      <span>
+                        ✓ {language === 'bn'
+                          ? `সম্পূর্ণ পরিশোধ (Paid) — ৳${total.toLocaleString()}`
+                          : `Full Paid — ৳${total.toLocaleString()}`}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           {/* Pinned: the action bar never scrolls away */}
@@ -1322,14 +1920,18 @@ const POS = () => {
                   className="btn-outline text-danger"
                   onClick={() => {
                     setEditingSaleId(null);
+                    setEditingSale(null);
                     clearCart();
                     setCustomerInfo({ name: '', phone: '', location: '' });
                     setInvoiceDiscount(0);
                     setPaidAmount(0);
                     setCashReceived('');
+                    setSplitCash('');
+                    setSplitMfs('');
+                    setPaymentType('Cash');
                   }}
                 >
-                  {t(language, 'Cancel Edit')}
+                  ✕ {t(language, 'Cancel Edit')}
                 </button>
               )}
             </div>
@@ -1408,6 +2010,7 @@ const POS = () => {
         document.body
       )}
       </div>
+      </>
       )}
 
       {activeTab === 'History' && (
@@ -1445,7 +2048,7 @@ const POS = () => {
                 <th>{t(language, 'Items')}</th>
                 <th>{t(language, 'Payment Method')}</th>
                 <th>{t(language, 'Total')}</th>
-                <th style={{textAlign:'center'}}>{t(language, 'Actions')}</th>
+                <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1457,8 +2060,8 @@ const POS = () => {
                   <td>{s.items.length} items</td>
                   <td><span className={`badge ${s.paymentType === 'Cash' ? 'bg-success' : 'bg-warning'}`}>{s.paymentType}</span></td>
                   <td className="text-primary font-bold">৳{s.total.toLocaleString()}</td>
-                  <td style={{textAlign:'center'}}>
-                    <div className="flex-align-gap" style={{justifyContent:'center'}}>
+                  <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                    <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                       <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(s)}>
                         <Eye size={16} />
                       </button>
@@ -1613,7 +2216,7 @@ const POS = () => {
                   <th>{t(language, 'Items')}</th>
                   <th style={{ textAlign: 'right' }}>{t(language, 'Total')}</th>
                   <th>{t(language, 'Salesman')}</th>
-                  <th style={{ textAlign: 'center' }}>{t(language, 'Actions')}</th>
+                  <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1632,8 +2235,8 @@ const POS = () => {
                       <td>{(d.cartItems || []).length} items</td>
                       <td style={{ textAlign: 'right', fontWeight: 700 }}>৳{Number(d.total || 0).toLocaleString()}</td>
                       <td className="text-muted">{d.salesman?.name || '—'}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div className="flex-align-gap" style={{ justifyContent: 'center', flexWrap: 'nowrap' }}>
+                      <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                        <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                           <button
                             className="btn-primary"
                             style={{ padding: '0.3rem 0.8rem', fontSize: '0.85rem' }}

@@ -175,7 +175,7 @@ export const fromCompletedSale = (sale) => {
     cashReceived: Number(sale.cashReceived) || 0,
     changeGiven: Number(sale.changeGiven) || 0,
     payments: [],
-    notes: '',
+    notes: sale.notes || '',
   };
 };
 
@@ -388,8 +388,21 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
       </div>
 
       {sale.notes && (
-        <div style={{ marginTop: '10px', fontSize: '11px' }}>
-          <span style={{ color: '#6b7280', fontWeight: 700 }}>Note: </span>{sale.notes}
+        <div style={{ marginTop: '10px', fontSize: '11px', lineHeight: 1.5 }}>
+          {sale.notes.includes('[সম্পাদনা:') || sale.notes.includes('[Edited by:') ? (
+            <div style={{ background: '#f8fafc', border: '1px dashed #94a3b8', borderRadius: '6px', padding: '8px 12px' }}>
+              <div style={{ color: '#0f172a', fontWeight: 800, fontSize: '11px', marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span>✏️</span> {language === 'bn' ? 'সম্পাদনা বিবরণ (Edit History):' : 'Edit Audit History:'}
+              </div>
+              <div style={{ color: '#334155', fontSize: '10.5px', fontWeight: 500 }}>
+                {sale.notes}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <span style={{ color: '#6b7280', fontWeight: 700 }}>Note: </span>{sale.notes}
+            </div>
+          )}
         </div>
       )}
 

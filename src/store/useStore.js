@@ -514,19 +514,43 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       // Sales
       // ---------------------------------------------------------------- //
-      processSale: ({ cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount }) =>
+      processSale: ({ id, invoiceId, date, cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount, notes, account, isSplit, cashPaid, mfsPaid, mfsProvider, mfsTrxId }) =>
         enqueue(async () => {
           try {
             const invoice = await SaleService.create({
+              id: id || invoiceId,
+              invoiceId: id || invoiceId,
+              date,
               cartItems,
               paymentType,
               customerInfo,
               invoiceDiscount: invoiceDiscount || 0,
               salesman: salesman || {},
-              // Only a Partial sale carries a paid amount; Cash and Baki are
-              // decided entirely by the payment type.
-              paidAmount: paymentType === 'Partial' ? Number(paidAmount) || 0 : undefined,
+              paidAmount: (paymentType === 'Partial' || isSplit || paidAmount !== undefined) ? Number(paidAmount) || 0 : undefined,
+              notes,
+              account: isSplit ? 'Cash' : account,
+              isSplit,
+              cashPaid,
+              mfsPaid,
+              mfsProvider,
+              mfsTrxId,
             });
+
+            // If it's a split payment (Cash + MFS), sale was deposited to Cash by default;
+            // transfer the MFS portion from Cash to Bank so both drawer and bank remain exact!
+            if (isSplit && Number(mfsPaid) > 0) {
+              try {
+                await TreasuryService.transfer({
+                  from_account: 'Cash',
+                  to_account: 'Bank',
+                  amount: Number(mfsPaid),
+                  description: `Split payment (${mfsProvider || 'MFS'}) for ${invoice?.invoice_number || invoice?.id || 'sale'}`,
+                });
+              } catch (tErr) {
+                console.warn('Split payment internal treasury transfer:', tErr);
+              }
+            }
+
             await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
             // Hand the saved invoice back so the receipt can print the number
             // the shop actually filed, not one made up on the client.

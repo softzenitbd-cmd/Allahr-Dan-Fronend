@@ -401,7 +401,7 @@ const Purchase = () => {
                 <th>{t(language, 'Total')}</th>
                 <th>{t(language, 'Paid Amount')}</th>
                 <th>{t(language, 'Due Amount')}</th>
-                <th style={{textAlign:'center'}}>{t(language, 'Actions')}</th>
+                <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -415,8 +415,8 @@ const Purchase = () => {
                   <td className="font-bold">৳{p.total.toLocaleString()}</td>
                   <td className="text-success font-bold">৳{purchasePaid(p).toLocaleString()}</td>
                   <td className="text-danger font-bold">৳{purchaseDue(p).toLocaleString()}</td>
-                  <td style={{textAlign:'center'}}>
-                    <div className="flex-align-gap" style={{justifyContent:'center', flexWrap: 'nowrap'}}>
+                  <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
+                    <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                       <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(p)}>
                         <Eye size={16} />
                       </button>
