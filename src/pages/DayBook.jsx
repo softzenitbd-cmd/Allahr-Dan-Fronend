@@ -603,15 +603,17 @@ const DayBook = () => {
                             <span className="db-row-id"> · {row.id}</span>
                           </div>
                         </div>
-                        <div className="db-row-amount">
-                          <div className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</div>
-                          {row.due > 0 && <div className="due">{bn ? 'বাকি' : 'due'} {money(row.due)}</div>}
-                          {row.kind === 'sale' && row.due === 0 && row.paid > 0 && <div className="ok"><CheckCircle2 size={11} /> {bn ? 'পরিশোধিত' : 'paid'}</div>}
-                        </div>
-                        <div className="db-row-actions">
-                          {row.kind === 'sale' && <button className="btn-icon" title={bn ? 'চালান দেখুন / প্রিন্ট' : 'View / print invoice'} onClick={() => openInvoice(row.id)}><Eye size={16} /></button>}
-                          {row.kind === 'sale' && row.due > 0 && <button className="btn-icon text-success" title={bn ? 'বকেয়া নিন' : 'Receive due'} onClick={() => openPay(row)}><Wallet size={16} /></button>}
-                          {row.kind === 'expense' && isAdmin && <button className="btn-icon text-danger" title={bn ? 'মুছুন' : 'Delete'} onClick={() => removeExpense(row)}><Trash2 size={16} /></button>}
+                        <div className="db-row-right">
+                          <div className="db-row-actions">
+                            {row.kind === 'sale' && <button className="btn-icon" title={bn ? 'চালান দেখুন / প্রিন্ট' : 'View / print invoice'} onClick={() => openInvoice(row.id)}><Eye size={16} /></button>}
+                            {row.kind === 'sale' && row.due > 0 && <button className="btn-icon text-success" title={bn ? 'বকেয়া নিন' : 'Receive due'} onClick={() => openPay(row)}><Wallet size={16} /></button>}
+                            {row.kind === 'expense' && isAdmin && <button className="btn-icon text-danger" title={bn ? 'মুছুন' : 'Delete'} onClick={() => removeExpense(row)}><Trash2 size={16} /></button>}
+                          </div>
+                          <div className="db-row-amount">
+                            <span className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</span>
+                            {row.due > 0 && <span className="due">({bn ? 'বাকি' : 'due'} {money(row.due)})</span>}
+                            {row.kind === 'sale' && row.due === 0 && row.paid > 0 && <span className="ok"><CheckCircle2 size={11} /> {bn ? 'পরিশোধিত' : 'paid'}</span>}
+                          </div>
                         </div>
                       </div>
                     );

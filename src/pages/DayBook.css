@@ -153,7 +153,7 @@
 
 .db-row {
   display: grid;
-  grid-template-columns: 48px 34px minmax(0, 1fr) auto auto;
+  grid-template-columns: 48px 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 1rem;
@@ -179,14 +179,31 @@
 .db-row-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .db-row-id { color: var(--text-subtle); font-size: 0.68rem; }
 
-.db-row-amount { text-align: right; min-width: 96px; }
+.db-row-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.db-row-actions { display: inline-flex; gap: 0.2rem; align-items: center; justify-content: flex-end; }
+.db-row-actions:empty { display: none; }
+
+.db-row-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  text-align: right;
+  justify-content: flex-end;
+}
 .db-row-amount .amt { font-size: 0.9375rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-main); }
 .db-row-amount .amt.in { color: var(--success); }
 .db-row-amount .amt.out { color: var(--danger); }
-.db-row-amount .due { font-size: 0.7rem; font-weight: 600; color: var(--danger); }
-.db-row-amount .ok { font-size: 0.7rem; color: var(--success); display: inline-flex; align-items: center; gap: 0.2rem; }
-
-.db-row-actions { display: inline-flex; gap: 0.15rem; min-width: 34px; justify-content: flex-end; }
+.db-row-amount .due { font-size: 0.72rem; font-weight: 600; color: var(--danger); white-space: nowrap; }
+.db-row-amount .ok { font-size: 0.7rem; color: var(--success); display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
 
 /* Side */
 .db-side { display: flex; flex-direction: column; gap: var(--sp-3); position: sticky; top: var(--sp-4); }

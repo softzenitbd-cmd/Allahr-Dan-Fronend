@@ -4,7 +4,7 @@ import useStore from '../store/useStore';
 import {
   Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
   FilePlus, Edit, Wallet, ShoppingCart, User, UserCheck, Phone,
-  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X
+  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone
 } from 'lucide-react';
 import { printElement } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
@@ -17,6 +17,17 @@ import Swal, { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import Expenses from './Expenses';
 import './POS.css';
 
+const MFS_OPTIONS = [
+  { id: 'bKash', label: 'bKash (বিকাশ)' },
+  { id: 'Nagad', label: 'Nagad (নগদ)' },
+  { id: 'Rocket', label: 'Rocket (রকেট)' },
+  { id: 'Binimoy', label: 'Binimoy (বিনিময় - Govt/BB)' },
+  { id: 'Upay', label: 'Upay (উপায়)' },
+  { id: 'Cellfin', label: 'Cellfin (সেলফিন)' },
+  { id: 'Tap', label: 'Tap (ট্যাপ)' },
+  { id: 'Other', label: 'Other MFS (অন্যান্য)' },
+];
+
 const POS = () => {
   const { cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart, loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft, drafts, sales, customers, language, shopProfile } = useStore();
   // Editing or deleting a sale reverses stock and balances, which the server
@@ -27,6 +38,8 @@ const POS = () => {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '', location: '' });
   const [paymentType, setPaymentType] = useState('Cash');
+  const [mfsProvider, setMfsProvider] = useState('bKash');
+  const [mfsTrxId, setMfsTrxId] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
   // Kept as a string so the box can sit empty, which means "paid the exact amount".
   const [cashReceived, setCashReceived] = useState('');
@@ -303,29 +316,23 @@ const POS = () => {
       toast.error(language === 'bn' ? 'কাস্টমারের নাম আবশ্যক!' : 'Customer Name is explicitly required for all sales!');
       return;
     }
-    
-    if (paymentType === 'Cash' && cashReceived !== '' && Number(cashReceived) > 0
-        && Number(cashReceived) < total) {
-      toast.error(
-        `Cash received (৳${Number(cashReceived)}) is less than the total (৳${total}). ` +
-        'Choose Partial to leave the rest as due.'
-      );
-      return;
-    }
 
-    if (paymentType === 'Partial') {
-      if (!paidAmount || paidAmount <= 0) {
-        toast.error(language === 'bn' ? 'কাস্টমার কত টাকা পরিশোধ করছে তা লিখুন।' : 'Enter how much the customer is paying now.');
-        return;
-      }
-      if (paidAmount > total) {
-        toast.error(language === 'bn' ? `পরিশোধিত টাকা সর্বমোট বিল (৳${total}) এর বেশি হতে পারে না!` : `Paid amount cannot be more than the total (৳${total}).`);
-        return;
-      }
-    }
-
-    const effectivePaid = paymentType === 'Cash' ? total : paymentType === 'Baki' ? 0 : Number(paidAmount) || 0;
+    const rec = Number(cashReceived) || 0;
+    const effectivePaid = (rec >= total && total > 0) ? total : (rec <= 0 ? 0 : rec);
     const effectiveDue = Math.max(0, total - effectivePaid);
+
+    let effectiveMethodName;
+    if (rec <= 0) {
+      effectiveMethodName = language === 'bn' ? 'বাকি (Due)' : 'Due / Baki';
+    } else if (rec < total) {
+      effectiveMethodName = paymentType === 'Mobile Banking'
+        ? (language === 'bn' ? `আংশিক জমা (${mfsProvider})` : `Partial (${mfsProvider})`)
+        : (language === 'bn' ? 'আংশিক জমা (Partial)' : 'Partial (Cash)');
+    } else {
+      effectiveMethodName = paymentType === 'Mobile Banking'
+        ? `Mobile Banking (${mfsProvider})`
+        : (language === 'bn' ? 'নগদ (Cash)' : 'Cash');
+    }
 
     // SweetAlert confirmation modal before processing
     const alertHtml = `
@@ -346,11 +353,7 @@ const POS = () => {
           </div>
           <div style="display: flex; justify-content: space-between;">
             <span style="color: #64748b;">${language === 'bn' ? 'পেমেন্ট মেথড:' : 'Payment:'}</span>
-            <strong style="color: #0284c7;">
-              ${paymentType === 'Cash' ? (language === 'bn' ? 'নগদ (Cash)' : 'Cash') :
-                paymentType === 'Baki' ? (language === 'bn' ? 'বাকি (Credit)' : 'Credit/Baki') :
-                (language === 'bn' ? 'আংশিক (Partial)' : 'Partial')}
-            </strong>
+            <strong style="color: #0284c7;">${effectiveMethodName}</strong>
           </div>
         </div>
 
@@ -365,8 +368,13 @@ const POS = () => {
           </div>
           ${effectiveDue > 0 ? `
           <div style="display: flex; justify-content: space-between; color: #b91c1c; font-weight: 700;">
-            <span>${language === 'bn' ? 'বকেয়া (Due):' : 'Due Amount:'}</span>
+            <span>${language === 'bn' ? 'বকেয়া (Due):' : 'Due Amount:'}</span>
             <span>৳${effectiveDue.toLocaleString()}</span>
+          </div>` : ''}
+          ${rec > total ? `
+          <div style="display: flex; justify-content: space-between; color: #0284c7; font-weight: 700; margin-top: 4px;">
+            <span>${language === 'bn' ? 'ফেরত টাকা (Change):' : 'Change to Return:'}</span>
+            <span>৳${(rec - total).toLocaleString()}</span>
           </div>` : ''}
         </div>
       </div>
@@ -396,14 +404,37 @@ const POS = () => {
       return;
     }
 
+    let autoPaymentType;
+    let autoPaidAmount;
+    let autoDueAmount;
+
+    if (rec >= total && total > 0) {
+      autoPaymentType = paymentType === 'Mobile Banking' ? `Mobile Banking (${mfsProvider})` : 'Cash';
+      autoPaidAmount = total;
+      autoDueAmount = 0;
+    } else if (rec <= 0) {
+      autoPaymentType = 'Baki';
+      autoPaidAmount = 0;
+      autoDueAmount = total;
+    } else {
+      // 0 < rec < total
+      autoPaymentType = 'Partial';
+      autoPaidAmount = rec;
+      autoDueAmount = total - rec;
+    }
+
     const salesmanObj = currentSalesman;
     const saleData = {
       cartItems: cart,
-      paymentType,
+      paymentType: autoPaymentType,
+      mfsProvider: paymentType === 'Mobile Banking' ? mfsProvider : undefined,
+      mfsTrxId: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
       customerInfo,
       invoiceDiscount,
       salesman: salesmanObj,
-      paidAmount,
+      paidAmount: autoPaidAmount,
+      account: paymentType === 'Mobile Banking' && autoPaidAmount > 0 ? 'Bank' : 'Cash',
+      notes: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? `TrxID: ${mfsTrxId.trim()}` : undefined,
     };
 
     if (editingSaleId) {
@@ -419,10 +450,10 @@ const POS = () => {
         total,
         date: res.invoice?.date || new Date().toISOString(),
         invoiceId: res.invoice?.id || res.invoice?.invoice_number,
-        paidAmount: Number(res.invoice?.paid_amount ?? paidAmount) || 0,
-        dueAmount: Number(res.invoice?.due_amount) || 0,
-        cashReceived: paymentType === 'Cash' && Number(cashReceived) > total ? Number(cashReceived) : 0,
-        changeGiven: paymentType === 'Cash' && Number(cashReceived) > total ? Number(cashReceived) - total : 0,
+        paidAmount: Number(res.invoice?.paid_amount ?? autoPaidAmount) || 0,
+        dueAmount: Number(res.invoice?.due_amount ?? autoDueAmount) || 0,
+        cashReceived: rec > total ? rec : autoPaidAmount,
+        changeGiven: rec > total ? rec - total : 0,
       };
 
       setCompletedSale(completedObj);
@@ -432,6 +463,8 @@ const POS = () => {
       setPaidAmount(0);
       setCashReceived('');
       setPaymentType('Cash');
+      setMfsProvider('bKash');
+      setMfsTrxId('');
       toast.success(editingSaleId ? 'Sale updated successfully!' : 'Sale processed successfully!');
 
       // Automatically trigger thermal printer
@@ -449,9 +482,12 @@ const POS = () => {
       return;
     }
     const salesmanObj = currentSalesman;
+    const actualPaymentType = paymentType === 'Mobile Banking' ? `Mobile Banking (${mfsProvider})` : paymentType;
     const res = await saveDraft({
-      cartItems: cart, customerInfo, paymentType, invoiceDiscount,
+      cartItems: cart, customerInfo, paymentType: actualPaymentType, invoiceDiscount,
       salesman: salesmanObj, total,
+      mfsProvider: paymentType === 'Mobile Banking' ? mfsProvider : undefined,
+      mfsTrxId: paymentType === 'Mobile Banking' && mfsTrxId?.trim() ? mfsTrxId.trim() : undefined,
     });
     if (res?.ok) {
       clearCart();
@@ -471,7 +507,14 @@ const POS = () => {
     if (draft.salesman?.id || draft.salesman?.staff_code) {
       setSelectedSalesmanId(draft.salesman.id || draft.salesman.staff_code);
     }
-    setPaymentType(draft.paymentType || 'Cash');
+    if (draft.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) {
+      setPaymentType('Mobile Banking');
+      const match = draft.paymentType.match(/Mobile Banking \(([^)]+)\)/);
+      if (match) setMfsProvider(match[1]);
+      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) setMfsProvider(draft.paymentType);
+    } else {
+      setPaymentType(draft.paymentType || 'Cash');
+    }
     setInvoiceDiscount(Number(draft.invoiceDiscount) || 0);
     setActiveTab('New');
     // The draft is now in the cart; leaving it on the list invites double entry.
@@ -493,7 +536,14 @@ const POS = () => {
        phone: customer?.phone || '',
        location: customer?.location || ''
     });
-    setPaymentType(sale.paymentType);
+    if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
+      setPaymentType('Mobile Banking');
+      const match = sale.paymentType.match(/Mobile Banking \(([^)]+)\)/);
+      if (match) setMfsProvider(match[1]);
+      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) setMfsProvider(sale.paymentType);
+    } else {
+      setPaymentType(sale.paymentType || 'Cash');
+    }
     setPaidAmount(Number(sale.paid_amount) || 0);
     setInvoiceDiscount(sale.invoiceDiscount || 0);
     setEditingSaleId(sale.id);
@@ -1029,24 +1079,74 @@ const POS = () => {
                   className={paymentType === 'Cash' ? 'active' : ''}
                   onClick={() => setPaymentType('Cash')}
                 >
-                  <Banknote size={13} /> {t(language, 'Cash')}
+                  <Banknote size={14} /> {t(language, 'Cash')}
                 </button>
                 <button
                   type="button"
-                  className={paymentType === 'Baki' ? 'active' : ''}
-                  onClick={() => setPaymentType('Baki')}
+                  className={paymentType === 'Mobile Banking' ? 'active' : ''}
+                  onClick={() => setPaymentType('Mobile Banking')}
                 >
-                  <FileText size={13} /> {t(language, 'Due (Baki)')}
-                </button>
-                <button
-                  type="button"
-                  className={paymentType === 'Partial' ? 'active' : ''}
-                  onClick={() => setPaymentType('Partial')}
-                >
-                  <CreditCard size={13} /> {t(language, 'Partial')}
+                  <Smartphone size={14} /> {language === 'bn' ? 'মোবাইল ব্যাংকিং' : 'Mobile Banking'}
                 </button>
               </div>
             </div>
+
+            {/* Mobile Banking Options */}
+            {paymentType === 'Mobile Banking' && (
+              <div className="field-block" style={{ marginTop: '0.4rem', padding: '0.65rem 0.75rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <div style={{ marginBottom: '0.45rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: '0.25rem', color: 'var(--text-main)' }}>
+                    {language === 'bn' ? 'মোবাইল ব্যাংকিং নির্বাচন করুন' : 'Select Mobile Banking'}
+                  </label>
+                  <select
+                    className="form-control"
+                    value={mfsProvider}
+                    onChange={(e) => setMfsProvider(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-strong)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-main)',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                      padding: '0 0.5rem',
+                    }}
+                  >
+                    {MFS_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn' ? 'ট্রানজ্যাকশন আইডি / TrxID (অপশনাল)' : 'Transaction ID / TrxID (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. 9J4K8L7M2N"
+                    value={mfsTrxId}
+                    onChange={(e) => setMfsTrxId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '32px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-card)',
+                      padding: '0 0.5rem',
+                      fontSize: '0.8125rem',
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: 'var(--success)', fontWeight: 600 }}>
+                  ✓ {language === 'bn' ? `সম্পূর্ণ ৳${total.toLocaleString()} ${mfsProvider}-এর মাধ্যমে গ্রহণ হবে` : `Full ৳${total.toLocaleString()} will be received via ${mfsProvider}`}
+                </div>
+              </div>
+            )}
 
             {/* What it comes to */}
             <div className="sum-box">
@@ -1075,98 +1175,100 @@ const POS = () => {
               </div>
             </div>
 
-            {/* Cash */}
-            {paymentType === 'Cash' && (
-              <div className="field-block">
-                <div className="sum-line">
-                  <span className="text-muted">{t(language, 'Cash Received')}</span>
-                  <span className="inline-amount">
-                    <span className="prefix">৳</span>
-                    <input
-                      type="number"
-                      value={cashReceived}
-                      onChange={e => setCashReceived(e.target.value)}
-                      min="0"
-                      placeholder={String(total)}
-                    />
-                  </span>
+            {/* Always visible Received Amount (Auto handles Paid / Partial / Baki) */}
+            <div className="field-block" style={{ marginTop: '0.4rem' }}>
+              <div className="sum-line">
+                <span className="text-muted" style={{ fontWeight: 600 }}>
+                  {paymentType === 'Mobile Banking'
+                    ? (language === 'bn' ? 'মোবাইলে প্রাপ্ত টাকা' : 'MFS Received')
+                    : t(language, 'Cash Received')}
+                </span>
+                <span className="inline-amount">
+                  <span className="prefix">৳</span>
+                  <input
+                    type="number"
+                    value={cashReceived}
+                    onChange={e => setCashReceived(e.target.value)}
+                    min="0"
+                    placeholder="0"
+                  />
+                </span>
+              </div>
+
+              {total > 0 && (
+                <div className="cash-presets" style={{ marginTop: '0.4rem' }}>
+                  <button
+                    type="button"
+                    className={`preset-chip ${Number(cashReceived) === total && cashReceived !== '' ? 'active' : ''}`}
+                    onClick={() => setCashReceived(String(total))}
+                  >
+                    {language === 'bn' ? 'পুরো পরিশোধ' : 'Exact'} ৳{total.toLocaleString()}
+                  </button>
+                  <button
+                    type="button"
+                    className={`preset-chip ${cashReceived === '' || Number(cashReceived) === 0 ? 'active' : ''}`}
+                    onClick={() => setCashReceived('0')}
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    {language === 'bn' ? 'সম্পূর্ণ বাকি (৳0)' : 'Full Due (৳0)'}
+                  </button>
+                  {getCashPresets(total).filter(amt => amt !== total).slice(0, 3).map((amt, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`preset-chip ${Number(cashReceived) === amt ? 'active' : ''}`}
+                      onClick={() => setCashReceived(String(amt))}
+                    >
+                      ৳{amt.toLocaleString()}
+                    </button>
+                  ))}
                 </div>
+              )}
 
-                {total > 0 && (
-                  <div className="cash-presets">
-                    {getCashPresets(total).map((amt, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        className={`preset-chip ${Number(cashReceived) === amt ? 'active' : ''}`}
-                        onClick={() => setCashReceived(String(amt))}
-                      >
-                        {amt === total ? `${language === 'bn' ? 'পুরো' : 'Exact'} ৳${amt}` : `৳${amt}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {cashReceived !== '' && Number(cashReceived) > 0 && (
-                  Number(cashReceived) < total ? (
-                    <div className="pos-alert bad">
+              {/* Dynamic Auto Status Alert */}
+              {(() => {
+                const rec = Number(cashReceived) || 0;
+                if (rec <= 0) {
+                  return (
+                    <div className="pos-alert bad" style={{ marginTop: '0.45rem' }}>
                       <span>
-                        {language === 'bn'
-                          ? `৳${(total - Number(cashReceived)).toLocaleString()} কম — বাকির জন্য Partial বেছে নিন`
-                          : `৳${(total - Number(cashReceived)).toLocaleString()} short — choose Partial to record due`}
+                        ℹ️ {language === 'bn'
+                          ? `সম্পূর্ণ বাকি (Full Due) — বকেয়া ৳${total.toLocaleString()}`
+                          : `Full Due — ৳${total.toLocaleString()} will be recorded as Baki`}
                       </span>
                     </div>
-                  ) : (
-                    <div className="pos-alert ok">
-                      <span>{t(language, 'Change to Return')}</span>
-                      <span>৳{(Number(cashReceived) - total).toLocaleString()}</span>
+                  );
+                }
+                if (rec > 0 && rec < total) {
+                  return (
+                    <div className="pos-alert info" style={{ marginTop: '0.45rem' }}>
+                      <span>
+                        ⚠️ {language === 'bn'
+                          ? `আংশিক জমা: ৳${rec.toLocaleString()} | বাকি (Due): ৳${(total - rec).toLocaleString()}`
+                          : `Partial: Paid ৳${rec.toLocaleString()} | Due: ৳${(total - rec).toLocaleString()}`}
+                      </span>
                     </div>
-                  )
-                )}
-              </div>
-            )}
-
-            {/* Partial */}
-            {paymentType === 'Partial' && (
-              <div className="field-block">
-                <div className="sum-line">
-                  <span className="text-muted">{t(language, 'Paid Amount')}</span>
-                  <span className="inline-amount">
-                    <span className="prefix">৳</span>
-                    <input
-                      type="number"
-                      value={paidAmount || ''}
-                      onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)}
-                      min="0"
-                      max={total}
-                      placeholder="0"
-                    />
-                  </span>
-                </div>
-                <div className={`pos-alert ${paidAmount > total ? 'bad' : 'info'}`}>
-                  {paidAmount > total ? (
+                  );
+                }
+                if (rec > total) {
+                  return (
+                    <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
+                      <span>{t(language, 'Change to Return')}</span>
+                      <span>৳{(rec - total).toLocaleString()}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="pos-alert ok" style={{ marginTop: '0.45rem' }}>
                     <span>
-                      {language === 'bn'
-                        ? `মোটের চেয়ে ৳${paidAmount - total} বেশি`
-                        : `৳${paidAmount - total} more than the total`}
+                      ✓ {language === 'bn'
+                        ? `সম্পূর্ণ পরিশোধ (Paid) — ৳${total.toLocaleString()}`
+                        : `Full Paid — ৳${total.toLocaleString()}`}
                     </span>
-                  ) : (
-                    <>
-                      <span>{t(language, 'Due Amount')}</span>
-                      <span>৳{Math.max(0, total - paidAmount).toLocaleString()}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Baki */}
-            {paymentType === 'Baki' && (
-              <div className="pos-alert info">
-                <span>{language === 'bn' ? 'পুরোটাই কাস্টমারের বাকি' : 'Recorded as customer due'}</span>
-                <span>৳{total.toLocaleString()}</span>
-              </div>
-            )}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
 
           {/* Pinned: the action bar never scrolls away */}

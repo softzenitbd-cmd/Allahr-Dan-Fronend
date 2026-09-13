@@ -94,7 +94,15 @@ const POSHistory = () => {
       const day = String(s.date || '').split('T')[0];
       if (startDate && day < startDate) return false;
       if (endDate && day > endDate) return false;
-      if (paymentFilter !== 'All' && s.paymentType !== paymentFilter) return false;
+      if (paymentFilter !== 'All') {
+        if (paymentFilter === 'Mobile Banking') {
+          if (!s.paymentType?.startsWith('Mobile Banking') && !['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(s.paymentType)) {
+            return false;
+          }
+        } else if (!s.paymentType?.includes(paymentFilter)) {
+          return false;
+        }
+      }
       if (dueOnly && outstandingOf(s) <= 0) return false;
       if (!term) return true;
       return (
@@ -267,7 +275,7 @@ const POSHistory = () => {
             <label>{t(language, 'Payment Method')}</label>
             <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
               <option value="All">{language === 'bn' ? 'সব' : 'All'}</option>
-              {['Cash', 'bKash', 'Nagad', 'Rocket', 'Baki', 'Partial'].map((p) => (
+              {['Cash', 'Mobile Banking', 'bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Baki', 'Partial'].map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>

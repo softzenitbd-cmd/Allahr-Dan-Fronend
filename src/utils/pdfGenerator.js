@@ -65,6 +65,9 @@ const THERMAL_STYLES = `
       padding: 1mm 2mm !important;
       box-sizing: border-box !important;
     }
+    .thermal-wrapper, .thermal-wrapper * {
+      color: #000000 !important;
+    }
   }
   * {
     box-sizing: border-box !important;
