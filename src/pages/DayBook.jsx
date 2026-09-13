@@ -55,7 +55,8 @@ const FILTERS = [
   { key: 'in', en: 'Money in', bn: 'টাকা এসেছে', kinds: ['collection', 'recovery', 'sr'] },
   { key: 'purchases', en: 'Purchases', bn: 'ক্রয়', kinds: ['purchase', 'supplier_payment'] },
   { key: 'expenses', en: 'Expenses', bn: 'খরচ', kinds: ['expense'] },
-  { key: 'other', en: 'Returns, cash & loans', bn: 'রিটার্ন, ক্যাশ ও কর্জ', kinds: ['return', 'cash', 'loan'] },
+  { key: 'loans', en: 'Loans / Karz', bn: 'কর্জ / ঋণ', kinds: ['loan'] },
+  { key: 'other', en: 'Returns & cash', bn: 'রিটার্ন ও ক্যাশ', kinds: ['return', 'cash'] },
 ];
 
 /** A headline figure with yesterday underneath. */
@@ -128,7 +129,12 @@ const DayBook = () => {
     const f = FILTERS.find((x) => x.key === filter);
     const q = query.trim().toLowerCase();
     return data.feed.filter((row) => {
-      if (f?.kinds && !f.kinds.includes(row.kind)) return false;
+      if (f?.key === 'in') {
+        const isMoneyIn = (f.kinds && f.kinds.includes(row.kind)) || (row.kind === 'loan' && row.flow === 'in');
+        if (!isMoneyIn) return false;
+      } else if (f?.kinds && !f.kinds.includes(row.kind)) {
+        return false;
+      }
       if (!q) return true;
       return [row.id, row.party, row.title, row.by, row.method, row.partyPhone].some((v) => String(v || '').toLowerCase().includes(q));
     });
@@ -137,6 +143,9 @@ const DayBook = () => {
   const filterCount = (f) => {
     if (!data) return 0;
     if (!f.kinds) return data.feed.length;
+    if (f.key === 'in') {
+      return data.feed.filter((r) => (f.kinds.includes(r.kind) || (r.kind === 'loan' && r.flow === 'in'))).length;
+    }
     return f.kinds.reduce((n, k) => n + (data.counts[k] || 0), 0);
   };
 
@@ -445,6 +454,21 @@ const DayBook = () => {
   const cmp = data?.compare || {};
   const dayLabel = date === today ? (bn ? 'আজ' : 'Today') : date === shift(today, -1) ? (bn ? 'গতকাল' : 'Yesterday') : null;
 
+  // Compute today's loan metrics for DayBook calculations
+  const todayLoans = useMemo(() => {
+    const backendLoans = data?.loans;
+    const loanRows = (data?.feed || []).filter((r) => r.kind === 'loan');
+    const totalOut = backendLoans ? backendLoans.totalOut : loanRows.filter((r) => r.flow === 'out').reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const totalIn = backendLoans ? backendLoans.totalIn : loanRows.filter((r) => r.flow === 'in').reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    return {
+      count: backendLoans ? backendLoans.count : loanRows.length,
+      out: totalOut,
+      in: totalIn,
+      net: totalIn - totalOut,
+      rows: loanRows,
+    };
+  }, [data]);
+
   return (
     <div className="day-book animate-fade-in">
       <div className="page-header">
@@ -536,6 +560,15 @@ const DayBook = () => {
                 label={p.isLoss ? (bn ? 'আজ লোকসান' : 'Loss today') : (bn ? 'আজ লাভ' : 'Profit today')} value={p.netProfit} abs
                 sub={`${bn ? 'মোট লাভ' : 'gross'} ${money(p.grossProfit)} (${p.grossMargin}%) − ${bn ? 'খরচ' : 'expenses'} ${money(p.operatingExpenses)}`}
                 compare={cmp.netProfit} />
+            )}
+            {isAdmin && (
+              <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''}
+                label={bn ? 'কর্জ / ঋণ (আজকের)' : 'Loans Today'}
+                value={todayLoans.out > 0 ? -todayLoans.out : todayLoans.in}
+                sub={todayLoans.count > 0
+                  ? `${bn ? 'প্রদান/পরিশোধ' : 'Out'} −${money(todayLoans.out)} · ${bn ? 'আদায়/গ্রহণ' : 'In'} +${money(todayLoans.in)}`
+                  : (bn ? 'আজ কোনো কর্জ লেনদেন নেই' : 'No loan activity today')}
+              />
             )}
             {isAdmin && (
               <Kpi bn={bn} icon={Landmark} tone="info"
@@ -659,10 +692,45 @@ const DayBook = () => {
 
               {isAdmin && (
                 <div className="card db-panel">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h3 style={{ margin: 0 }}>{bn ? 'কর্জ / ঋণ হিসাব (আজ)' : 'Today\'s Loan Summary'}</h3>
+                    <span className="badge badge-secondary">{todayLoans.count} {bn ? 'টি' : 'txns'}</span>
+                  </div>
+                  <div className="db-line">
+                    <span className="text-muted">{bn ? 'কর্জ প্রদান / পরিশোধ (আউট)' : 'Loan Given / Paid (Out)'}</span>
+                    <span className="num text-danger">{todayLoans.out > 0 ? `−${money(todayLoans.out)}` : money(0)}</span>
+                  </div>
+                  <div className="db-line">
+                    <span className="text-muted">{bn ? 'কর্জ গ্রহণ / আদায় (ইন)' : 'Loan Taken / Collected (In)'}</span>
+                    <span className="num text-success">{todayLoans.in > 0 ? `+${money(todayLoans.in)}` : money(0)}</span>
+                  </div>
+                  <div className="db-line total">
+                    <span>{bn ? 'আজকের নেট কর্জ প্রভাব' : 'Net Loan Movement'}</span>
+                    <span className={`num ${todayLoans.net < 0 ? 'text-danger' : todayLoans.net > 0 ? 'text-success' : ''}`}>
+                      {todayLoans.net < 0 ? `−${money(Math.abs(todayLoans.net))}` : todayLoans.net > 0 ? `+${money(todayLoans.net)}` : money(0)}
+                    </span>
+                  </div>
+                  <div style={{ borderTop: '1px dashed var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+                    <div className="db-line text-sm">
+                      <span>{bn ? 'মোট বকেয়া কর্জ পাওনা' : 'Total Owed to You (Given)'}</span>
+                      <span className="num text-success">{money(loanStats.givenRemaining)}</span>
+                    </div>
+                    <div className="db-line text-sm">
+                      <span>{bn ? 'মোট বকেয়া কর্জ দেনা' : 'Total You Owe (Taken)'}</span>
+                      <span className="num text-danger">{money(loanStats.takenRemaining)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isAdmin && (
+                <div className="card db-panel">
                   <h3>{bn ? 'ক্যাশ চলাচল' : 'Cash movement'}</h3>
                   <div className="db-line"><span>{bn ? 'দিনের শুরুতে' : 'Opening'}</span><span className="num">{money(cf.openingTotal)}</span></div>
                   <div className="db-line"><span className="text-success">{bn ? 'এসেছে' : 'In'}</span><span className="num text-success">+{money(cf.inflow)}</span></div>
+                  {todayLoans.in > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ থেকে এসেছে' : '└ from loan inflow'}</span><span className="num text-success">+{money(todayLoans.in)}</span></div>}
                   <div className="db-line"><span className="text-danger">{bn ? 'গেছে' : 'Out'}</span><span className="num text-danger">−{money(cf.outflow)}</span></div>
+                  {todayLoans.out > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ বাবদ গেছে' : '└ to loan outflow'}</span><span className="num text-danger">−{money(todayLoans.out)}</span></div>}
                   <div className="db-line total"><span>{bn ? 'দিনের শেষে' : 'Closing'}</span><span className="num">{money(cf.closingTotal)}</span></div>
                   <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'ব্যাংক' : 'Bank'} {money(cf.closingBank)}</div>
                 </div>
@@ -674,6 +742,12 @@ const DayBook = () => {
                   <div className="db-line"><span>{bn ? 'কাস্টমারের কাছে পাওনা' : 'Customers owe'}</span><span className="num text-success">{money(data.position.assets.customerDue)}</span></div>
                   <div className="db-line"><span>{bn ? 'এসআর-এর কাছে পাওনা' : 'SRs owe'}</span><span className="num text-success">{money(data.position.assets.staffDue)}</span></div>
                   <div className="db-line"><span>{bn ? 'সাপ্লায়ারকে দেনা' : 'Owed to suppliers'}</span><span className="num text-danger">{money(data.position.liabilities.supplierDue)}</span></div>
+                  {loanStats.givenRemaining > 0 && (
+                    <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ পাওনা' : 'Loans given (owed to you)'}</span><span className="num text-success">{money(loanStats.givenRemaining)}</span></div>
+                  )}
+                  {loanStats.takenRemaining > 0 && (
+                    <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ দেনা' : 'Loans taken (you owe)'}</span><span className="num text-danger">{money(loanStats.takenRemaining)}</span></div>
+                  )}
                 </div>
               )}
             </div>
@@ -695,6 +769,8 @@ const DayBook = () => {
                     ...(isAdmin ? [
                       ['Purchases', money(data.purchases.total), `paid ${money(data.purchases.paid + data.purchases.paidLater)}`],
                       ['Expenses', money(data.expenses.total), ''],
+                      ['Loans given / paid (Out)', money(todayLoans.out), `${todayLoans.count} loan txns`],
+                      ['Loans received / collected (In)', money(todayLoans.in), ''],
                       ['Cost of goods sold', money(data.cogs.total), `${data.cogs.unitsSold} units`],
                       ['Gross profit', money(p.grossProfit), `${p.grossMargin}%`],
                       [p.isLoss ? 'Net loss' : 'Net profit', money(Math.abs(p.netProfit)), ''],
