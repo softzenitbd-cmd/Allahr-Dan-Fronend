@@ -312,15 +312,17 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
 
         {/* ---- Footer & Disclaimer ---- */}
         <div style={{ textAlign: 'center', fontSize: '10px', lineHeight: 1.4, marginTop: '6px', color: '#000000' }}>
-          <div style={{ fontWeight: 900, fontSize: '14px', letterSpacing: '0.04em', margin: '4px 0 3px 0', color: '#000000' }}>
-            {language === 'bn' ? '*** ধন্যবাদ! আবার আসবেন ***' : '*** THANK YOU! VISIT AGAIN ***'}
+          <div style={{ fontWeight: 900, fontSize: '16.5px', letterSpacing: '0.04em', margin: '5px 0 4px 0', color: '#000000', lineHeight: 1.2 }}>
+            {language === 'bn' ? 'ধন্যবাদ! আবার আসবেন' : 'THANK YOU! VISIT AGAIN'}
+          </div>
+          <div style={{ fontSize: '9.5px', fontWeight: 700, color: '#000000', marginTop: '3px', lineHeight: 1.35 }}>
+            পণ্য পরিবর্তন বা রিটার্নের ক্ষেত্রে অবশ্যই ক্যাশ মেমো / রসিদ সাথে আনতে হবে।
           </div>
           {shopProfile?.footer_disclaimer_1 && (
-            <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000' }}>{shopProfile.footer_disclaimer_1}</div>
+            <div style={{ fontSize: '9px', fontWeight: 600, color: '#000000', marginTop: '2px', lineHeight: 1.3 }}>
+              {shopProfile.footer_disclaimer_1}
+            </div>
           )}
-          <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000', marginTop: '3px' }}>
-            Software by SoftZen IT (01700-000000)
-          </div>
         </div>
 
       </div>

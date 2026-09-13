@@ -4,9 +4,9 @@ import useStore from '../store/useStore';
 import {
   Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
   FilePlus, Edit, Wallet, ShoppingCart, User, UserCheck, Phone,
-  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone
+  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone, Download
 } from 'lucide-react';
-import { printElement } from '../utils/pdfGenerator';
+import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
 import PaymentVoucher from '../components/PaymentVoucher';
 import ThermalReceipt from '../components/ThermalReceipt';
@@ -1359,8 +1359,8 @@ const POS = () => {
                 />
               </div>
 
-              {/* Off-screen elements for optional A4 Invoice and Voucher print */}
-              <div style={{ display: 'none' }}>
+              {/* Off-screen elements for optional A4 Invoice and Voucher print/download */}
+              <div style={{ position: 'fixed', left: '-99999px', top: '0', opacity: 0, pointerEvents: 'none', zIndex: -100 }}>
                 <InvoiceDocument
                   sale={fromCompletedSale(completedSale)}
                   shopProfile={shopProfile}
@@ -1382,14 +1382,21 @@ const POS = () => {
               </button>
               <div className="flex-align-gap" style={{ gap: '8px' }}>
                 <button
-                  className="btn-outline"
+                  className="btn-outline flex-align-gap"
+                  onClick={() => downloadElementAsPDF('printable-invoice', `Invoice-${completedSale.invoiceId}`)}
+                  title="Download A4 size invoice as PDF"
+                >
+                  <Download size={16} /> {language === 'bn' ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
+                </button>
+                <button
+                  className="btn-outline flex-align-gap"
                   onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`, { isThermal: false })}
                   title="Print A4 size invoice"
                 >
                   <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
                 </button>
                 <button
-                  className="btn-primary"
+                  className="btn-primary flex-align-gap"
                   onClick={() => printElement('printable-thermal-receipt', `Receipt-${completedSale.invoiceId}`, { isThermal: true })}
                 >
                   <Printer size={16} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
@@ -1563,16 +1570,23 @@ const POS = () => {
               </button>
               <div className="flex-align-gap" style={{ gap: '8px' }}>
                 <button
-                  className="btn-primary"
+                  className="btn-primary flex-align-gap"
                   onClick={() => printElement('printable-single-invoice-pos-thermal', `Receipt-${selectedInvoice.id}`, { isThermal: true })}
                 >
                   <Printer size={16} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
                 </button>
                 <button
-                  className="btn-outline"
+                  className="btn-outline flex-align-gap"
                   onClick={() => printElement('printable-single-invoice-pos', `Invoice-${selectedInvoice.id}`, { isThermal: false })}
                 >
                   <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
+                </button>
+                <button
+                  className="btn-outline flex-align-gap"
+                  onClick={() => downloadElementAsPDF('printable-single-invoice-pos', `Invoice-${selectedInvoice.id}`)}
+                  title="Download A4 size invoice as PDF"
+                >
+                  <Download size={16} /> {language === 'bn' ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
                 </button>
               </div>
             </div>

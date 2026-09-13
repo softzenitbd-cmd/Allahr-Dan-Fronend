@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Eye, Printer, Trash2, Wallet, Search, RefreshCcw, X,
-  FileText, Banknote, AlertCircle, Receipt,
+  FileText, Banknote, AlertCircle, Receipt, Download,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
-import { printElement } from '../utils/pdfGenerator';
+import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import ThermalReceipt from '../components/ThermalReceipt';
 import { t } from '../utils/i18n';
@@ -512,6 +512,13 @@ const POSHistory = () => {
                   onClick={() => printElement('printable-invoice-detail', `Invoice-${selected.id}`, { isThermal: false })}
                 >
                   <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
+                </button>
+                <button
+                  className="btn-outline flex-align-gap"
+                  onClick={() => downloadElementAsPDF('printable-invoice-detail', `Invoice-${selected.id}`)}
+                  title="Download A4 size invoice as PDF"
+                >
+                  <Download size={16} /> {language === 'bn' ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
                 </button>
               </div>
             </div>

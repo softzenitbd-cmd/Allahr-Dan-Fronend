@@ -6,10 +6,10 @@ import {
   ChevronLeft, ChevronRight, CalendarDays, RefreshCcw, Printer, ShoppingCart, Truck,
   DollarSign, Wallet, ArrowDownLeft, ArrowUpRight, RotateCcw, Landmark, Users,
   TrendingUp, TrendingDown, Banknote, Eye, Trash2, Plus, X, CheckCircle2, Search,
-  Handshake, Phone, ArrowUpCircle, ArrowDownCircle, FileText, Check, AlertCircle, History, Clock,
+  Handshake, Phone, ArrowUpCircle, ArrowDownCircle, FileText, Check, AlertCircle, History, Clock, Download,
 } from 'lucide-react';
 import useStore from '../store/useStore';
-import { printElement } from '../utils/pdfGenerator';
+import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import './DayBook.css';
@@ -618,11 +618,12 @@ const DayBook = () => {
                 </div>
               ) : (
                 <div className="db-feed">
-                  {feed.map((row) => {
+                  {feed.map((row, idx) => {
                     const k = KINDS[row.kind] || KINDS.cash;
                     const Icon = k.icon;
                     return (
                       <div key={`${row.kind}-${row.id}`} className={`db-row ${k.tone}`}>
+                        <div className="db-row-sl">#{idx + 1}</div>
                         <div className="db-row-time">{row.time || '—'}</div>
                         <div className={`db-row-icon ${k.tone}`}><Icon size={16} /></div>
                         <div className="db-row-main">
@@ -643,9 +644,12 @@ const DayBook = () => {
                             {row.kind === 'expense' && isAdmin && <button className="btn-icon text-danger" title={bn ? 'মুছুন' : 'Delete'} onClick={() => removeExpense(row)}><Trash2 size={16} /></button>}
                           </div>
                           <div className="db-row-amount">
-                            <span className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</span>
                             {row.due > 0 && <span className="due">({bn ? 'বাকি' : 'due'} {money(row.due)})</span>}
+                            {row.due > 0 && (
+                              <span className="db-paid-amt">({bn ? 'জমা' : 'paid'} {money(row.paid || 0)})</span>
+                            )}
                             {row.kind === 'sale' && row.due === 0 && row.paid > 0 && <span className="ok"><CheckCircle2 size={11} /> {bn ? 'পরিশোধিত' : 'paid'}</span>}
+                            <span className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</span>
                           </div>
                         </div>
                       </div>
@@ -788,19 +792,21 @@ const DayBook = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                 <thead>
                   <tr style={{ background: '#f1f1f1' }}>
-                    {['Time', 'Type', 'Party', 'Details', 'Ref', 'Amount', 'Due'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Amount' || h === 'Due' ? 'right' : 'left' }}>{h}</th>)}
+                    {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.feed.map((row) => (
+                  {data.feed.map((row, idx) => (
                     <tr key={`${row.kind}-${row.id}`}>
+                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
                       <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
                       <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
                       <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
                       <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
                       <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right' }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right' }}>{row.due > 0 ? money(row.due) : ''}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1012,7 +1018,14 @@ const DayBook = () => {
             <div className="drawer-body" style={{ padding: 0, background: '#fff' }}>
               <InvoiceDocument sale={fromApiInvoice(selected, customers)} shopProfile={shopProfile} language={language} domId="printable-daybook-invoice" />
             </div>
-            <div className="drawer-footer" style={{ justifyContent: 'flex-end' }}>
+            <div className="drawer-footer" style={{ justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn-outline flex-align-gap"
+                onClick={() => downloadElementAsPDF('printable-daybook-invoice', `Invoice-${selected.id}`)}
+                title="Download A4 size invoice as PDF"
+              >
+                <Download size={16} /> {bn ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
+              </button>
               <button className="btn-primary flex-align-gap" onClick={() => printElement('printable-daybook-invoice', `Invoice-${selected.id}`)}>
                 <Printer size={16} /> {bn ? 'চালান প্রিন্ট' : 'Print Invoice'}
               </button>

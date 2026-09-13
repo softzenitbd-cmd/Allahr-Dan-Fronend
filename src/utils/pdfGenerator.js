@@ -153,10 +153,90 @@ export const printElement = (elementId, title = 'Print', options = {}) => {
   return printHtml(element.innerHTML, title, { ...options, isThermal });
 };
 
+import { toast } from 'react-toastify';
+
 /**
- * Same document, but named for saving. The dialog's "Save as PDF" destination
- * uses the title as the suggested filename.
+ * Downloads the given element directly as an A4 PDF file using html2pdf.js.
+ * If html2pdf fails or is unavailable, it smoothly falls back to the native print/save dialog.
  */
-export const downloadAsPDF = (elementId, filename) => printElement(elementId, filename);
+export const downloadElementAsPDF = async (elementId, filename = 'Invoice') => {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    console.error(`Element with id ${elementId} not found`);
+    alert('Could not find the content to generate PDF.');
+    return;
+  }
+
+  const cleanFilename = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
+
+  // Create an off-screen container that is guaranteed visible to html2canvas
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.left = '-99999px';
+  container.style.top = '0';
+  container.style.width = '794px'; // 210mm at 96 DPI
+  container.style.background = '#ffffff';
+  container.style.color = '#111827';
+  container.style.zIndex = '-99999';
+
+  const clone = element.cloneNode(true);
+  clone.style.display = 'block';
+  clone.style.visibility = 'visible';
+  clone.style.width = '100%';
+  clone.style.background = '#ffffff';
+  clone.style.color = '#111827';
+  clone.style.margin = '0';
+  clone.style.boxSizing = 'border-box';
+
+  container.appendChild(clone);
+  document.body.appendChild(container);
+
+  let toastId = null;
+  try {
+    if (toast?.loading) {
+      toastId = toast.loading('PDF তৈরি হচ্ছে, অপেক্ষা করুন...');
+    } else if (toast?.info) {
+      toastId = toast.info('PDF তৈরি হচ্ছে, অপেক্ষা করুন...', { autoClose: false });
+    }
+
+    const html2pdfModule = await import('html2pdf.js');
+    const html2pdf = html2pdfModule.default || html2pdfModule;
+
+    const opt = {
+      margin: [6, 6, 6, 6],
+      filename: cleanFilename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 794,
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    };
+
+    await html2pdf().set(opt).from(clone).save();
+
+    if (toastId && toast?.update) {
+      toast.update(toastId, { render: 'PDF ডাউনলোড সফল হয়েছে!', type: 'success', isLoading: false, autoClose: 2500 });
+    } else if (toast?.success) {
+      if (toastId && toast?.dismiss) toast.dismiss(toastId);
+      toast.success('PDF ডাউনলোড সফল হয়েছে!');
+    }
+  } catch (err) {
+    console.warn('html2pdf generation failed, falling back to print dialog:', err);
+    if (toastId && toast?.dismiss) toast.dismiss(toastId);
+    printElement(elementId, cleanFilename, { isThermal: false });
+  } finally {
+    if (document.body.contains(container)) {
+      document.body.removeChild(container);
+    }
+  }
+};
+
+export const downloadAsPDF = downloadElementAsPDF;
 
 export default printElement;
+
