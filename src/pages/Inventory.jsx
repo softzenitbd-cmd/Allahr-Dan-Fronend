@@ -8,7 +8,7 @@ import {
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
 import { printElement } from '../utils/pdfGenerator';
-import { printBarcodeLabels } from '../utils/printLabels';
+import { printBarcodeLabels, labelSpecFrom } from '../utils/printLabels';
 import { ProductService } from '../api/services';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
@@ -360,7 +360,7 @@ const Inventory = () => {
   };
 
   const handlePrintBarcode = (product) => {
-    printBarcodeLabels(product, 1, "Allah'r Dan");
+    printBarcodeLabels(product, 1, "Allah'r Dan", labelSpecFrom(shopProfile));
   };
 
   const totalItems = (inventory || []).reduce((sum, item) => sum + (Number(item.stock) || 0), 0);

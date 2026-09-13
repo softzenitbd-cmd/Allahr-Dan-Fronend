@@ -146,7 +146,7 @@ const Returns = () => {
               <label>{returnType === 'Customer' ? t(language, 'Sale Invoice ID (Optional)' || 'Invoice ID') : t(language, 'Purchase ID (Optional)' || 'Invoice ID')}</label>
               <input 
                 type="text" 
-                placeholder="e.g. INV-12345"
+                placeholder={returnType === 'Customer' ? 'e.g. INV001' : 'e.g. PUR001'}
                 value={referenceId}
                 onChange={(e) => setReferenceId(e.target.value)}
                 className="w-full"

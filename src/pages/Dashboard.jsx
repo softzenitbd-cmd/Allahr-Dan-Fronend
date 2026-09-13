@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, RefreshCcw, Users, ArrowRight, Clock, MessageSquare, FileText, Settings, Landmark, Calendar, ClipboardList } from 'lucide-react';
+import { ShoppingCart, Package, DollarSign, TrendingUp, TrendingDown, Truck, RefreshCcw, Users, ArrowRight, Clock, MessageSquare, FileText, Settings, Landmark, Calendar, ClipboardList, CalendarDays, BookOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -94,6 +94,7 @@ const Dashboard = () => {
   });
 
   const bkashServices = [
+    { name: language === 'bn' ? 'আজকের হিসাব' : 'Day Book', path: '/day-book', icon: CalendarDays },
     { name: language === 'bn' ? 'বিক্রয়' : 'POS', path: '/pos', icon: ShoppingCart },
     { name: language === 'bn' ? 'স্টক' : 'Inventory', path: '/inventory', icon: Package },
     { name: language === 'bn' ? 'ক্রয়' : 'Purchases', path: '/purchases', icon: Truck },
@@ -107,6 +108,7 @@ const Dashboard = () => {
 
   const adminServices = user?.role === 'Admin' ? [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
+    { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
     { name: language === 'bn' ? 'এসএমএস' : 'SMS', icon: MessageSquare, path: '/sms' },

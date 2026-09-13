@@ -31,31 +31,55 @@ const HR = () => {
   // Handlers
   const handleAddStaff = async (e) => {
     e.preventDefault();
-    if (!newStaff.name?.trim()) return toast.error('Name is required');
+    if (!newStaff.name?.trim()) return toast.error(language === 'bn' ? 'কর্মীর নাম আবশ্যক' : 'Name is required');
+    const trimmedUsername = newStaff.username?.trim();
+    if (!trimmedUsername) {
+      return toast.error(language === 'bn' ? 'ইউজারনেম আবশ্যক' : 'Username is required');
+    }
+
+    const duplicate = (staff || []).some(
+      s => s.username && s.username.trim().toLowerCase() === trimmedUsername.toLowerCase()
+    );
+    if (duplicate) {
+      return toast.error(language === 'bn' ? `ইউজারনেম '${trimmedUsername}' ইতোমধ্যে ব্যবহৃত হয়েছে। অন্য ইউজারনেম দিন।` : `Username '${trimmedUsername}' is already taken!`);
+    }
+
     const res = await addStaff({
       ...newStaff,
       name: newStaff.name.trim(),
+      username: trimmedUsername,
       baseSalary: parseFloat(newStaff.baseSalary) || 0,
       joinDate: todayStr
     });
     if (res?.ok) {
       setShowAddStaffModal(false);
       setNewStaff({ name: '', role: 'Salesman', baseSalary: '', phone: '', address: '', bankAccount: '', username: '', password: '' });
-      toast.success('Staff added successfully!');
+      toast.success(language === 'bn' ? 'কর্মী সফলভাবে যোগ করা হয়েছে!' : 'Staff added successfully!');
     }
   };
 
   const handleEditStaff = async (e) => {
     e.preventDefault();
-    if (!editingStaff.name?.trim()) return toast.error('Name is required');
+    if (!editingStaff.name?.trim()) return toast.error(language === 'bn' ? 'কর্মীর নাম আবশ্যক' : 'Name is required');
+    const trimmedUsername = editingStaff.username?.trim();
+    if (trimmedUsername) {
+      const duplicate = (staff || []).some(
+        s => s.id !== editingStaff.id && s.username && s.username.trim().toLowerCase() === trimmedUsername.toLowerCase()
+      );
+      if (duplicate) {
+        return toast.error(language === 'bn' ? `ইউজারনেম '${trimmedUsername}' অন্য কর্মীর জন্য ইতোমধ্যে ব্যবহৃত হয়েছে!` : `Username '${trimmedUsername}' is already taken by another staff member!`);
+      }
+    }
+
     const res = await updateStaff(editingStaff.id, {
       ...editingStaff,
       name: editingStaff.name.trim(),
+      username: trimmedUsername || '',
       baseSalary: parseFloat(editingStaff.baseSalary) || 0
     });
     if (res?.ok) {
       setEditingStaff(null);
-      toast.success('Staff updated successfully!');
+      toast.success(language === 'bn' ? 'তথ্য সফলভাবে আপডেট করা হয়েছে!' : 'Staff updated successfully!');
     }
   };
 
@@ -172,9 +196,6 @@ const HR = () => {
                           <td>{s.joinDate}</td>
                           <td>
                             <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
-                              <button className="btn-icon" title="View & Print" onClick={() => setSelectedStaff(s)}>
-                                <Printer size={16} />
-                              </button>
                               <button className="btn-icon text-info" title="Edit" onClick={() => setEditingStaff(s)}>
                                 <Edit size={16} />
                               </button>
@@ -413,12 +434,12 @@ const HR = () => {
                     <input type="text" className="w-full" placeholder="Account No" value={newStaff.bankAccount} onChange={e => setNewStaff({ ...newStaff, bankAccount: e.target.value })} />
                   </div>
                   <div className="form-group">
-                    <label className="text-muted mb-1 block">Username</label>
-                    <input type="text" className="w-full" placeholder="Login ID" value={newStaff.username} onChange={e => setNewStaff({ ...newStaff, username: e.target.value })} />
+                    <label className="text-muted mb-1 block">Username *</label>
+                    <input required type="text" className="w-full" placeholder="Login ID (Unique)" value={newStaff.username} onChange={e => setNewStaff({ ...newStaff, username: e.target.value })} />
                   </div>
                   <div className="form-group">
-                    <label className="text-muted mb-1 block">Password</label>
-                    <input type="password" className="w-full" placeholder="Secret" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} />
+                    <label className="text-muted mb-1 block">Password *</label>
+                    <input required type="password" className="w-full" placeholder="Secret" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} />
                   </div>
                 </div>
               </div>

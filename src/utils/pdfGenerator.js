@@ -37,11 +37,76 @@ const SHEET_STYLES = `
   @page { size: A4 portrait; margin: 15mm; }
 `;
 
+const THERMAL_STYLES = `
+  @page {
+    size: 80mm auto;
+    margin: 4mm 5mm;
+  }
+  @media print {
+    html {
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    body {
+      width: 100% !important;
+      max-width: 68mm !important;
+      margin: 0 auto !important;
+      padding: 0 2mm !important;
+      background: #fff !important;
+      color: #000 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .thermal-wrapper {
+      width: 100% !important;
+      max-width: 68mm !important;
+      margin: 0 auto !important;
+      padding: 1mm 2mm !important;
+      box-sizing: border-box !important;
+    }
+  }
+  * {
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    width: 100%;
+    max-width: 68mm;
+    margin: 0 auto;
+    padding: 3mm 4mm;
+    background: #fff;
+    color: #000;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0; font-size: 10.5px; }
+  th, td { padding: 3px 2px; text-align: left; vertical-align: top; }
+  th { font-weight: bold; color: #000; font-size: 10.5px; border-bottom: 1px dashed #000; }
+  .text-center { text-align: center; }
+  .text-right { text-align: right; }
+  .font-bold { font-weight: bold; }
+  tr, .no-break { break-inside: avoid; page-break-inside: avoid; }
+`;
+
 /**
  * Open the print dialog for a block of HTML, without disturbing the page.
  * Returns a promise that settles once the iframe has been cleaned up.
  */
-export const printHtml = (html, title = 'Print') => new Promise((resolve) => {
+export const printHtml = (html, title = 'Print', options = {}) => new Promise((resolve) => {
+  const isThermal = Boolean(
+    options.isThermal ||
+    options.format === 'thermal' ||
+    html.includes('thermal-receipt') ||
+    html.includes('data-format="thermal"')
+  );
+  const styles = isThermal ? THERMAL_STYLES : SHEET_STYLES;
+  const content = isThermal
+    ? `<div class="thermal-wrapper" style="width:100%; max-width:68mm; margin:0 auto; padding:1mm 3mm; box-sizing:border-box;">${html}</div>`
+    : html;
+
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
   Object.assign(iframe.style, {
@@ -51,7 +116,7 @@ export const printHtml = (html, title = 'Print') => new Promise((resolve) => {
 
   const doc = iframe.contentWindow.document;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${SHEET_STYLES}</style></head><body>${html}</body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${styles}</style></head><body>${content}</body></html>`);
   doc.close();
 
   // Let the document lay out before the dialog measures the page.
@@ -70,14 +135,19 @@ export const printHtml = (html, title = 'Print') => new Promise((resolve) => {
 });
 
 /** Print whatever is inside the element with this id. */
-export const printElement = (elementId, title = 'Print') => {
+export const printElement = (elementId, title = 'Print', options = {}) => {
   const element = document.getElementById(elementId);
   if (!element) {
     console.error(`Element with id ${elementId} not found`);
     alert('Could not find the content to print.');
     return Promise.resolve();
   }
-  return printHtml(element.innerHTML, title);
+  const isThermal = Boolean(
+    options.isThermal ||
+    element.classList.contains('thermal-receipt') ||
+    element.getAttribute('data-format') === 'thermal'
+  );
+  return printHtml(element.innerHTML, title, { ...options, isThermal });
 };
 
 /**

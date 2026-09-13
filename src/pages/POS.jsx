@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import useStore from '../store/useStore';
 import {
@@ -9,10 +9,11 @@ import {
 import { printElement } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
 import PaymentVoucher from '../components/PaymentVoucher';
+import ThermalReceipt from '../components/ThermalReceipt';
 import { openCashDrawer } from '../utils/cashDrawer';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
-import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
+import Swal, { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import Expenses from './Expenses';
 import './POS.css';
 
@@ -30,7 +31,34 @@ const POS = () => {
   // Kept as a string so the box can sit empty, which means "paid the exact amount".
   const [cashReceived, setCashReceived] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
-  const [selectedSalesman, setSelectedSalesman] = useState(user?.id || 'Admin');
+
+  // The logged-in user is automatically locked as the salesman.
+  const loggedInSalesman = useMemo(() => {
+    if (!user || user.role === 'Admin') {
+      return { id: 'Admin', staff_code: 'Admin', name: 'Admin', role: 'Admin' };
+    }
+    const matched = (staff || []).find(
+      s => (s.username && user.username && s.username.toLowerCase() === user.username.toLowerCase()) ||
+           (s.name && user.name && s.name.trim().toLowerCase() === user.name.trim().toLowerCase()) ||
+           String(s.id) === String(user.id) ||
+           String(s.staff_code) === String(user.id)
+    );
+    if (matched) {
+      return {
+        id: matched.staff_code || matched.id,
+        staff_code: matched.staff_code,
+        name: matched.name,
+        role: matched.role || 'Salesman',
+      };
+    }
+    return {
+      id: user.id || 'Salesman',
+      staff_code: user.id || 'Salesman',
+      name: user.name || user.username || 'Salesman',
+      role: user.role || 'Salesman',
+    };
+  }, [user, staff]);
+
   const [completedSale, setCompletedSale] = useState(null);
   const [editingSaleId, setEditingSaleId] = useState(null);
   const [scannedItem, setScannedItem] = useState(null);
@@ -57,7 +85,13 @@ const POS = () => {
     : [];
 
   const chooseCustomer = (c) => {
-    setCustomerInfo({ name: c.name, phone: c.phone || '', location: c.location || '' });
+    setCustomerInfo({
+      id: c.id,
+      customerCode: c.customer_code,
+      name: c.name,
+      phone: c.phone || '',
+      location: c.location || ''
+    });
     setShowCustomerDropdown(false);
     setShowPhoneDropdown(false);
   };
@@ -65,6 +99,7 @@ const POS = () => {
   const handleWalkInCustomer = () => {
     setCustomerInfo({ name: 'Walk-in Customer', phone: '', location: '' });
     setShowCustomerDropdown(false);
+    setShowPhoneDropdown(false);
   };
 
   const getCashPresets = (tot) => {
@@ -240,7 +275,7 @@ const POS = () => {
 
   const handleCheckout = async () => {
     if (!customerInfo.name?.trim()) {
-      toast.error('Customer Name is explicitly required for all sales!');
+      toast.error(language === 'bn' ? 'কাস্টমারের নাম আবশ্যক!' : 'Customer Name is explicitly required for all sales!');
       return;
     }
     
@@ -255,16 +290,88 @@ const POS = () => {
 
     if (paymentType === 'Partial') {
       if (!paidAmount || paidAmount <= 0) {
-        toast.error('Enter how much the customer is paying now.');
+        toast.error(language === 'bn' ? 'কাস্টমার কত টাকা পরিশোধ করছে তা লিখুন।' : 'Enter how much the customer is paying now.');
         return;
       }
       if (paidAmount > total) {
-        toast.error(`Paid amount cannot be more than the total (৳${total}).`);
+        toast.error(language === 'bn' ? `পরিশোধিত টাকা সর্বমোট বিল (৳${total}) এর বেশি হতে পারে না!` : `Paid amount cannot be more than the total (৳${total}).`);
         return;
       }
     }
 
-    const salesmanObj = staff.find(s => s.id === selectedSalesman) || { id: 'Admin', name: 'Admin' };
+    const effectivePaid = paymentType === 'Cash' ? total : paymentType === 'Baki' ? 0 : Number(paidAmount) || 0;
+    const effectiveDue = Math.max(0, total - effectivePaid);
+
+    // SweetAlert confirmation modal before processing
+    const alertHtml = `
+      <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #1e293b;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="color: #64748b;">${language === 'bn' ? 'কাস্টমার:' : 'Customer:'}</span>
+            <strong style="color: #0f172a;">${customerInfo.name}</strong>
+          </div>
+          ${customerInfo.phone ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="color: #64748b;">${language === 'bn' ? 'মোবাইল:' : 'Phone:'}</span>
+            <span style="color: #0f172a;">${customerInfo.phone}</span>
+          </div>` : ''}
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="color: #64748b;">${language === 'bn' ? 'আইটেম সংখ্যা:' : 'Items:'}</span>
+            <span style="color: #0f172a;">${cart.length} ${language === 'bn' ? 'টি' : 'items'} (${cart.reduce((n, i) => n + i.quantity, 0)} ${language === 'bn' ? 'পিস' : 'pcs'})</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #64748b;">${language === 'bn' ? 'পেমেন্ট মেথড:' : 'Payment:'}</span>
+            <strong style="color: #0284c7;">
+              ${paymentType === 'Cash' ? (language === 'bn' ? 'নগদ (Cash)' : 'Cash') :
+                paymentType === 'Baki' ? (language === 'bn' ? 'বাকি (Credit)' : 'Credit/Baki') :
+                (language === 'bn' ? 'আংশিক (Partial)' : 'Partial')}
+            </strong>
+          </div>
+        </div>
+
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: #1e3a8a; margin-bottom: 4px;">
+            <span>${language === 'bn' ? 'সর্বমোট বিল:' : 'Total Bill:'}</span>
+            <span>৳${total.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; color: #047857; font-weight: 700; margin-bottom: 4px;">
+            <span>${language === 'bn' ? 'জমা / পরিশোধ:' : 'Paid Amount:'}</span>
+            <span>৳${effectivePaid.toLocaleString()}</span>
+          </div>
+          ${effectiveDue > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: #b91c1c; font-weight: 700;">
+            <span>${language === 'bn' ? 'বকেয়া (Due):' : 'Due Amount:'}</span>
+            <span>৳${effectiveDue.toLocaleString()}</span>
+          </div>` : ''}
+        </div>
+      </div>
+    `;
+
+    const confirmResult = await Swal.fire({
+      title: editingSaleId
+        ? (language === 'bn' ? 'বিক্রয় আপডেট নিশ্চিত করুন?' : 'Confirm Sale Update?')
+        : (language === 'bn' ? 'বিক্রয় সম্পন্ন করতে চান?' : 'Confirm Sale & Print?'),
+      html: alertHtml,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, নিশ্চিত করুন' : 'Yes, Confirm',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#64748b',
+      reverseButtons: true,
+      focusConfirm: true,
+      padding: '1.25rem',
+      borderRadius: '16px',
+      customClass: {
+        popup: 'swal2-modern-card',
+      },
+    });
+
+    if (!confirmResult.isConfirmed) {
+      return;
+    }
+
+    const salesmanObj = loggedInSalesman;
     const saleData = {
       cartItems: cart,
       paymentType,
@@ -281,10 +388,7 @@ const POS = () => {
     
     const res = await processSale(saleData);
     if (res?.ok) {
-      // Print the invoice number the server filed. A locally generated one
-      // would put a number on the customer's receipt that matches nothing in
-      // the shop's records.
-      setCompletedSale({
+      const completedObj = {
         ...saleData,
         subtotal,
         total,
@@ -294,16 +398,21 @@ const POS = () => {
         dueAmount: Number(res.invoice?.due_amount) || 0,
         cashReceived: paymentType === 'Cash' && Number(cashReceived) > total ? Number(cashReceived) : 0,
         changeGiven: paymentType === 'Cash' && Number(cashReceived) > total ? Number(cashReceived) - total : 0,
-      });
+      };
+
+      setCompletedSale(completedObj);
       clearCart();
       setCustomerInfo({ name: '', phone: '', location: '' });
       setInvoiceDiscount(0);
       setPaidAmount(0);
       setCashReceived('');
-      // Start the next sale from the default. Leaving it on Partial with the
-      // paid box back at zero is a trap for whoever is on the counter.
       setPaymentType('Cash');
       toast.success(editingSaleId ? 'Sale updated successfully!' : 'Sale processed successfully!');
+
+      // Automatically trigger thermal printer
+      setTimeout(() => {
+        printElement('printable-thermal-receipt', `Receipt-${completedObj.invoiceId}`, { isThermal: true });
+      }, 400);
     }
   };
 
@@ -314,7 +423,7 @@ const POS = () => {
       toast.error('Nothing to save. Add items to the cart first.');
       return;
     }
-    const salesmanObj = staff.find(s => s.id === selectedSalesman) || { id: 'Admin', name: 'Admin' };
+    const salesmanObj = loggedInSalesman;
     const res = await saveDraft({
       cartItems: cart, customerInfo, paymentType, invoiceDiscount,
       salesman: salesmanObj, total,
@@ -359,7 +468,6 @@ const POS = () => {
     setPaymentType(sale.paymentType);
     setPaidAmount(Number(sale.paid_amount) || 0);
     setInvoiceDiscount(sale.invoiceDiscount || 0);
-    setSelectedSalesman(sale.salesmanId || user?.id || 'Admin');
     setEditingSaleId(sale.id);
     setActiveTab('New');
   };
@@ -680,15 +788,22 @@ const POS = () => {
             <div className="field-block">
               <span className="lbl">
                 <span>{t(language, 'Customer Details')} *</span>
-                <button
-                  type="button"
-                  className={`walkin-btn ${customerInfo.name === 'Walk-in Customer' ? 'active' : ''}`}
-                  onClick={handleWalkInCustomer}
-                  title="Fill as Walk-in Customer"
-                >
-                  <Sparkles size={11} />
-                  {language === 'bn' ? 'ওয়াক-ইন' : 'Walk-in'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {customerInfo.customerCode && (
+                    <span style={{ fontSize: '0.65rem', background: 'var(--primary-soft)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                      {language === 'bn' ? 'সংরক্ষিত কাস্টমার' : 'Saved Customer'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={`walkin-btn ${customerInfo.name === 'Walk-in Customer' ? 'active' : ''}`}
+                    onClick={handleWalkInCustomer}
+                    title="Fill as Walk-in Customer"
+                  >
+                    <Sparkles size={11} />
+                    {language === 'bn' ? 'ওয়াক-ইন' : 'Walk-in'}
+                  </button>
+                </div>
               </span>
 
               <div className="input-with-icon">
@@ -698,19 +813,45 @@ const POS = () => {
                   placeholder={language === 'bn' ? 'কাস্টমারের নাম বা খুঁজুন…' : 'Customer name or search…'}
                   value={customerInfo.name}
                   onChange={e => {
-                    setCustomerInfo({ ...customerInfo, name: e.target.value });
+                    setCustomerInfo(prev => ({
+                      ...prev,
+                      name: e.target.value,
+                      id: undefined,
+                      customerCode: undefined
+                    }));
                     setShowCustomerDropdown(true);
                   }}
                   onFocus={() => setShowCustomerDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') setShowCustomerDropdown(false);
+                  }}
                   autoComplete="off"
                 />
                 {showCustomerDropdown && customerSuggestions.length > 0 && (
-                  <div className="customer-suggestions-dropdown">
+                  <div className="customer-suggestions-dropdown" onMouseDown={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0.7rem', background: 'var(--bg-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      <span>{language === 'bn' ? 'বিদ্যমান কাস্টমার (সিলেক্ট করতে ক্লিক করুন)' : 'Existing Customers'}</span>
+                      <button
+                        type="button"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setShowCustomerDropdown(false);
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', padding: '0 4px', lineHeight: 1 }}
+                        title="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
                     {customerSuggestions.map(c => (
                       <div
                         key={c.id}
                         className="customer-suggestion-item"
-                        onClick={() => chooseCustomer(c)}
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          chooseCustomer(c);
+                        }}
                       >
                         <div className="font-bold text-sm">{c.name}</div>
                         <div className="text-muted" style={{ fontSize: '0.7rem' }}>
@@ -718,6 +859,24 @@ const POS = () => {
                         </div>
                       </div>
                     ))}
+                    <div
+                      className="customer-suggestion-item"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setShowCustomerDropdown(false);
+                        document.getElementById('pos-customer-phone')?.focus();
+                      }}
+                      style={{
+                        background: 'var(--primary-soft)',
+                        color: 'var(--primary)',
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                        textAlign: 'center',
+                        padding: '0.5rem 0.7rem',
+                      }}
+                    >
+                      + {language === 'bn' ? 'নতুন কাস্টমার হিসেবে চালিয়ে যান (ফোন/ঠিকানা দিন)' : 'Continue as New Customer (Enter Phone/Address)'}
+                    </div>
                   </div>
                 )}
               </div>
@@ -726,24 +885,47 @@ const POS = () => {
                 <div className="input-with-icon">
                   <Phone size={13} />
                   <input
+                    id="pos-customer-phone"
                     type="text"
                     placeholder={language === 'bn' ? 'মোবাইল দিয়ে খুঁজুন' : 'Phone (search)'}
                     value={customerInfo.phone}
                     onChange={e => {
-                      setCustomerInfo({ ...customerInfo, phone: e.target.value });
+                      setCustomerInfo(prev => ({
+                        ...prev,
+                        phone: e.target.value,
+                        id: undefined,
+                        customerCode: undefined
+                      }));
                       setShowPhoneDropdown(true);
                     }}
                     onFocus={() => setShowPhoneDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowPhoneDropdown(false), 150)}
+                    onBlur={() => setTimeout(() => setShowPhoneDropdown(false), 200)}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') setShowPhoneDropdown(false);
+                    }}
                     autoComplete="off"
                   />
                   {phoneSuggestions.length > 0 && (
-                    <div className="customer-suggestions-dropdown">
+                    <div className="customer-suggestions-dropdown" onMouseDown={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0.7rem', background: 'var(--bg-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <span>{language === 'bn' ? 'বিদ্যমান কাস্টমার (সিলেক্ট করতে ক্লিক করুন)' : 'Existing Customers'}</span>
+                        <button
+                          type="button"
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            setShowPhoneDropdown(false);
+                          }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '12px', padding: '0 4px', lineHeight: 1 }}
+                          title="Close"
+                        >
+                          ✕
+                        </button>
+                      </div>
                       {phoneSuggestions.map(c => (
                         <div
                           key={c.id}
                           className="customer-suggestion-item"
-                          onMouseDown={(e) => { e.preventDefault(); chooseCustomer(c); }}
+                          onMouseDown={e => { e.preventDefault(); chooseCustomer(c); }}
                         >
                           <div className="font-bold text-sm">{c.phone}</div>
                           <div className="text-muted" style={{ fontSize: '0.7rem' }}>
@@ -751,29 +933,59 @@ const POS = () => {
                           </div>
                         </div>
                       ))}
+                      <div
+                        className="customer-suggestion-item"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setShowPhoneDropdown(false);
+                          document.getElementById('pos-customer-location')?.focus();
+                        }}
+                        style={{
+                          background: 'var(--primary-soft)',
+                          color: 'var(--primary)',
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          textAlign: 'center',
+                          padding: '0.5rem 0.7rem',
+                        }}
+                      >
+                        + {language === 'bn' ? 'এই নতুন নম্বরে কাস্টমার এন্ট্রি করুন' : 'Continue with this phone number'}
+                      </div>
                     </div>
                   )}
                 </div>
                 <div className="input-with-icon">
                   <MapPin size={13} />
                   <input
+                    id="pos-customer-location"
                     type="text"
                     placeholder={language === 'bn' ? 'ঠিকানা' : 'Address'}
                     value={customerInfo.location}
-                    onChange={e => setCustomerInfo({ ...customerInfo, location: e.target.value })}
+                    onChange={e => setCustomerInfo(prev => ({ ...prev, location: e.target.value }))}
                   />
                 </div>
               </div>
             </div>
 
-            {/* Who is selling */}
+            {/* Who is selling - locked to logged-in user */}
             <div className="field-block">
               <span className="lbl">{t(language, 'Salesman')}</span>
               <div className="input-with-icon">
                 <UserCheck size={13} />
-                <select value={selectedSalesman} onChange={e => setSelectedSalesman(e.target.value)}>
-                  {user?.role === 'Admin' && <option value="Admin">Admin (Main Counter)</option>}
-                  {staff.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+                <select
+                  value={loggedInSalesman.id}
+                  disabled
+                  title={language === 'bn' ? 'লগইনকৃত সেলসম্যান পরিবর্তন করা যাবে না' : 'Logged-in user is locked as the salesman'}
+                  style={{
+                    cursor: 'not-allowed',
+                    opacity: 0.88,
+                    backgroundColor: 'var(--bg-subtle, #f3f4f6)',
+                    color: 'var(--text-main)',
+                  }}
+                >
+                  <option value={loggedInSalesman.id}>
+                    {loggedInSalesman.name} ({loggedInSalesman.role})
+                  </option>
                 </select>
               </div>
             </div>
@@ -995,26 +1207,27 @@ const POS = () => {
       {/* The invoice, the moment the sale goes through */}
       {completedSale && createPortal(
         <div className="drawer-overlay">
-          <div className="drawer-container" style={{ maxWidth: '780px' }}>
+          <div className="drawer-container" style={{ maxWidth: '440px' }}>
             <div className="drawer-header">
               <h3>
-                {language === 'bn' ? 'পেমেন্ট ভাউচার' : 'Payment Voucher'} · {completedSale.invoiceId}
+                {language === 'bn' ? 'থার্মাল ক্যাশ মেমো' : 'Thermal Receipt'} · {completedSale.invoiceId}
               </h3>
               <button className="drawer-close-btn" onClick={() => setCompletedSale(null)}>
                 <X size={20} />
               </button>
             </div>
 
-            <div className="drawer-body" style={{ padding: 0, background: '#fff' }}>
-              <PaymentVoucher
-                sale={fromCompletedSale(completedSale)}
-                shopProfile={shopProfile}
-                language={language}
-                domId="printable-voucher"
-              />
+            <div className="drawer-body" style={{ padding: '16px 12px', background: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ background: '#fff', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', width: '100%', maxWidth: '320px' }}>
+                <ThermalReceipt
+                  sale={fromCompletedSale(completedSale)}
+                  shopProfile={shopProfile}
+                  language={language}
+                  domId="printable-thermal-receipt"
+                />
+              </div>
 
-              {/* Kept off screen so the same sale can also be printed as the
-                  full invoice without leaving the drawer. */}
+              {/* Off-screen elements for optional A4 Invoice and Voucher print */}
               <div style={{ display: 'none' }}>
                 <InvoiceDocument
                   sale={fromCompletedSale(completedSale)}
@@ -1022,30 +1235,32 @@ const POS = () => {
                   language={language}
                   domId="printable-invoice"
                 />
+                <PaymentVoucher
+                  sale={fromCompletedSale(completedSale)}
+                  shopProfile={shopProfile}
+                  language={language}
+                  domId="printable-voucher"
+                />
               </div>
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'space-between' }}>
-              <span className="text-muted" style={{ fontSize: '0.8125rem' }}>
-                {completedSale.dueAmount > 0
-                  ? `${language === 'bn' ? 'বকেয়া' : 'Due'}: ৳${Number(completedSale.dueAmount).toLocaleString()}`
-                  : (language === 'bn' ? 'সম্পূর্ণ পরিশোধিত' : 'Fully paid')}
-              </span>
-              <div className="flex-align-gap">
-                <button className="btn-outline" onClick={() => setCompletedSale(null)}>
-                  {language === 'bn' ? 'বন্ধ' : 'Close'}
-                </button>
+            <div className="drawer-footer" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <button className="btn-outline" onClick={() => setCompletedSale(null)}>
+                {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
+              </button>
+              <div className="flex-align-gap" style={{ gap: '8px' }}>
                 <button
                   className="btn-outline"
-                  onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`)}
+                  onClick={() => printElement('printable-invoice', `Invoice-${completedSale.invoiceId}`, { isThermal: false })}
+                  title="Print A4 size invoice"
                 >
-                  <FileText size={16} /> {language === 'bn' ? 'চালান' : 'Invoice'}
+                  <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
                 </button>
                 <button
                   className="btn-primary"
-                  onClick={() => printElement('printable-voucher', `Voucher-${completedSale.invoiceId}`)}
+                  onClick={() => printElement('printable-thermal-receipt', `Receipt-${completedSale.invoiceId}`, { isThermal: true })}
                 >
-                  <Printer size={16} /> {language === 'bn' ? 'ভাউচার প্রিন্ট' : 'Print Voucher'}
+                  <Printer size={16} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
                 </button>
               </div>
             </div>
@@ -1200,18 +1415,34 @@ const POS = () => {
                 language={language}
                 domId="printable-single-invoice-pos"
               />
+              <div style={{ display: 'none' }}>
+                <ThermalReceipt
+                  sale={fromApiInvoice(selectedInvoice, customers)}
+                  shopProfile={shopProfile}
+                  language={language}
+                  domId="printable-single-invoice-pos-thermal"
+                />
+              </div>
             </div>
 
-            <div className="drawer-footer">
+            <div className="drawer-footer" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <button className="btn-outline" onClick={() => setSelectedInvoice(null)}>
                 {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
               </button>
-              <button
-                className="btn-primary"
-                onClick={() => printElement('printable-single-invoice-pos', `Invoice-${selectedInvoice.id}`)}
-              >
-                <Printer size={16} /> {language === 'bn' ? 'চালান প্রিন্ট' : 'Print Invoice'}
-              </button>
+              <div className="flex-align-gap" style={{ gap: '8px' }}>
+                <button
+                  className="btn-primary"
+                  onClick={() => printElement('printable-single-invoice-pos-thermal', `Receipt-${selectedInvoice.id}`, { isThermal: true })}
+                >
+                  <Printer size={16} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
+                </button>
+                <button
+                  className="btn-outline"
+                  onClick={() => printElement('printable-single-invoice-pos', `Invoice-${selectedInvoice.id}`, { isThermal: false })}
+                >
+                  <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
+                </button>
+              </div>
             </div>
           </div>
         </div>,

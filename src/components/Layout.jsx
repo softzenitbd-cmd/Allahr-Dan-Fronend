@@ -133,7 +133,7 @@ const Layout = () => {
 
   const adminServices = user?.role === 'Admin' ? [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
-    { name: language === 'bn' ? 'খাতা' : 'Ledger', icon: BookOpen, path: '/ledger' },
+    { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'ব্যালেন্স শিট' : 'Balance Sheet', icon: Scale, path: '/balance-sheet' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },

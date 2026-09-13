@@ -201,8 +201,231 @@
 .db-line.total { border-top: 1px solid var(--border-strong); margin-top: 0.2rem; padding-top: 0.45rem; font-weight: 700; }
 
 /* Portalled forms */
+.db-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
 .db-form label { display: block; margin: 0.75rem 0 0.3rem; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
-.db-form input, .db-form select { width: 100%; }
+.db-form input, .db-form select, .db-form textarea { width: 100%; }
+
+/* --------------------------------------------------------------------------
+   DayBook Menu Tabs (Daily Transactions vs Loan Tracker)
+   -------------------------------------------------------------------------- */
+.db-nav-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.db-nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.db-nav-tab:hover {
+  color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.db-nav-tab.active {
+  color: var(--primary);
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: -0.35rem;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.db-nav-tab .tab-badge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+}
+
+.db-nav-tab.active .tab-badge {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* --------------------------------------------------------------------------
+   Loan Section
+   -------------------------------------------------------------------------- */
+.loan-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.loan-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--sp-3);
+}
+
+.loan-badge-given {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.loan-badge-taken {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.loan-badge-active {
+  background: #fef3c7;
+  color: #b45309;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.loan-badge-settled {
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.loan-table-wrapper {
+  overflow-x: auto;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.loan-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.loan-table th {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.loan-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.loan-table tr:last-child td {
+  border-bottom: none;
+}
+
+.loan-table tr:hover {
+  background: var(--bg-hover);
+}
+
+.loan-type-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.loan-type-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  font-weight: 700;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  color: var(--text-muted);
+}
+
+.loan-type-btn.active-given {
+  border-color: #ef4444;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.loan-type-btn.active-taken {
+  border-color: #3b82f6;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.loan-pay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.loan-pay-btn:hover {
+  opacity: 0.9;
+}
+
+.loan-pay-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 @media (max-width: 1100px) {
   .db-grid { grid-template-columns: 1fr; }
@@ -214,3 +437,4 @@
   .db-row-time, .db-row-actions { display: none; }
   .db-search { min-width: 0; width: 100%; }
 }
+

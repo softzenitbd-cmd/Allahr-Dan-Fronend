@@ -27,7 +27,7 @@ const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 const KINDS = [
   { key: 'customer', en: 'Customer', bn: 'কাস্টমার', Icon: Users },
   { key: 'supplier', en: 'Supplier', bn: 'সাপ্লায়ার', Icon: Truck },
-  { key: 'salesman', en: 'Salesman', bn: 'সেলসম্যান', Icon: UserCheck },
+  { key: 'salesman', en: 'Salesman / Admin', bn: 'সেলসম্যান / এডমিন', Icon: UserCheck },
 ];
 
 const METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bank'];
@@ -105,8 +105,28 @@ const Ledger = () => {
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  const source = kind === 'customer' ? customers : kind === 'supplier' ? suppliers : staff;
-  const selected = (source || []).find((p) => p.id === selectedId) || null;
+  const adminOption = useMemo(() => ({
+    id: 'Admin',
+    staff_code: 'Admin',
+    name: 'Admin',
+    role: bn ? 'দোকান এডমিন' : 'Shop Admin',
+    phone: '',
+    due: 0,
+  }), [bn]);
+
+  const source = useMemo(() => {
+    if (kind === 'customer') return customers || [];
+    if (kind === 'supplier') return suppliers || [];
+    const list = [...(staff || [])];
+    if (!list.some((s) => String(s.id).toLowerCase() === 'admin' || (s.name || '').toLowerCase() === 'admin')) {
+      list.unshift(adminOption);
+    }
+    return list;
+  }, [kind, customers, suppliers, staff, adminOption]);
+
+  const selected = useMemo(() => {
+    return (source || []).find((p) => p.id === selectedId || p.staff_code === selectedId) || null;
+  }, [source, selectedId]);
 
   const options = useMemo(() => {
     const term = pickerText.trim().toLowerCase();
@@ -114,10 +134,17 @@ const Ledger = () => {
       .filter((p) => !term
         || (p.name || '').toLowerCase().includes(term)
         || (p.phone || '').includes(term)
-        || String(p.id || '').toLowerCase().includes(term))
-      .sort((a, b) => (Number(b.due) || 0) - (Number(a.due) || 0) || (a.name || '').localeCompare(b.name || ''))
+        || String(p.id || '').toLowerCase().includes(term)
+        || String(p.role || '').toLowerCase().includes(term))
+      .sort((a, b) => {
+        if (kind === 'salesman') {
+          if (String(a.id).toLowerCase() === 'admin') return -1;
+          if (String(b.id).toLowerCase() === 'admin') return 1;
+        }
+        return (Number(b.due) || 0) - (Number(a.due) || 0) || (a.name || '').localeCompare(b.name || '');
+      })
       .slice(0, 60);
-  }, [source, pickerText]);
+  }, [source, pickerText, kind]);
 
   const load = useCallback(async () => {
     if (!selectedId) { setData(null); return; }
@@ -204,6 +231,8 @@ const Ledger = () => {
   }, [data, tab, kind]);
   const pager = usePager(rowsForTab, `${selectedId}|${tab}|${startDate}|${endDate}`);
 
+  const isSalesmanAdmin = kind === 'salesman' && (String(selectedId).toLowerCase() === 'admin' || String(data?.party?.id).toLowerCase() === 'admin');
+
   const tabs = useMemo(() => {
     if (!data) return [];
     if (kind === 'customer') return [
@@ -218,14 +247,19 @@ const Ledger = () => {
       { key: 'statement', l: bn ? 'স্টেটমেন্ট' : 'Statement', n: data.statement.length },
       { key: 'dues', l: bn ? 'বকেয়া ক্রয়' : 'Due Purchases', n: (data.duePurchases || []).length },
     ];
-    return [
+    const salesmanTabs = [
       { key: 'primary', l: bn ? 'বিক্রয়' : 'Sales', n: data.invoices.length },
       { key: 'products', l: bn ? 'পণ্য' : 'Products', n: data.products.length },
       { key: 'dues', l: bn ? 'বকেয়া বিক্রয়' : 'Due Sales', n: data.dueInvoices.length },
-      { key: 'sr', l: bn ? 'এসআর দিন' : 'SR Days', n: data.srSettlements.length },
-      { key: 'recoveries', l: bn ? 'আদায়' : 'Recoveries', n: data.recoveries.length },
     ];
-  }, [data, kind, bn]);
+    if (!isSalesmanAdmin || (data.srSettlements && data.srSettlements.length > 0)) {
+      salesmanTabs.push({ key: 'sr', l: bn ? 'এসআর দিন' : 'SR Days', n: (data.srSettlements || []).length });
+    }
+    if (!isSalesmanAdmin || (data.recoveries && data.recoveries.length > 0)) {
+      salesmanTabs.push({ key: 'recoveries', l: bn ? 'আদায়' : 'Recoveries', n: (data.recoveries || []).length });
+    }
+    return salesmanTabs;
+  }, [data, kind, bn, isSalesmanAdmin]);
 
   // Lifetime tiles, then the same for the window when one is set.
   const tiles = useMemo(() => {
@@ -272,9 +306,11 @@ const Ledger = () => {
         { l: bn ? 'মোট বিক্রয়' : 'Total Sales', v: money(t.salesAmount), c: 'info' },
         { l: bn ? 'নগদ আদায়' : 'Cash Collected', v: money(t.cashCollected), c: 'good' },
         { l: bn ? 'কাস্টমারের কাছে বকেয়া' : 'Still Due from Customers', v: money(t.dueOutstanding), c: t.dueOutstanding ? 'bad' : '' },
-        { l: bn ? 'এসআর দিন' : 'SR Days', v: t.srDays },
-        { l: bn ? 'দোকানকে দেনা' : 'Owes the Shop', v: money(t.staffDue), c: t.staffDue ? 'bad' : 'good' },
-        { l: bn ? 'আদায় হয়েছে' : 'Recovered', v: money(t.recovered), c: 'good' },
+        ...(!isSalesmanAdmin ? [
+          { l: bn ? 'এসআর দিন' : 'SR Days', v: t.srDays },
+          { l: bn ? 'দোকানকে দেনা' : 'Owes the Shop', v: money(t.staffDue), c: t.staffDue ? 'bad' : 'good' },
+          { l: bn ? 'আদায় হয়েছে' : 'Recovered', v: money(t.recovered), c: 'good' },
+        ] : []),
       ],
       period: [
         { l: bn ? 'চালান' : 'Invoices', v: p.invoices },
@@ -282,10 +318,12 @@ const Ledger = () => {
         { l: bn ? 'বিক্রয়' : 'Sales', v: money(p.salesAmount), c: 'info' },
         { l: bn ? 'নগদ' : 'Cash', v: money(p.cashCollected), c: 'good' },
         { l: bn ? 'বাকিতে' : 'On Credit', v: money(p.dueCreated), c: p.dueCreated ? 'bad' : '' },
-        { l: bn ? 'আদায়' : 'Recovered', v: money(p.recovered), c: 'good' },
+        ...(!isSalesmanAdmin ? [
+          { l: bn ? 'আদায়' : 'Recovered', v: money(p.recovered), c: 'good' },
+        ] : []),
       ],
     };
-  }, [data, kind, bn]);
+  }, [data, kind, bn, isSalesmanAdmin]);
 
   const shopName = shopProfile?.shop_name || 'Allah Dan Gents Point';
   const hasWindow = Boolean(startDate || endDate);
@@ -420,10 +458,22 @@ const Ledger = () => {
               </div>
               <div className="ld-due-box">
                 <div className="lbl">
-                  {kind === 'supplier' ? (bn ? 'দোকানের দেনা' : 'Shop owes') : kind === 'salesman' ? (bn ? 'দোকানকে দেনা' : 'Owes the shop') : (bn ? 'মোট বকেয়া' : 'Total due')}
+                  {kind === 'supplier'
+                    ? (bn ? 'দোকানের দেনা' : 'Shop owes')
+                    : isSalesmanAdmin
+                      ? (bn ? 'কাস্টমার বকেয়া' : 'Customer Dues')
+                      : kind === 'salesman'
+                        ? (bn ? 'দোকানকে দেনা' : 'Owes the shop')
+                        : (bn ? 'মোট বকেয়া' : 'Total due')}
                 </div>
-                <div className={`amt ${partyDue > 0 ? 'owed' : 'clear'}`}>{money(partyDue)}</div>
-                {partyDue <= 0 && <div className="text-muted text-sm"><CheckCircle2 size={12} style={{ verticalAlign: '-2px' }} /> {bn ? 'পরিষ্কার' : 'Nothing outstanding'}</div>}
+                <div className={`amt ${(isSalesmanAdmin ? data?.totals?.dueOutstanding : partyDue) > 0 ? 'owed' : 'clear'}`}>
+                  {money(isSalesmanAdmin ? data?.totals?.dueOutstanding : partyDue)}
+                </div>
+                {(isSalesmanAdmin ? (data?.totals?.dueOutstanding || 0) <= 0 : partyDue <= 0) && (
+                  <div className="text-muted text-sm">
+                    <CheckCircle2 size={12} style={{ verticalAlign: '-2px' }} /> {bn ? 'পরিষ্কার' : 'Nothing outstanding'}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -492,7 +542,7 @@ const Ledger = () => {
                       <th className="num">{bn ? 'মোট' : 'Total'}</th>
                       <th className="num">{bn ? 'পরিশোধ' : 'Paid'}</th>
                       <th className="num">{bn ? 'বকেয়া' : 'Due'}</th>
-                      {kind === 'customer' && <th />}
+                      {(kind === 'customer' || kind === 'salesman') && <th />}
                     </tr>
                   </thead>
                   <tbody>
@@ -509,7 +559,7 @@ const Ledger = () => {
                         <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
                         <td className="num text-success">{money(r.totalPaid)}</td>
                         <td className={`num ${r.due > 0 ? 'text-danger font-bold' : 'text-muted'}`}>{money(r.due)}</td>
-                        {kind === 'customer' && (
+                        {(kind === 'customer' || kind === 'salesman') && (
                           <td className="num">
                             {r.due > 0 && (
                               <button className="btn-icon" style={{ color: 'var(--success)' }} title={bn ? 'এই চালানের বকেয়া নিন' : 'Pay this invoice'} onClick={() => openPay('invoice', r)}>

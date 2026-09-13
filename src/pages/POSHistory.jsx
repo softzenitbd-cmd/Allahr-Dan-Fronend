@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
+import ThermalReceipt from '../components/ThermalReceipt';
 import { t } from '../utils/i18n';
 import './POSHistory.css';
 
@@ -65,6 +66,14 @@ const POSHistory = () => {
   const [selected, setSelected] = useState(null);
   const [payModal, setPayModal] = useState({ show: false, sale: null, amount: '', date: '', method: 'Cash', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [quickThermalSale, setQuickThermalSale] = useState(null);
+
+  const handleQuickThermalPrint = (sale) => {
+    setQuickThermalSale(sale);
+    setTimeout(() => {
+      printElement('printable-quick-thermal-history', `Receipt-${sale.id || sale.invoice_number}`, { isThermal: true });
+    }, 200);
+  };
 
   // The list comes from the store's `sales` slice, which the layout only loads
   // for the routes that declare it. Ask for it on the way in so a direct link
@@ -330,6 +339,13 @@ const POSHistory = () => {
                       <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                         <button
                           className="btn-icon"
+                          title={language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
+                          onClick={() => handleQuickThermalPrint(s)}
+                        >
+                          <Printer size={16} />
+                        </button>
+                        <button
+                          className="btn-icon"
                           title={language === 'bn' ? 'দেখুন ও প্রিন্ট' : 'View & Print'}
                           onClick={() => setSelected(s)}
                         >
@@ -427,9 +443,17 @@ const POSHistory = () => {
                 language={language}
                 domId="printable-invoice-detail"
               />
+              <div style={{ display: 'none' }}>
+                <ThermalReceipt
+                  sale={fromApiInvoice(selected, customers)}
+                  shopProfile={shopProfile}
+                  language={language}
+                  domId="printable-thermal-invoice-detail"
+                />
+              </div>
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'space-between' }}>
+            <div className="drawer-footer" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 {outstandingOf(selected) > 0 && (
                   <span className="pay-pill due">
@@ -437,7 +461,7 @@ const POSHistory = () => {
                   </span>
                 )}
               </div>
-              <div className="flex-align-gap">
+              <div className="flex-align-gap" style={{ gap: '8px' }}>
                 {outstandingOf(selected) > 0 && (
                   <button className="btn-outline flex-align-gap" onClick={() => openPayModal(selected)}>
                     <Wallet size={16} /> {language === 'bn' ? 'বকেয়া জমা নিন' : 'Pay Due'}
@@ -445,9 +469,15 @@ const POSHistory = () => {
                 )}
                 <button
                   className="btn-primary flex-align-gap"
-                  onClick={() => printElement('printable-invoice-detail', `Invoice-${selected.id}`)}
+                  onClick={() => printElement('printable-thermal-invoice-detail', `Receipt-${selected.id}`, { isThermal: true })}
                 >
-                  <Printer size={16} /> {language === 'bn' ? 'চালান প্রিন্ট' : 'Print Invoice'}
+                  <Printer size={16} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal Print'}
+                </button>
+                <button
+                  className="btn-outline flex-align-gap"
+                  onClick={() => printElement('printable-invoice-detail', `Invoice-${selected.id}`, { isThermal: false })}
+                >
+                  <FileText size={16} /> {language === 'bn' ? 'A4 চালান' : 'A4 Invoice'}
                 </button>
               </div>
             </div>
@@ -549,6 +579,17 @@ const POSHistory = () => {
           </div>
         </div>,
         document.body
+      )}
+      {/* Hidden container for quick thermal print from table row */}
+      {quickThermalSale && (
+        <div style={{ display: 'none' }}>
+          <ThermalReceipt
+            sale={fromApiInvoice(quickThermalSale, customers)}
+            shopProfile={shopProfile}
+            language={language}
+            domId="printable-quick-thermal-history"
+          />
+        </div>
       )}
     </div>
   );
