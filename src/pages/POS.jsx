@@ -32,7 +32,9 @@ const POS = () => {
   const [cashReceived, setCashReceived] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
 
-  // The logged-in user is automatically locked as the salesman.
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState('');
+
+  // The logged-in user as the default salesman
   const loggedInSalesman = useMemo(() => {
     if (!user || user.role === 'Admin') {
       return { id: 'Admin', staff_code: 'Admin', name: 'Admin', role: 'Admin' };
@@ -46,7 +48,7 @@ const POS = () => {
     if (matched) {
       return {
         id: matched.staff_code || matched.id,
-        staff_code: matched.staff_code,
+        staff_code: matched.staff_code || matched.id,
         name: matched.name,
         role: matched.role || 'Salesman',
       };
@@ -58,6 +60,29 @@ const POS = () => {
       role: user.role || 'Salesman',
     };
   }, [user, staff]);
+
+  // Active salesman for current sale (enabled for manual selection, defaulting to logged-in user)
+  const currentSalesman = useMemo(() => {
+    const targetId = selectedSalesmanId || loggedInSalesman.id;
+    if (targetId === 'Admin') {
+      return { id: 'Admin', staff_code: 'Admin', name: 'Admin', role: 'Admin' };
+    }
+    const matched = (staff || []).find(
+      s => String(s.id) === String(targetId) || String(s.staff_code) === String(targetId)
+    );
+    if (matched) {
+      return {
+        id: matched.staff_code || matched.id,
+        staff_code: matched.staff_code || matched.id,
+        name: matched.name,
+        role: matched.role || 'Salesman',
+      };
+    }
+    if (String(loggedInSalesman.id) === String(targetId)) {
+      return loggedInSalesman;
+    }
+    return { id: targetId, staff_code: targetId, name: targetId, role: 'Salesman' };
+  }, [selectedSalesmanId, loggedInSalesman, staff]);
 
   const [completedSale, setCompletedSale] = useState(null);
   const [editingSaleId, setEditingSaleId] = useState(null);
@@ -151,7 +176,7 @@ const POS = () => {
     // Pull fresh stock in. The catalogue in memory was loaded at login, so
     // anything a second terminal sold since then would still read as available
     // on the card shown after a scan.
-    refresh('inventory');
+    refresh('inventory', 'staff');
   }, [refresh]);
 
   // What the operator has typed so far, matched against the catalogue. A
@@ -371,7 +396,7 @@ const POS = () => {
       return;
     }
 
-    const salesmanObj = loggedInSalesman;
+    const salesmanObj = currentSalesman;
     const saleData = {
       cartItems: cart,
       paymentType,
@@ -423,7 +448,7 @@ const POS = () => {
       toast.error('Nothing to save. Add items to the cart first.');
       return;
     }
-    const salesmanObj = loggedInSalesman;
+    const salesmanObj = currentSalesman;
     const res = await saveDraft({
       cartItems: cart, customerInfo, paymentType, invoiceDiscount,
       salesman: salesmanObj, total,
@@ -443,6 +468,9 @@ const POS = () => {
     if (cart.length > 0 && !window.confirm('This will replace what is in the cart. Continue?')) return;
     setCart(draft.cartItems || []);
     setCustomerInfo(draft.customerInfo || { name: '', phone: '', location: '' });
+    if (draft.salesman?.id || draft.salesman?.staff_code) {
+      setSelectedSalesmanId(draft.salesman.id || draft.salesman.staff_code);
+    }
     setPaymentType(draft.paymentType || 'Cash');
     setInvoiceDiscount(Number(draft.invoiceDiscount) || 0);
     setActiveTab('New');
@@ -967,25 +995,27 @@ const POS = () => {
               </div>
             </div>
 
-            {/* Who is selling - locked to logged-in user */}
+            {/* Who is selling - enabled salesman selection */}
             <div className="field-block">
               <span className="lbl">{t(language, 'Salesman')}</span>
               <div className="input-with-icon">
                 <UserCheck size={13} />
                 <select
-                  value={loggedInSalesman.id}
-                  disabled
-                  title={language === 'bn' ? 'লগইনকৃত সেলসম্যান পরিবর্তন করা যাবে না' : 'Logged-in user is locked as the salesman'}
-                  style={{
-                    cursor: 'not-allowed',
-                    opacity: 0.88,
-                    backgroundColor: 'var(--bg-subtle, #f3f4f6)',
-                    color: 'var(--text-main)',
-                  }}
+                  id="pos-salesman-select"
+                  value={currentSalesman.id}
+                  onChange={(e) => setSelectedSalesmanId(e.target.value)}
                 >
-                  <option value={loggedInSalesman.id}>
-                    {loggedInSalesman.name} ({loggedInSalesman.role})
-                  </option>
+                  <option value="Admin">Admin (Admin)</option>
+                  {(staff || []).map((s) => (
+                    <option key={s.id || s.staff_code} value={s.staff_code || s.id}>
+                      {s.name} ({s.role || 'Salesman'})
+                    </option>
+                  ))}
+                  {loggedInSalesman.id !== 'Admin' && !(staff || []).some(s => String(s.id) === String(loggedInSalesman.id) || String(s.staff_code) === String(loggedInSalesman.id)) && (
+                    <option value={loggedInSalesman.id}>
+                      {loggedInSalesman.name} ({loggedInSalesman.role})
+                    </option>
+                  )}
                 </select>
               </div>
             </div>

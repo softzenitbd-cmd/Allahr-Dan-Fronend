@@ -101,7 +101,11 @@ const POSHistory = () => {
         String(s.id || '').toLowerCase().includes(term) ||
         String(s.customerName || '').toLowerCase().includes(term) ||
         String(s.customer_phone || '').toLowerCase().includes(term) ||
-        String(s.salesmanName || '').toLowerCase().includes(term)
+        String(s.salesmanName || '').toLowerCase().includes(term) ||
+        (s.items || []).some((item) =>
+          String(item.name || '').toLowerCase().includes(term) ||
+          String(item.variant || '').toLowerCase().includes(term)
+        )
       );
     });
   }, [sales, search, startDate, endDate, paymentFilter, dueOnly]);
@@ -242,7 +246,7 @@ const POSHistory = () => {
               <input
                 className="w-full"
                 style={{ paddingLeft: '2rem' }}
-                placeholder={language === 'bn' ? 'চালান নম্বর, কাস্টমার বা ফোন' : 'Invoice no, customer or phone'}
+                placeholder={language === 'bn' ? 'চালান নম্বর, কাস্টমার, ফোন বা পণ্য' : 'Invoice no, customer, phone or product'}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -297,7 +301,7 @@ const POSHistory = () => {
                 <th>{t(language, 'Date')}</th>
                 <th>{t(language, 'Invoice ID')}</th>
                 <th>{t(language, 'Customer Name')}</th>
-                <th>{t(language, 'Items')}</th>
+                <th>{language === 'bn' ? 'বিক্রিত পণ্য' : 'Products Sold'}</th>
                 <th>{t(language, 'Payment Method')}</th>
                 <th style={{ textAlign: 'right' }}>{t(language, 'Total')}</th>
                 <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'পরিশোধ' : 'Paid'}</th>
@@ -320,7 +324,25 @@ const POSHistory = () => {
                         <div className="text-muted" style={{ fontSize: '0.75rem' }}>{s.customer_phone}</div>
                       )}
                     </td>
-                    <td>{(s.items || []).length}</td>
+                    <td style={{ minWidth: '180px', maxWidth: '300px' }}>
+                      {s.items && s.items.length > 0 ? (
+                        <div className="poshistory-products-cell">
+                          {s.items.map((item, idx) => (
+                            <div key={idx} className="poshistory-product-row">
+                              <span className="poshistory-product-name" title={item.name}>
+                                • {item.name}
+                                {item.variant ? <span className="poshistory-product-variant"> ({item.variant})</span> : null}
+                              </span>
+                              <span className="poshistory-product-qty">
+                                ×{item.quantity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted" style={{ fontSize: '0.8rem' }}>—</span>
+                      )}
+                    </td>
                     <td>
                       <span className={`pay-pill ${settled ? 'paid' : received > 0 ? 'partial' : 'due'}`}>
                         {s.paymentType}
@@ -397,6 +419,7 @@ const POSHistory = () => {
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Date</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Invoice</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Customer</th>
+                <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Products</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Payment</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>Total</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>Paid</th>
@@ -409,6 +432,9 @@ const POSHistory = () => {
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{String(s.date).split('T')[0]}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.id}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.customerName || 'N/A'}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>
+                    {(s.items || []).map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.quantity}`).join(', ') || '—'}
+                  </td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.paymentType}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>৳{money(s.total)}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>৳{money(receivedOf(s))}</td>

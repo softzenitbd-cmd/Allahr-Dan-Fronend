@@ -106,8 +106,7 @@ const HR = () => {
   };
 
   const handleGeneratePayslip = async (staffMember, presentDays, bonus) => {
-    const dailyRate = staffMember.baseSalary / 30;
-    const netPay = Math.round((dailyRate * presentDays) + bonus);
+    const netPay = Math.round(Number(staffMember.baseSalary || 0) + bonus);
 
     // Check if already paid
     const alreadyPaid = payrolls.some(p => p.staffId === staffMember.id && p.month === payrollMonth);
@@ -343,9 +342,8 @@ const HR = () => {
                     <tbody>
                       {staff.map(s => {
                         const presentDays = attendance.filter(a => a.staffId === s.id && a.status === 'Present' && a.date.startsWith(payrollMonth)).length;
-                        const dailyRate = s.baseSalary / 30;
                         const bonus = bonuses[s.id] || 0;
-                        const netPay = Math.round((dailyRate * presentDays) + bonus);
+                        const netPay = Math.round(Number(s.baseSalary || 0) + bonus);
 
                         const isPaid = payrolls.some(p => p.staffId === s.id && p.month === payrollMonth);
 

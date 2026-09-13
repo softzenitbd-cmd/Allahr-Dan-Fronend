@@ -113,3 +113,63 @@
 .poshistory-pay-form select {
   width: 100%;
 }
+
+/* Products column styling in POS history table */
+.poshistory-products-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 110px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.poshistory-products-cell::-webkit-scrollbar {
+  width: 4px;
+}
+
+.poshistory-products-cell::-webkit-scrollbar-thumb {
+  background: var(--n-300);
+  border-radius: 4px;
+}
+
+.poshistory-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  background: var(--bg-subtle);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.poshistory-product-name {
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.poshistory-product-variant {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.poshistory-product-qty {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

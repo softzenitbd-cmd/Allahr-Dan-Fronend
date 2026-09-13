@@ -1139,13 +1139,23 @@ const useStore = create(
       // Money put in or taken out by the owner, with no document behind it:
       // the opening float, a capital injection, drawings.
       // ---------------------------------------------------------------- //
-      addManualEntry: ({ accountId, type, amount, description }) => enqueue(async () => {
+      addManualEntry: ({ accountId, type, amount, description, reference_id, source, date }) => enqueue(async () => {
         try {
-          await TreasuryService.entry({ accountId, type, amount, description });
+          await TreasuryService.entry({ accountId, type, amount, description, reference_id, source, date });
           await get().refresh('treasury', 'dashboard');
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not record the entry.');
+        }
+      }),
+
+      unwindTreasuryEntry: (reference_id) => enqueue(async () => {
+        try {
+          await TreasuryService.unwind(reference_id);
+          await get().refresh('treasury', 'dashboard');
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not unwind the entry.');
         }
       }),
 

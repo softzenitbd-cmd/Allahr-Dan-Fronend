@@ -137,6 +137,7 @@ export const TreasuryService = {
   transactions: (params) => apiClient.get(ENDPOINTS.TREASURY_TRANSACTIONS, { params }),
   transfer: (payload) => apiClient.post(ENDPOINTS.TREASURY_TRANSFER, payload),
   entry: (payload) => apiClient.post(ENDPOINTS.TREASURY_ENTRY, payload),
+  unwind: (reference_id) => apiClient.delete(ENDPOINTS.TREASURY_ENTRY, { params: { reference_id } }),
 };
 
 export const SMSService = {

@@ -45,6 +45,7 @@ const KINDS = {
   expense: { icon: DollarSign, tone: 'danger', en: 'Expense', bn: 'খরচ' },
   return: { icon: RotateCcw, tone: 'muted', en: 'Return', bn: 'রিটার্ন' },
   cash: { icon: Landmark, tone: 'muted', en: 'Cash entry', bn: 'ক্যাশ এন্ট্রি' },
+  loan: { icon: Handshake, tone: 'warning', en: 'Loan / Karz', bn: 'কর্জ / ঋণ' },
 };
 
 /** The filter chips, in the order money usually flows through a day. */
@@ -54,7 +55,7 @@ const FILTERS = [
   { key: 'in', en: 'Money in', bn: 'টাকা এসেছে', kinds: ['collection', 'recovery', 'sr'] },
   { key: 'purchases', en: 'Purchases', bn: 'ক্রয়', kinds: ['purchase', 'supplier_payment'] },
   { key: 'expenses', en: 'Expenses', bn: 'খরচ', kinds: ['expense'] },
-  { key: 'other', en: 'Returns & cash', bn: 'রিটার্ন ও ক্যাশ', kinds: ['return', 'cash'] },
+  { key: 'other', en: 'Returns, cash & loans', bn: 'রিটার্ন, ক্যাশ ও কর্জ', kinds: ['return', 'cash', 'loan'] },
 ];
 
 /** A headline figure with yesterday underneath. */
@@ -83,6 +84,7 @@ const DayBook = () => {
   const {
     user, language, shopProfile, sales, customers, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
+    addManualEntry, unwindTreasuryEntry,
   } = useStore();
   const navigate = useNavigate();
   const bn = language === 'bn';
@@ -205,12 +207,14 @@ const DayBook = () => {
   const [loanFilter, setLoanFilter] = useState('all'); // 'all', 'given', 'taken', 'active', 'settled'
   const [loanSearch, setLoanSearch] = useState('');
   const [loanPayTarget, setLoanPayTarget] = useState(null);
+  const [loanPayAccount, setLoanPayAccount] = useState('Cash');
   const [loanPayAmount, setLoanPayAmount] = useState('');
   const [loanPayNote, setLoanPayNote] = useState('');
   const [loanPayDate, setLoanPayDate] = useState(today);
 
   const [loanForm, setLoanForm] = useState({
     type: 'given', // 'given' (দেওয়া) or 'taken' (নেওয়া)
+    account: 'Cash', // 'Cash' or 'Bank'
     name: '',
     phone: '',
     amount: '',
@@ -227,10 +231,11 @@ const DayBook = () => {
     }
   }, []);
 
-  const handleCreateLoan = (e) => {
+  const handleCreateLoan = async (e) => {
     e.preventDefault();
     const name = (loanForm.name || '').trim();
     const amount = parseFloat(loanForm.amount);
+    const account = loanForm.account || 'Cash';
 
     if (!name) {
       toast.error(bn ? 'নাম লিখুন (বাধ্যতামূলক)' : 'Name is required');
@@ -241,9 +246,29 @@ const DayBook = () => {
       return;
     }
 
+    const loanId = `LN${Date.now()}`;
+    const isGiven = loanForm.type === 'given';
+
+    setSaving(true);
+    const res = await addManualEntry({
+      accountId: account,
+      type: isGiven ? 'Out' : 'In',
+      amount,
+      description: isGiven
+        ? (bn ? `কর্জ প্রদান: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}` : `Loan Given to: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}`)
+        : (bn ? `কর্জ গ্রহণ: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}` : `Loan Taken from: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}`),
+      reference_id: loanId,
+      source: 'Loan',
+      date: loanForm.date ? new Date(`${loanForm.date}T12:00:00`).toISOString() : new Date().toISOString(),
+    });
+    setSaving(false);
+
+    if (!res?.ok) return;
+
     const newLoan = {
-      id: `LN${Date.now()}`,
+      id: loanId,
       type: loanForm.type,
+      account,
       name,
       phone: (loanForm.phone || '').trim(),
       amount,
@@ -258,26 +283,31 @@ const DayBook = () => {
 
     const next = [newLoan, ...loans];
     saveLoans(next);
-    toast.success(bn ? 'ঋণের তথ্য সফলভাবে সংরক্ষণ করা হয়েছে' : 'Loan added successfully');
+    toast.success(bn
+      ? `ঋণ সংরক্ষণ ও ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'মাইনাস' : 'প্লাস'} করা হয়েছে`
+      : `Loan recorded and ${isGiven ? 'deducted from' : 'added to'} ${account}`);
     setLoanDrawer(false);
     setLoanForm({
       type: 'given',
+      account: 'Cash',
       name: '',
       phone: '',
       amount: '',
       note: '',
       date: today,
     });
+    load(true);
   };
 
   const openLoanPay = (loan) => {
     setLoanPayTarget(loan);
+    setLoanPayAccount(loan.account || 'Cash');
     setLoanPayAmount(String(loan.remainingAmount));
     setLoanPayNote('');
     setLoanPayDate(today);
   };
 
-  const handleLoanPaySubmit = (e) => {
+  const handleLoanPaySubmit = async (e) => {
     e.preventDefault();
     if (!loanPayTarget) return;
 
@@ -291,12 +321,33 @@ const DayBook = () => {
       return;
     }
 
+    const account = loanPayAccount || loanPayTarget.account || 'Cash';
+    const isGiven = loanPayTarget.type === 'given';
+    const txType = isGiven ? 'In' : 'Out';
+
+    setSaving(true);
+    const res = await addManualEntry({
+      accountId: account,
+      type: txType,
+      amount: payAmt,
+      description: isGiven
+        ? (bn ? `কর্জ আদায়: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}` : `Loan Repayment Received from: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}`)
+        : (bn ? `কর্জ পরিশোধ: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}` : `Loan Repayment Paid to: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}`),
+      reference_id: loanPayTarget.id,
+      source: 'Loan',
+      date: loanPayDate ? new Date(`${loanPayDate}T12:00:00`).toISOString() : new Date().toISOString(),
+    });
+    setSaving(false);
+
+    if (!res?.ok) return;
+
     const newPaidAmount = (loanPayTarget.paidAmount || 0) + payAmt;
     const newRemainingAmount = Math.max(0, loanPayTarget.amount - newPaidAmount);
     const newStatus = newRemainingAmount <= 0.01 ? 'settled' : 'active';
 
     const paymentRecord = {
       id: `LP${Date.now()}`,
+      account,
       amount: payAmt,
       date: loanPayDate || today,
       note: (loanPayNote || '').trim(),
@@ -316,23 +367,29 @@ const DayBook = () => {
     });
 
     saveLoans(next);
-    toast.success(bn ? `${money(payAmt)} পরিশোধ আপডেট করা হয়েছে` : `Payment of ${money(payAmt)} recorded`);
+    toast.success(bn
+      ? `${money(payAmt)} পরিশোধ এবং ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
+      : `Payment of ${money(payAmt)} recorded and updated in ${account}`);
     setLoanPayTarget(null);
+    load(true);
   };
 
   const handleDeleteLoan = async (loan) => {
     const ok = await showConfirmDialog({
       title: bn ? 'ঋণ রেকর্ডটি মুছে ফেলবেন?' : 'Delete loan record?',
-      text: `${loan.name} — ${money(loan.amount)} (${loan.type === 'given' ? (bn ? 'দেওয়া' : 'Given') : (bn ? 'নেওয়া' : 'Taken')})`,
+      text: `${loan.name} — ${money(loan.amount)} (${loan.type === 'given' ? (bn ? 'দেওয়া' : 'Given') : (bn ? 'নেওয়া' : 'Taken')}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স ও লেনদেন স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Main account balance will be restored automatically.'}`,
       confirmButtonText: bn ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: bn ? 'বাতিল' : 'Cancel',
       isDanger: true,
     });
     if (!ok) return;
 
+    await unwindTreasuryEntry(loan.id);
+
     const next = loans.filter((item) => item.id !== loan.id);
     saveLoans(next);
-    toast.success(bn ? 'ঋণের তথ্য মুছে ফেলা হয়েছে' : 'Loan record deleted');
+    toast.success(bn ? 'ঋণের তথ্য মুছে ফেলা হয়েছে ও একাউন্ট ব্যালেন্স সমন্বয় হয়েছে' : 'Loan record deleted and account balance restored');
+    load(true);
   };
 
   // Loan metrics & filtered list
@@ -717,7 +774,7 @@ const DayBook = () => {
           </div>
 
           <div className="alert-banner" style={{ background: 'var(--bg-muted)', border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-md)', padding: '0.65rem 1rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            💡 <strong>{bn ? 'নোট:' : 'Note:'}</strong> {bn ? 'এই কর্জের হিসাব সম্পূর্ণ স্বতন্ত্র ও ব্যক্তিগত। দোকান বা প্রজেক্টের ক্যাশ, লেজার, লাভ-লোকসান বা ব্যালেন্স শিটের সাথে এটি যুক্ত নয়।' : 'This loan book is completely isolated from shop accounts, balance sheets, and ledgers.'}
+            💡 <strong>{bn ? 'নোট:' : 'Note:'}</strong> {bn ? 'কর্জের টাকা সরাসরি মূল একাউন্ট (ক্যাশ/ব্যাংক)-এর সাথে সমন্বয় (প্লাস/মাইনাস) হয়।' : 'Loan transactions are directly integrated (plus/minus) with the main account (Cash/Bank).'}
           </div>
 
           {/* Filters, Search & Add button */}
@@ -1007,8 +1064,18 @@ const DayBook = () => {
                   placeholder={bn ? '০১৭xxxxxxxx (ঐচ্ছিক)' : '017xxxxxxxx (optional)'}
                 />
 
+                {/* Account */}
+                <label style={{ marginTop: '0.6rem' }}>{bn ? 'লেনদেনের মাধ্যম / একাউন্ট' : 'Account'} *</label>
+                <select
+                  value={loanForm.account || 'Cash'}
+                  onChange={(e) => setLoanForm({ ...loanForm, account: e.target.value })}
+                >
+                  <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
+                  <option value="Bank">Bank Account (ব্যাংক একাউন্ট)</option>
+                </select>
+
                 {/* Amount */}
-                <label>
+                <label style={{ marginTop: '0.6rem' }}>
                   {bn ? 'টাকার পরিমাণ' : 'Amount'} (BDT) <span className="text-danger">*</span>
                 </label>
                 <input
@@ -1098,6 +1165,16 @@ const DayBook = () => {
                     <strong className="text-danger" style={{ fontSize: '1rem' }}>{money(loanPayTarget.remainingAmount)}</strong>
                   </div>
                 </div>
+
+                <label>{bn ? 'লেনদেনের মাধ্যম / একাউন্ট' : 'Account'} *</label>
+                <select
+                  value={loanPayAccount}
+                  onChange={(e) => setLoanPayAccount(e.target.value)}
+                  style={{ marginBottom: '0.75rem' }}
+                >
+                  <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
+                  <option value="Bank">Bank Account (ব্যাংক একাউন্ট)</option>
+                </select>
 
                 <label>
                   {loanPayTarget.type === 'given' ? (bn ? 'আদায়কৃত টাকার পরিমাণ' : 'Amount Received') : (bn ? 'পরিশোধিত টাকার পরিমাণ' : 'Amount Paid')} (BDT) <span className="text-danger">*</span>
