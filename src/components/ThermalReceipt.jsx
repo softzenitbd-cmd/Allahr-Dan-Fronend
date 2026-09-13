@@ -39,9 +39,9 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
       data-format="thermal"
       style={{
         width: '100%',
-        maxWidth: '270px',
+        maxWidth: '290px',
         margin: '0 auto',
-        padding: '8px 10px',
+        padding: '4px 2px',
         background: '#ffffff',
         color: '#000000',
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
@@ -52,7 +52,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
       }}
     >
       {/* Safe margin container */}
-      <div style={{ width: '100%', boxSizing: 'border-box', padding: '0 4px', color: '#000000' }}>
+      <div style={{ width: '100%', boxSizing: 'border-box', padding: '0', color: '#000000' }}>
         
         {/* ---- Header & Logo ---- */}
         <div style={{ textAlign: 'center', marginBottom: '6px' }}>
@@ -60,15 +60,15 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             src={shopProfile?.logo || defaultLogo}
             alt="Logo"
             style={{
-              maxHeight: '48px',
-              maxWidth: '90px',
+              maxHeight: '75px',
+              maxWidth: '140px',
               objectFit: 'contain',
-              margin: '0 auto 4px auto',
+              margin: '0 auto 6px auto',
               display: 'block',
               filter: 'grayscale(100%) contrast(160%)',
             }}
           />
-          <div style={{ fontSize: '15px', fontWeight: 900, letterSpacing: '0.02em', lineHeight: 1.2, textTransform: 'uppercase', color: '#000000' }}>
+          <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.02em', lineHeight: 1.2, textTransform: 'uppercase', color: '#000000' }}>
             {shopName}
           </div>
           {shopProfile?.tagline && (
@@ -311,14 +311,14 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
         <div style={{ borderTop: '1px dashed #000000', margin: '5px 0' }} />
 
         {/* ---- Footer & Disclaimer ---- */}
-        <div style={{ textAlign: 'center', fontSize: '9.5px', lineHeight: 1.4, marginTop: '4px', color: '#000000' }}>
-          <div style={{ fontWeight: 900, fontSize: '10.5px', marginBottom: '2px', color: '#000000' }}>
+        <div style={{ textAlign: 'center', fontSize: '10px', lineHeight: 1.4, marginTop: '6px', color: '#000000' }}>
+          <div style={{ fontWeight: 900, fontSize: '14px', letterSpacing: '0.04em', margin: '4px 0 3px 0', color: '#000000' }}>
             {language === 'bn' ? '*** ধন্যবাদ! আবার আসবেন ***' : '*** THANK YOU! VISIT AGAIN ***'}
           </div>
           {shopProfile?.footer_disclaimer_1 && (
-            <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#000000' }}>{shopProfile.footer_disclaimer_1}</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000' }}>{shopProfile.footer_disclaimer_1}</div>
           )}
-          <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#000000', marginTop: '3px' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000', marginTop: '3px' }}>
             Software by SoftZen IT (01700-000000)
           </div>
         </div>

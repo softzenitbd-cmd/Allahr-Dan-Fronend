@@ -40,7 +40,7 @@ const SHEET_STYLES = `
 const THERMAL_STYLES = `
   @page {
     size: 80mm auto;
-    margin: 4mm 5mm;
+    margin: 2mm 1mm;
   }
   @media print {
     html {
@@ -50,9 +50,9 @@ const THERMAL_STYLES = `
     }
     body {
       width: 100% !important;
-      max-width: 68mm !important;
+      max-width: 78mm !important;
       margin: 0 auto !important;
-      padding: 0 2mm !important;
+      padding: 0 1mm !important;
       background: #fff !important;
       color: #000 !important;
       -webkit-print-color-adjust: exact !important;
@@ -60,9 +60,9 @@ const THERMAL_STYLES = `
     }
     .thermal-wrapper {
       width: 100% !important;
-      max-width: 68mm !important;
+      max-width: 78mm !important;
       margin: 0 auto !important;
-      padding: 1mm 2mm !important;
+      padding: 0 !important;
       box-sizing: border-box !important;
     }
     .thermal-wrapper, .thermal-wrapper * {
@@ -77,9 +77,9 @@ const THERMAL_STYLES = `
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     width: 100%;
-    max-width: 68mm;
+    max-width: 78mm;
     margin: 0 auto;
-    padding: 3mm 4mm;
+    padding: 1mm 1mm;
     background: #fff;
     color: #000;
     font-size: 11px;
@@ -107,7 +107,7 @@ export const printHtml = (html, title = 'Print', options = {}) => new Promise((r
   );
   const styles = isThermal ? THERMAL_STYLES : SHEET_STYLES;
   const content = isThermal
-    ? `<div class="thermal-wrapper" style="width:100%; max-width:68mm; margin:0 auto; padding:1mm 3mm; box-sizing:border-box;">${html}</div>`
+    ? `<div class="thermal-wrapper" style="width:100%; max-width:78mm; margin:0 auto; padding:0; box-sizing:border-box;">${html}</div>`
     : html;
 
   const iframe = document.createElement('iframe');
