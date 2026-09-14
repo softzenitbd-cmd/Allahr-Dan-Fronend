@@ -211,7 +211,7 @@ const Ledger = () => {
 
   const payLabel = kind === 'customer' ? (bn ? 'পেমেন্ট নিন' : 'Receive Payment')
     : kind === 'supplier' ? (bn ? 'সাপ্লায়ারকে পরিশোধ' : 'Pay Supplier')
-    : (bn ? 'বকেয়া আদায়' : 'Recover Due');
+      : (bn ? 'বকেয়া আদায়' : 'Recover Due');
 
   // ---------------------------------------------------------------- //
   // Rows for the active tab, paged
@@ -279,7 +279,7 @@ const Ledger = () => {
         { l: bn ? 'কেনাকাটা' : 'Purchased', v: money(p.purchased) },
         { l: bn ? 'কাউন্টারে পরিশোধ' : 'Paid at Sale', v: money(p.paidAtSale), c: 'good' },
         { l: bn ? 'বকেয়া আদায়' : 'Due Collected', v: money(p.paidLater), c: 'good' },
-        { l: bn ? 'বাকিতে বিক্রি' : 'Sold on Credit', v: money(p.dueCreated), c: p.dueCreated ? 'bad' : '' },
+        { l: bn ? 'বাকিতে বিক্রি' : 'Due Balance', v: money(p.dueCreated), c: p.dueCreated ? 'bad' : '' },
       ],
     };
     if (kind === 'supplier') return {

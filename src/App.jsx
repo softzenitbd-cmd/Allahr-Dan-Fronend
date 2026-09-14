@@ -8,6 +8,7 @@ import { applyAccent } from './utils/accent';
 import TopLoader from './components/TopLoader';
 import Login from './pages/Login';
 import Layout from './components/Layout';
+import { hasMenuAccess } from './utils/navigationConfig';
 
 // Code-split pages so unvisited pages don't flood the network with JS modules
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -32,15 +33,20 @@ const StockLog = lazy(() => import('./pages/StockLog'));
 
 // Placeholder Pages (will be extracted to separate files in later phases)
 
-// Protected Route Wrapper
-const ProtectedRoute = ({ children, requiredRole }) => {
+// Protected Route Wrapper with Dynamic Role-Based Access Control
+const ProtectedRoute = ({ children, requiredRole, path }) => {
   const user = useStore((state) => state.user);
+  const rolePermissions = useStore((state) => state.rolePermissions);
   
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
   if (requiredRole && user.role !== requiredRole && user.role !== 'Admin') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (path && !hasMenuAccess(user, path, rolePermissions)) {
     return <Navigate to="/" replace />;
   }
 
@@ -115,27 +121,27 @@ function App() {
           
           {/* Protected Routes with Layout */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<Dashboard />} />
-            <Route path="pos" element={<POS />} />
-            <Route path="pos-history" element={<POSHistory />} />
-            <Route path="day-book" element={<DayBook />} />
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="purchases" element={<Purchase />} />
-            <Route path="/returns" element={<Returns />} />
-            <Route path="/suppliers" element={<Suppliers />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route path="/sms" element={<SMS />} />
-            <Route path="/expenses" element={<Expenses />} />
-            <Route path="/sr" element={<SR />} />
-            <Route path="/stock-log" element={<StockLog />} />
+            <Route index element={<ProtectedRoute path="/"><Dashboard /></ProtectedRoute>} />
+            <Route path="pos" element={<ProtectedRoute path="/pos"><POS /></ProtectedRoute>} />
+            <Route path="pos-history" element={<ProtectedRoute path="/pos-history"><POSHistory /></ProtectedRoute>} />
+            <Route path="day-book" element={<ProtectedRoute path="/day-book"><DayBook /></ProtectedRoute>} />
+            <Route path="inventory" element={<ProtectedRoute path="/inventory"><Inventory /></ProtectedRoute>} />
+            <Route path="purchases" element={<ProtectedRoute path="/purchases"><Purchase /></ProtectedRoute>} />
+            <Route path="returns" element={<ProtectedRoute path="/returns"><Returns /></ProtectedRoute>} />
+            <Route path="suppliers" element={<ProtectedRoute path="/suppliers"><Suppliers /></ProtectedRoute>} />
+            <Route path="customers" element={<ProtectedRoute path="/customers"><Customers /></ProtectedRoute>} />
+            <Route path="sms" element={<ProtectedRoute path="/sms"><SMS /></ProtectedRoute>} />
+            <Route path="expenses" element={<ProtectedRoute path="/expenses"><Expenses /></ProtectedRoute>} />
+            <Route path="sr" element={<ProtectedRoute path="/sr"><SR /></ProtectedRoute>} />
+            <Route path="stock-log" element={<ProtectedRoute path="/stock-log"><StockLog /></ProtectedRoute>} />
             
-            {/* Admin Only Routes */}
-            <Route path="accounts" element={<ProtectedRoute requiredRole="Admin"><Accounts /></ProtectedRoute>} />
-            <Route path="balance-sheet" element={<ProtectedRoute requiredRole="Admin"><BalanceSheet /></ProtectedRoute>} />
-            <Route path="ledger" element={<ProtectedRoute requiredRole="Admin"><Ledger /></ProtectedRoute>} />
-            <Route path="hr" element={<ProtectedRoute requiredRole="Admin"><HR /></ProtectedRoute>} />
-            <Route path="reports" element={<ProtectedRoute requiredRole="Admin"><Reports /></ProtectedRoute>} />
-            <Route path="settings" element={<ProtectedRoute requiredRole="Admin"><Settings /></ProtectedRoute>} />
+            {/* Dynamic Management Routes */}
+            <Route path="accounts" element={<ProtectedRoute path="/accounts"><Accounts /></ProtectedRoute>} />
+            <Route path="balance-sheet" element={<ProtectedRoute path="/balance-sheet"><BalanceSheet /></ProtectedRoute>} />
+            <Route path="ledger" element={<ProtectedRoute path="/ledger"><Ledger /></ProtectedRoute>} />
+            <Route path="hr" element={<ProtectedRoute path="/hr"><HR /></ProtectedRoute>} />
+            <Route path="reports" element={<ProtectedRoute path="/reports"><Reports /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute path="/settings" requiredRole="Admin"><Settings /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Suspense>

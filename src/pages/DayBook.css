@@ -40,7 +40,7 @@
 
 .db-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--sp-3);
 }
 
@@ -66,6 +66,21 @@
 .db-kpi-icon { width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--tone) 14%, transparent); color: var(--tone); }
 .db-kpi-value { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-top: 0.35rem; color: var(--tone); font-variant-numeric: tabular-nums; }
 .db-kpi-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-kpi-break {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--border-color);
+}
+.db-kpi-break-item { min-width: 0; }
+.db-kpi-break-item .l { display: block; font-size: 0.66rem; font-weight: 600; color: var(--text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-kpi-break-item .v { display: block; font-size: 0.78rem; font-weight: 700; color: var(--text-main); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-kpi-break-item.muted .v { color: var(--text-muted); }
+.db-kpi-break-item.good .v { color: var(--success); }
+.db-kpi-break-item.bad .v { color: var(--danger); }
+
 .db-kpi-delta { display: inline-flex; align-items: center; gap: 0.25rem; margin-top: 0.4rem; font-size: 0.7rem; font-weight: 600; color: var(--text-subtle); }
 .db-kpi-delta.up { color: var(--success); }
 .db-kpi-delta.down { color: var(--danger); }

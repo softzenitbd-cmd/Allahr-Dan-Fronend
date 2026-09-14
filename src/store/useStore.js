@@ -22,6 +22,7 @@ import {
   SupplierService,
   TreasuryService,
 } from '../api/services';
+import { DEFAULT_ROLE_PERMISSIONS, ALL_MENU_PATHS } from '../utils/navigationConfig';
 
 /**
  * The single bridge between the pages and the API.
@@ -89,6 +90,7 @@ const useStore = create(
       // Per-card colour overrides for the dashboard summary, keyed by card id.
       dashboardCardColors: {},
       dashboardSummary: null,
+      rolePermissions: DEFAULT_ROLE_PERMISSIONS,
       _cacheTimestamps: {},
 
       smsSettings: {
@@ -452,6 +454,30 @@ const useStore = create(
           return fail(error, 'Could not save the shop settings.');
         }
       },
+
+      setRolePermissions: (rolePermissions) => set({ rolePermissions }),
+
+      updateRolePermissions: async (role, allowedPaths) => {
+        const next = {
+          ...(get().rolePermissions || DEFAULT_ROLE_PERMISSIONS),
+          [role]: allowedPaths,
+        };
+        // Admin must always have access to everything
+        next.Admin = ALL_MENU_PATHS;
+        set({ rolePermissions: next });
+
+        // Optionally persist to backend settings if supported
+        try {
+          if (CoreService?.saveUserSettings) {
+            await CoreService.saveUserSettings({ role_permissions: next });
+          }
+        } catch {
+          // Local zustand persistence remains authoritative
+        }
+        return { ok: true, rolePermissions: next };
+      },
+
+      resetRolePermissions: () => set({ rolePermissions: DEFAULT_ROLE_PERMISSIONS }),
 
       // ---------------------------------------------------------------- //
       // Cart. Purely local until checkout.
@@ -1173,6 +1199,63 @@ const useStore = create(
         }
       }),
 
+      // ---------------------------------------------------------------- //
+      // Loans (karz). Kept on the server so every device sees the same book
+      // and the balance sheet can count what is still out and still owed.
+      // ---------------------------------------------------------------- //
+      loans: [],
+
+      fetchLoans: async () => {
+        try {
+          const list = await TreasuryService.loans();
+          set({ loans: Array.isArray(list) ? list : (list?.results || []) });
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not load the loan book.');
+        }
+      },
+
+      addLoan: (payload) => enqueue(async () => {
+        try {
+          await TreasuryService.createLoan(payload);
+          await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not record the loan.');
+        }
+      }),
+
+      payLoan: (loanId, payload) => enqueue(async () => {
+        try {
+          await TreasuryService.payLoan(loanId, payload);
+          await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not record the repayment.');
+        }
+      }),
+
+      deleteLoan: (loanId) => enqueue(async () => {
+        try {
+          await TreasuryService.deleteLoan(loanId);
+          await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the loan.');
+        }
+      }),
+
+      /** One-time move of loans an older build kept in this browser. */
+      importLocalLoans: async (rows) => {
+        try {
+          const res = await TreasuryService.importLoans(rows);
+          await get().fetchLoans();
+          return { ok: true, result: res };
+        } catch (error) {
+          return fail(error, 'Could not import the saved loans.');
+        }
+      },
+
       unwindTreasuryEntry: (reference_id) => enqueue(async () => {
         try {
           await TreasuryService.unwind(reference_id);
@@ -1238,6 +1321,7 @@ const useStore = create(
         shopProfile: state.shopProfile,
         accentColor: state.accentColor,
         dashboardCardColors: state.dashboardCardColors,
+        rolePermissions: state.rolePermissions,
         _cacheTimestamps: state._cacheTimestamps,
         // Persist tables so page reload does not blank out data and force full refetches
         inventory: state.inventory,

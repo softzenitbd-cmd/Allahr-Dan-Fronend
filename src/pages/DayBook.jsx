@@ -60,7 +60,7 @@ const FILTERS = [
 ];
 
 /** A headline figure with yesterday underneath. */
-const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false }) => {
+const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false, breakdown = null }) => {
   const delta = compare !== undefined && compare !== null ? Number(value) - Number(compare) : null;
   const shown = money(abs ? Math.abs(Number(value) || 0) : value);
   return (
@@ -71,6 +71,16 @@ const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = fals
       </div>
       <div className="db-kpi-value">{shown}</div>
       {sub && <div className="db-kpi-sub">{sub}</div>}
+      {breakdown && (
+        <div className="db-kpi-break">
+          {breakdown.map((b) => (
+            <div key={b.l} className={`db-kpi-break-item ${b.tone || ''}`}>
+              <span className="l">{b.l}</span>
+              <span className="v">{b.v}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {delta !== null && (
         <div className={`db-kpi-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`}>
           {delta > 0 ? <TrendingUp size={12} /> : delta < 0 ? <TrendingDown size={12} /> : null}
@@ -85,7 +95,7 @@ const DayBook = () => {
   const {
     user, language, shopProfile, sales, customers, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
-    addManualEntry, unwindTreasuryEntry,
+    loans, fetchLoans, addLoan, payLoan, deleteLoan, importLocalLoans,
   } = useStore();
   const navigate = useNavigate();
   const bn = language === 'bn';
@@ -203,14 +213,24 @@ const DayBook = () => {
   // ---------------------------------------------------------------- //
   const [activeTab, setActiveTab] = useState('daily'); // 'daily' | 'loans'
 
-  const [loans, setLoans] = useState(() => {
-    try {
-      const saved = localStorage.getItem('allahr_dan_daybook_loans');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // The loan book lives on the server. Anything an older build left in this
+  // browser is moved across once, then forgotten here.
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      let stale = [];
+      try { stale = JSON.parse(localStorage.getItem('allahr_dan_daybook_loans') || '[]'); } catch { stale = []; }
+      if (Array.isArray(stale) && stale.length) {
+        const res = await importLocalLoans(stale);
+        if (res?.ok) {
+          try { localStorage.removeItem('allahr_dan_daybook_loans'); } catch { /* ignore */ }
+          if (res.result?.imported) toast.info(bn ? `${res.result.imported}টি পুরোনো কর্জ সার্ভারে নেওয়া হয়েছে` : `${res.result.imported} saved loan(s) moved to the server`);
+          return;
+        }
+      }
+      fetchLoans();
+    })();
+  }, [isAdmin, fetchLoans, importLocalLoans, bn]);
 
   const [loanDrawer, setLoanDrawer] = useState(false);
   const [loanFilter, setLoanFilter] = useState('all'); // 'all', 'given', 'taken', 'active', 'settled'
@@ -231,15 +251,6 @@ const DayBook = () => {
     date: today,
   });
 
-  const saveLoans = useCallback((updatedLoans) => {
-    setLoans(updatedLoans);
-    try {
-      localStorage.setItem('allahr_dan_daybook_loans', JSON.stringify(updatedLoans));
-    } catch (err) {
-      console.error('Failed to save loans:', err);
-    }
-  }, []);
-
   const handleCreateLoan = async (e) => {
     e.preventDefault();
     const name = (loanForm.name || '').trim();
@@ -255,45 +266,23 @@ const DayBook = () => {
       return;
     }
 
-    const loanId = `LN${Date.now()}`;
     const isGiven = loanForm.type === 'given';
 
     setSaving(true);
-    const res = await addManualEntry({
-      accountId: account,
-      type: isGiven ? 'Out' : 'In',
-      amount,
-      description: isGiven
-        ? (bn ? `কর্জ প্রদান: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}` : `Loan Given to: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}`)
-        : (bn ? `কর্জ গ্রহণ: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}` : `Loan Taken from: ${name}${loanForm.note ? ` (${loanForm.note})` : ''}`),
-      reference_id: loanId,
-      source: 'Loan',
-      date: loanForm.date ? new Date(`${loanForm.date}T12:00:00`).toISOString() : new Date().toISOString(),
-    });
-    setSaving(false);
-
-    if (!res?.ok) return;
-
-    const newLoan = {
-      id: loanId,
+    const res = await addLoan({
       type: loanForm.type,
       account,
       name,
       phone: (loanForm.phone || '').trim(),
       amount,
-      paidAmount: 0,
-      remainingAmount: amount,
-      date: loanForm.date || today,
       note: (loanForm.note || '').trim(),
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      payments: [],
-    };
+      date: loanForm.date || today,
+    });
+    setSaving(false);
+    if (!res?.ok) return;
 
-    const next = [newLoan, ...loans];
-    saveLoans(next);
     toast.success(bn
-      ? `ঋণ সংরক্ষণ ও ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'মাইনাস' : 'প্লাস'} করা হয়েছে`
+      ? `ঋণ সংরক্ষণ ও ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'মাইনাস' : 'প্লাস'} করা হয়েছে`
       : `Loan recorded and ${isGiven ? 'deducted from' : 'added to'} ${account}`);
     setLoanDrawer(false);
     setLoanForm({
@@ -332,50 +321,17 @@ const DayBook = () => {
 
     const account = loanPayAccount || loanPayTarget.account || 'Cash';
     const isGiven = loanPayTarget.type === 'given';
-    const txType = isGiven ? 'In' : 'Out';
 
     setSaving(true);
-    const res = await addManualEntry({
-      accountId: account,
-      type: txType,
+    const res = await payLoan(loanPayTarget.id, {
       amount: payAmt,
-      description: isGiven
-        ? (bn ? `কর্জ আদায়: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}` : `Loan Repayment Received from: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}`)
-        : (bn ? `কর্জ পরিশোধ: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}` : `Loan Repayment Paid to: ${loanPayTarget.name}${loanPayNote ? ` (${loanPayNote})` : ''}`),
-      reference_id: loanPayTarget.id,
-      source: 'Loan',
-      date: loanPayDate ? new Date(`${loanPayDate}T12:00:00`).toISOString() : new Date().toISOString(),
-    });
-    setSaving(false);
-
-    if (!res?.ok) return;
-
-    const newPaidAmount = (loanPayTarget.paidAmount || 0) + payAmt;
-    const newRemainingAmount = Math.max(0, loanPayTarget.amount - newPaidAmount);
-    const newStatus = newRemainingAmount <= 0.01 ? 'settled' : 'active';
-
-    const paymentRecord = {
-      id: `LP${Date.now()}`,
       account,
-      amount: payAmt,
       date: loanPayDate || today,
       note: (loanPayNote || '').trim(),
-    };
-
-    const next = loans.map((item) => {
-      if (item.id === loanPayTarget.id) {
-        return {
-          ...item,
-          paidAmount: newPaidAmount,
-          remainingAmount: newRemainingAmount,
-          status: newStatus,
-          payments: [paymentRecord, ...(item.payments || [])],
-        };
-      }
-      return item;
     });
+    setSaving(false);
+    if (!res?.ok) return;
 
-    saveLoans(next);
     toast.success(bn
       ? `${money(payAmt)} পরিশোধ এবং ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
       : `Payment of ${money(payAmt)} recorded and updated in ${account}`);
@@ -393,10 +349,8 @@ const DayBook = () => {
     });
     if (!ok) return;
 
-    await unwindTreasuryEntry(loan.id);
-
-    const next = loans.filter((item) => item.id !== loan.id);
-    saveLoans(next);
+    const res = await deleteLoan(loan.id);
+    if (!res?.ok) return;
     toast.success(bn ? 'ঋণের তথ্য মুছে ফেলা হয়েছে ও একাউন্ট ব্যালেন্স সমন্বয় হয়েছে' : 'Loan record deleted and account balance restored');
     load(true);
   };
@@ -534,288 +488,295 @@ const DayBook = () => {
           {data && (
             <>
               {/* The closing-time numbers */}
-          <div className="db-kpis">
-            <Kpi bn={bn} icon={ShoppingCart} tone="success"
-              label={bn ? 'বিক্রি' : 'Sales'} value={s.netSales}
-              sub={`${s.invoiceCount} ${bn ? 'টি চালান' : 'invoices'}${s.totalDiscount > 0 ? ` · ${bn ? 'ছাড়' : 'discount'} ${money(s.totalDiscount)}` : ''}`}
-              compare={cmp.netSales} />
-            <Kpi bn={bn} icon={Banknote} tone="info"
-              label={bn ? 'টাকা এসেছে' : 'Received'} value={s.totalReceived}
-              sub={`${bn ? 'কাউন্টারে' : 'at counter'} ${money(s.paidAtCounter)} · ${bn ? 'বকেয়া আদায়' : 'dues'} ${money(s.dueCollected)}`}
-              compare={cmp.received} />
-            <Kpi bn={bn} icon={Wallet} tone={s.dueCreated > 0 ? 'warning' : ''}
-              label={bn ? 'আজ বাকি হয়েছে' : 'Sold on credit'} value={s.dueCreated}
-              sub={bn ? 'আজকের বিক্রি থেকে যা বকেয়া রইল' : 'left unpaid from today\'s sales'} />
-            {isAdmin && (
-              <Kpi bn={bn} icon={Truck} tone="warning"
-                label={bn ? 'ক্রয়' : 'Purchases'} value={data.purchases.total}
-                sub={`${data.purchases.count} ${bn ? 'টি' : 'bills'} · ${bn ? 'পরিশোধ' : 'paid'} ${money(data.purchases.paid + data.purchases.paidLater)}`} />
-            )}
-            <Kpi bn={bn} icon={DollarSign} tone="danger"
-              label={bn ? 'খরচ' : 'Expenses'} value={data.expenses.total}
-              sub={data.expenses.categories.slice(0, 2).map((c) => `${c.category} ${money(c.amount)}`).join(' · ') || (bn ? 'কোনো খরচ নেই' : 'no expenses')}
-              compare={cmp.expenses} />
-            {isAdmin && (
-              <Kpi bn={bn} icon={p.isLoss ? TrendingDown : TrendingUp} tone={p.isLoss ? 'danger' : 'success'}
-                label={p.isLoss ? (bn ? 'আজ লোকসান' : 'Loss today') : (bn ? 'আজ লাভ' : 'Profit today')} value={p.netProfit} abs
-                sub={`${bn ? 'মোট লাভ' : 'gross'} ${money(p.grossProfit)} (${p.grossMargin}%) − ${bn ? 'খরচ' : 'expenses'} ${money(p.operatingExpenses)}`}
-                compare={cmp.netProfit} />
-            )}
-            {isAdmin && (
-              <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''}
-                label={bn ? 'কর্জ / ঋণ (আজকের)' : 'Loans Today'}
-                value={todayLoans.out > 0 ? -todayLoans.out : todayLoans.in}
-                sub={todayLoans.count > 0
-                  ? `${bn ? 'প্রদান/পরিশোধ' : 'Out'} −${money(todayLoans.out)} · ${bn ? 'আদায়/গ্রহণ' : 'In'} +${money(todayLoans.in)}`
-                  : (bn ? 'আজ কোনো কর্জ লেনদেন নেই' : 'No loan activity today')}
-              />
-            )}
-            {isAdmin && (
-              <Kpi bn={bn} icon={Landmark} tone="info"
-                label={bn ? 'ক্যাশে আছে' : 'Cash in hand'} value={cf.closingCash}
-                sub={`${bn ? 'শুরুতে' : 'opened'} ${money(cf.openingCash)} · ${bn ? 'ব্যাংক' : 'bank'} ${money(cf.closingBank)}`} />
-            )}
-          </div>
-
-          {isAdmin && data.cogs.itemsMissingCost > 0 && (
-            <div className="db-warn">
-              {bn
-                ? `${data.cogs.unitsMissingCost} পিস পণ্যের ক্রয়মূল্য দেওয়া নেই, তাই আজকের লাভ বেশি দেখাতে পারে। Inventory-তে ক্রয়মূল্য দিন।`
-                : `${data.cogs.unitsMissingCost} units sold today have no cost price set, so profit may be overstated. Add cost prices in Inventory.`}
-            </div>
-          )}
-
-          {/* Get things done from here */}
-          <div className="db-quick">
-            <button className="db-quick-btn primary" onClick={() => navigate('/pos')}><ShoppingCart size={18} /> {bn ? 'নতুন বিক্রি' : 'New sale'}</button>
-            <button className="db-quick-btn" onClick={() => setExpenseForm({ category: categories[0] || 'Others', amount: '', description: '' })}><Plus size={18} /> {bn ? 'খরচ লিখুন' : 'Add expense'}</button>
-            {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/ledger')}><Wallet size={18} /> {bn ? 'বকেয়া নিন / দিন' : 'Receive / pay due'}</button>}
-            {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/purchases')}><Truck size={18} /> {bn ? 'নতুন ক্রয়' : 'New purchase'}</button>}
-            <button className="db-quick-btn" onClick={() => navigate('/returns')}><RotateCcw size={18} /> {bn ? 'রিটার্ন' : 'Return'}</button>
-          </div>
-
-          <div className="db-grid">
-            {/* The day, line by line */}
-            <div className="card db-feed-card">
-              <div className="db-feed-head">
-                <div className="db-chips">
-                  {FILTERS.map((f) => (
-                    <button key={f.key} className={`db-chip ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
-                      {bn ? f.bn : f.en} <span className="n">{filterCount(f)}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="db-search">
-                  <Search size={14} />
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={bn ? 'নাম, ফোন, চালান নং…' : 'Name, phone, invoice…'} />
-                </div>
+              <div className="db-kpis">
+                <Kpi bn={bn} icon={ShoppingCart} tone="success"
+                  label={bn ? 'বিক্রি' : 'Sales'} value={s.netSales}
+                  sub={`${s.invoiceCount} ${bn ? 'টি চালান' : 'invoices'}${s.totalDiscount > 0 ? ` · ${bn ? 'ছাড়' : 'discount'} ${money(s.totalDiscount)}` : ''}${s.customerReturns > 0 ? ` · ${bn ? 'রিটার্ন' : 'returns'} −${money(s.customerReturns)}` : ''}`}
+                  // The owner sees how the figure becomes profit: what those goods
+                  // cost, and what is left once that is taken off.
+                  breakdown={isAdmin && data.cogs ? [
+                    { l: bn ? 'বিক্রি' : 'Sold', v: money(s.netSalesAfterReturns ?? s.netSales) },
+                    { l: bn ? 'ক্রয়মূল্য' : 'Cost', v: `−${money(data.cogs.netOfReturns ?? data.cogs.total)}`, tone: 'muted' },
+                    { l: `${bn ? 'লাভ' : 'Profit'} ${Math.round(p.grossMargin)}%`, v: money(p.grossProfit), tone: p.grossProfit < 0 ? 'bad' : 'good' },
+                  ] : null}
+                  compare={cmp.netSales} />
+                <Kpi bn={bn} icon={Banknote} tone="info"
+                  label={bn ? 'টাকা এসেছে' : 'Received'} value={s.totalReceived}
+                  sub={`${bn ? 'কাউন্টারে' : 'at counter'} ${money(s.paidAtCounter)} · ${bn ? 'বকেয়া আদায়' : 'dues'} ${money(s.dueCollected)}`}
+                  compare={cmp.received} />
+                <Kpi bn={bn} icon={Wallet} tone={s.dueCreated > 0 ? 'warning' : ''}
+                  label={bn ? 'আজ বাকি হয়েছে' : 'Due Balance'} value={s.dueCreated}
+                  sub={bn ? 'আজকের বিক্রি থেকে যা বকেয়া রইল' : 'left unpaid from today\'s sales'} />
+                {isAdmin && (
+                  <Kpi bn={bn} icon={Truck} tone="warning"
+                    label={bn ? 'ক্রয়' : 'Purchases'} value={data.purchases.total}
+                    sub={`${data.purchases.count} ${bn ? 'টি' : 'bills'} · ${bn ? 'পরিশোধ' : 'paid'} ${money(data.purchases.paid + data.purchases.paidLater)}`} />
+                )}
+                <Kpi bn={bn} icon={DollarSign} tone="danger"
+                  label={bn ? 'খরচ' : 'Expenses'} value={data.expenses.total}
+                  sub={data.expenses.categories.slice(0, 2).map((c) => `${c.category} ${money(c.amount)}`).join(' · ') || (bn ? 'কোনো খরচ নেই' : 'no expenses')}
+                  compare={cmp.expenses} />
+                {isAdmin && (
+                  <Kpi bn={bn} icon={p.isLoss ? TrendingDown : TrendingUp} tone={p.isLoss ? 'danger' : 'success'}
+                    label={p.isLoss ? (bn ? 'আজ লোকসান' : 'Loss today') : (bn ? 'আজ লাভ' : 'Profit today')} value={p.netProfit} abs
+                    sub={`${bn ? 'মোট লাভ' : 'gross'} ${money(p.grossProfit)} (${p.grossMargin}%) − ${bn ? 'খরচ' : 'expenses'} ${money(p.operatingExpenses)}`}
+                    compare={cmp.netProfit} />
+                )}
+                {isAdmin && (
+                  <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''}
+                    label={bn ? 'কর্জ / ঋণ (আজকের)' : 'Loans Today'}
+                    value={todayLoans.out > 0 ? -todayLoans.out : todayLoans.in}
+                    sub={todayLoans.count > 0
+                      ? `${bn ? 'প্রদান/পরিশোধ' : 'Out'} −${money(todayLoans.out)} · ${bn ? 'আদায়/গ্রহণ' : 'In'} +${money(todayLoans.in)}`
+                      : (bn ? 'আজ কোনো কর্জ লেনদেন নেই' : 'No loan activity today')}
+                  />
+                )}
+                {isAdmin && (
+                  <Kpi bn={bn} icon={Landmark} tone="info"
+                    label={bn ? 'ক্যাশে আছে' : 'Cash in hand'} value={cf.closingCash}
+                    sub={`${bn ? 'শুরুতে' : 'opened'} ${money(cf.openingCash)} · ${bn ? 'ব্যাংক' : 'bank'} ${money(cf.closingBank)}`} />
+                )}
               </div>
 
-              {feed.length === 0 ? (
-                <div className="db-empty">
-                  <CalendarDays size={36} />
-                  <div>{data.feed.length === 0 ? (bn ? 'এই দিনে কোনো লেনদেন হয়নি।' : 'Nothing happened on this day.') : (bn ? 'এই ফিল্টারে কিছু নেই।' : 'Nothing matches this filter.')}</div>
+              {isAdmin && data.cogs.itemsMissingCost > 0 && (
+                <div className="db-warn">
+                  {bn
+                    ? `${data.cogs.unitsMissingCost} পিস পণ্যের ক্রয়মূল্য দেওয়া নেই, তাই আজকের লাভ বেশি দেখাতে পারে। Inventory-তে ক্রয়মূল্য দিন।`
+                    : `${data.cogs.unitsMissingCost} units sold today have no cost price set, so profit may be overstated. Add cost prices in Inventory.`}
                 </div>
-              ) : (
-                <div className="db-feed">
-                  {feed.map((row, idx) => {
-                    const k = KINDS[row.kind] || KINDS.cash;
-                    const Icon = k.icon;
-                    return (
-                      <div key={`${row.kind}-${row.id}`} className={`db-row ${k.tone}`}>
-                        <div className="db-row-sl">#{idx + 1}</div>
-                        <div className="db-row-time">{row.time || '—'}</div>
-                        <div className={`db-row-icon ${k.tone}`}><Icon size={16} /></div>
-                        <div className="db-row-main">
-                          <div className="db-row-title">
-                            <span className="db-row-kind">{bn ? k.bn : k.en}</span>
-                            <strong>{row.party}</strong>
-                            {row.method && <span className={`badge ${row.method === 'Baki' ? 'bg-danger' : row.method === 'Partial' ? 'bg-warning' : 'bg-muted'}`}>{row.method}</span>}
+              )}
+
+              {/* Get things done from here */}
+              <div className="db-quick">
+                <button className="db-quick-btn primary" onClick={() => navigate('/pos')}><ShoppingCart size={18} /> {bn ? 'নতুন বিক্রি' : 'New sale'}</button>
+                <button className="db-quick-btn" onClick={() => setExpenseForm({ category: categories[0] || 'Others', amount: '', description: '' })}><Plus size={18} /> {bn ? 'খরচ লিখুন' : 'Add expense'}</button>
+                {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/ledger')}><Wallet size={18} /> {bn ? 'বকেয়া নিন / দিন' : 'Receive / pay due'}</button>}
+                {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/purchases')}><Truck size={18} /> {bn ? 'নতুন ক্রয়' : 'New purchase'}</button>}
+                <button className="db-quick-btn" onClick={() => navigate('/returns')}><RotateCcw size={18} /> {bn ? 'রিটার্ন' : 'Return'}</button>
+              </div>
+
+              <div className="db-grid">
+                {/* The day, line by line */}
+                <div className="card db-feed-card">
+                  <div className="db-feed-head">
+                    <div className="db-chips">
+                      {FILTERS.map((f) => (
+                        <button key={f.key} className={`db-chip ${filter === f.key ? 'active' : ''}`} onClick={() => setFilter(f.key)}>
+                          {bn ? f.bn : f.en} <span className="n">{filterCount(f)}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="db-search">
+                      <Search size={14} />
+                      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={bn ? 'নাম, ফোন, চালান নং…' : 'Name, phone, invoice…'} />
+                    </div>
+                  </div>
+
+                  {feed.length === 0 ? (
+                    <div className="db-empty">
+                      <CalendarDays size={36} />
+                      <div>{data.feed.length === 0 ? (bn ? 'এই দিনে কোনো লেনদেন হয়নি।' : 'Nothing happened on this day.') : (bn ? 'এই ফিল্টারে কিছু নেই।' : 'Nothing matches this filter.')}</div>
+                    </div>
+                  ) : (
+                    <div className="db-feed">
+                      {feed.map((row, idx) => {
+                        const k = KINDS[row.kind] || KINDS.cash;
+                        const Icon = k.icon;
+                        return (
+                          <div key={`${row.kind}-${row.id}`} className={`db-row ${k.tone}`}>
+                            <div className="db-row-sl">#{idx + 1}</div>
+                            <div className="db-row-time">{row.time || '—'}</div>
+                            <div className={`db-row-icon ${k.tone}`}><Icon size={16} /></div>
+                            <div className="db-row-main">
+                              <div className="db-row-title">
+                                <span className="db-row-kind">{bn ? k.bn : k.en}</span>
+                                <strong>{row.party}</strong>
+                                {row.method && <span className={`badge ${row.method === 'Baki' ? 'bg-danger' : row.method === 'Partial' ? 'bg-warning' : 'bg-muted'}`}>{row.method}</span>}
+                              </div>
+                              <div className="db-row-sub">
+                                {row.title}{row.by ? ` · ${bn ? 'বিক্রেতা' : 'by'} ${row.by}` : ''}{row.note ? ` · ${row.note}` : ''}
+                                <span className="db-row-id"> · {row.id}</span>
+                              </div>
+                            </div>
+                            <div className="db-row-right">
+                              <div className="db-row-actions">
+                                {row.kind === 'sale' && <button className="btn-icon" title={bn ? 'চালান দেখুন / প্রিন্ট' : 'View / print invoice'} onClick={() => openInvoice(row.id)}><Eye size={16} /></button>}
+                                {row.kind === 'sale' && row.due > 0 && <button className="btn-icon text-success" title={bn ? 'বকেয়া নিন' : 'Receive due'} onClick={() => openPay(row)}><Wallet size={16} /></button>}
+                                {row.kind === 'expense' && isAdmin && <button className="btn-icon text-danger" title={bn ? 'মুছুন' : 'Delete'} onClick={() => removeExpense(row)}><Trash2 size={16} /></button>}
+                              </div>
+                              <div className="db-row-amount">
+                                {row.due > 0 && <span className="due">({bn ? 'বাকি' : 'due'} {money(row.due)})</span>}
+                                {row.due > 0 && (
+                                  <span className="db-paid-amt">({bn ? 'জমা' : 'paid'} {money(row.paid || 0)})</span>
+                                )}
+                                {row.kind === 'sale' && row.due === 0 && row.paid > 0 && <span className="ok"><CheckCircle2 size={11} /> {bn ? 'পরিশোধিত' : 'paid'}</span>}
+                                <span className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="db-row-sub">
-                            {row.title}{row.by ? ` · ${bn ? 'বিক্রেতা' : 'by'} ${row.by}` : ''}{row.note ? ` · ${row.note}` : ''}
-                            <span className="db-row-id"> · {row.id}</span>
-                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* The side: who sold, what sold, how it was paid */}
+                <div className="db-side">
+                  <div className="card db-panel">
+                    <h3>{bn ? 'পেমেন্ট মাধ্যম' : 'By payment type'}</h3>
+                    {s.byPaymentType.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
+                    {s.byPaymentType.map((r) => (
+                      <div key={r.type} className="db-line">
+                        <span><span className={`badge ${r.type === 'Baki' ? 'bg-danger' : r.type === 'Partial' ? 'bg-warning' : 'bg-success'}`}>{r.type}</span> <span className="text-muted">× {r.count}</span></span>
+                        <span className="num">{money(r.total)}{r.due > 0 && <small className="text-danger"> ({bn ? 'বাকি' : 'due'} {money(r.due)})</small>}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="card db-panel">
+                    <h3>{bn ? 'কে কত বিক্রি করল' : 'By salesman'}</h3>
+                    {data.bySalesman.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
+                    {data.bySalesman.map((r) => (
+                      <div key={r.name} className="db-line">
+                        <span><strong>{r.name}</strong> <span className="text-muted">· {r.invoices} {bn ? 'টি' : 'inv'}</span></span>
+                        <span className="num">{money(r.total)}{r.due > 0 && <small className="text-danger"> ({bn ? 'বাকি' : 'due'} {money(r.due)})</small>}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="card db-panel">
+                    <h3>{bn ? 'বেশি বিক্রি হওয়া পণ্য' : 'Top products'}</h3>
+                    {data.topProducts.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
+                    {data.topProducts.map((r) => (
+                      <div key={r.name} className="db-line">
+                        <span className="ellipsis">{r.name} <span className="text-muted">× {r.units}</span></span>
+                        <span className="num">{money(r.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {isAdmin && (
+                    <div className="card db-panel">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <h3 style={{ margin: 0 }}>{bn ? 'কর্জ / ঋণ হিসাব (আজ)' : 'Today\'s Loan Summary'}</h3>
+                        <span className="badge badge-secondary">{todayLoans.count} {bn ? 'টি' : 'txns'}</span>
+                      </div>
+                      <div className="db-line">
+                        <span className="text-muted">{bn ? 'কর্জ প্রদান / পরিশোধ (আউট)' : 'Loan Given / Paid (Out)'}</span>
+                        <span className="num text-danger">{todayLoans.out > 0 ? `−${money(todayLoans.out)}` : money(0)}</span>
+                      </div>
+                      <div className="db-line">
+                        <span className="text-muted">{bn ? 'কর্জ গ্রহণ / আদায় (ইন)' : 'Loan Taken / Collected (In)'}</span>
+                        <span className="num text-success">{todayLoans.in > 0 ? `+${money(todayLoans.in)}` : money(0)}</span>
+                      </div>
+                      <div className="db-line total">
+                        <span>{bn ? 'আজকের নেট কর্জ প্রভাব' : 'Net Loan Movement'}</span>
+                        <span className={`num ${todayLoans.net < 0 ? 'text-danger' : todayLoans.net > 0 ? 'text-success' : ''}`}>
+                          {todayLoans.net < 0 ? `−${money(Math.abs(todayLoans.net))}` : todayLoans.net > 0 ? `+${money(todayLoans.net)}` : money(0)}
+                        </span>
+                      </div>
+                      <div style={{ borderTop: '1px dashed var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+                        <div className="db-line text-sm">
+                          <span>{bn ? 'মোট বকেয়া কর্জ পাওনা' : 'Total Owed to You (Given)'}</span>
+                          <span className="num text-success">{money(loanStats.givenRemaining)}</span>
                         </div>
-                        <div className="db-row-right">
-                          <div className="db-row-actions">
-                            {row.kind === 'sale' && <button className="btn-icon" title={bn ? 'চালান দেখুন / প্রিন্ট' : 'View / print invoice'} onClick={() => openInvoice(row.id)}><Eye size={16} /></button>}
-                            {row.kind === 'sale' && row.due > 0 && <button className="btn-icon text-success" title={bn ? 'বকেয়া নিন' : 'Receive due'} onClick={() => openPay(row)}><Wallet size={16} /></button>}
-                            {row.kind === 'expense' && isAdmin && <button className="btn-icon text-danger" title={bn ? 'মুছুন' : 'Delete'} onClick={() => removeExpense(row)}><Trash2 size={16} /></button>}
-                          </div>
-                          <div className="db-row-amount">
-                            {row.due > 0 && <span className="due">({bn ? 'বাকি' : 'due'} {money(row.due)})</span>}
-                            {row.due > 0 && (
-                              <span className="db-paid-amt">({bn ? 'জমা' : 'paid'} {money(row.paid || 0)})</span>
-                            )}
-                            {row.kind === 'sale' && row.due === 0 && row.paid > 0 && <span className="ok"><CheckCircle2 size={11} /> {bn ? 'পরিশোধিত' : 'paid'}</span>}
-                            <span className={`amt ${row.flow}`}>{row.flow === 'out' ? '−' : row.flow === 'in' ? '+' : ''}{money(row.amount)}</span>
-                          </div>
+                        <div className="db-line text-sm">
+                          <span>{bn ? 'মোট বকেয়া কর্জ দেনা' : 'Total You Owe (Taken)'}</span>
+                          <span className="num text-danger">{money(loanStats.takenRemaining)}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* The side: who sold, what sold, how it was paid */}
-            <div className="db-side">
-              <div className="card db-panel">
-                <h3>{bn ? 'পেমেন্ট মাধ্যম' : 'By payment type'}</h3>
-                {s.byPaymentType.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
-                {s.byPaymentType.map((r) => (
-                  <div key={r.type} className="db-line">
-                    <span><span className={`badge ${r.type === 'Baki' ? 'bg-danger' : r.type === 'Partial' ? 'bg-warning' : 'bg-success'}`}>{r.type}</span> <span className="text-muted">× {r.count}</span></span>
-                    <span className="num">{money(r.total)}{r.due > 0 && <small className="text-danger"> ({bn ? 'বাকি' : 'due'} {money(r.due)})</small>}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="card db-panel">
-                <h3>{bn ? 'কে কত বিক্রি করল' : 'By salesman'}</h3>
-                {data.bySalesman.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
-                {data.bySalesman.map((r) => (
-                  <div key={r.name} className="db-line">
-                    <span><strong>{r.name}</strong> <span className="text-muted">· {r.invoices} {bn ? 'টি' : 'inv'}</span></span>
-                    <span className="num">{money(r.total)}{r.due > 0 && <small className="text-danger"> ({bn ? 'বাকি' : 'due'} {money(r.due)})</small>}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="card db-panel">
-                <h3>{bn ? 'বেশি বিক্রি হওয়া পণ্য' : 'Top products'}</h3>
-                {data.topProducts.length === 0 && <div className="text-muted text-sm">{bn ? 'আজ বিক্রি নেই' : 'No sales yet'}</div>}
-                {data.topProducts.map((r) => (
-                  <div key={r.name} className="db-line">
-                    <span className="ellipsis">{r.name} <span className="text-muted">× {r.units}</span></span>
-                    <span className="num">{money(r.amount)}</span>
-                  </div>
-                ))}
-              </div>
-
-              {isAdmin && (
-                <div className="card db-panel">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <h3 style={{ margin: 0 }}>{bn ? 'কর্জ / ঋণ হিসাব (আজ)' : 'Today\'s Loan Summary'}</h3>
-                    <span className="badge badge-secondary">{todayLoans.count} {bn ? 'টি' : 'txns'}</span>
-                  </div>
-                  <div className="db-line">
-                    <span className="text-muted">{bn ? 'কর্জ প্রদান / পরিশোধ (আউট)' : 'Loan Given / Paid (Out)'}</span>
-                    <span className="num text-danger">{todayLoans.out > 0 ? `−${money(todayLoans.out)}` : money(0)}</span>
-                  </div>
-                  <div className="db-line">
-                    <span className="text-muted">{bn ? 'কর্জ গ্রহণ / আদায় (ইন)' : 'Loan Taken / Collected (In)'}</span>
-                    <span className="num text-success">{todayLoans.in > 0 ? `+${money(todayLoans.in)}` : money(0)}</span>
-                  </div>
-                  <div className="db-line total">
-                    <span>{bn ? 'আজকের নেট কর্জ প্রভাব' : 'Net Loan Movement'}</span>
-                    <span className={`num ${todayLoans.net < 0 ? 'text-danger' : todayLoans.net > 0 ? 'text-success' : ''}`}>
-                      {todayLoans.net < 0 ? `−${money(Math.abs(todayLoans.net))}` : todayLoans.net > 0 ? `+${money(todayLoans.net)}` : money(0)}
-                    </span>
-                  </div>
-                  <div style={{ borderTop: '1px dashed var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-                    <div className="db-line text-sm">
-                      <span>{bn ? 'মোট বকেয়া কর্জ পাওনা' : 'Total Owed to You (Given)'}</span>
-                      <span className="num text-success">{money(loanStats.givenRemaining)}</span>
                     </div>
-                    <div className="db-line text-sm">
-                      <span>{bn ? 'মোট বকেয়া কর্জ দেনা' : 'Total You Owe (Taken)'}</span>
-                      <span className="num text-danger">{money(loanStats.takenRemaining)}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {isAdmin && (
-                <div className="card db-panel">
-                  <h3>{bn ? 'ক্যাশ চলাচল' : 'Cash movement'}</h3>
-                  <div className="db-line"><span>{bn ? 'দিনের শুরুতে' : 'Opening'}</span><span className="num">{money(cf.openingTotal)}</span></div>
-                  <div className="db-line"><span className="text-success">{bn ? 'এসেছে' : 'In'}</span><span className="num text-success">+{money(cf.inflow)}</span></div>
-                  {todayLoans.in > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ থেকে এসেছে' : '└ from loan inflow'}</span><span className="num text-success">+{money(todayLoans.in)}</span></div>}
-                  <div className="db-line"><span className="text-danger">{bn ? 'গেছে' : 'Out'}</span><span className="num text-danger">−{money(cf.outflow)}</span></div>
-                  {todayLoans.out > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ বাবদ গেছে' : '└ to loan outflow'}</span><span className="num text-danger">−{money(todayLoans.out)}</span></div>}
-                  <div className="db-line total"><span>{bn ? 'দিনের শেষে' : 'Closing'}</span><span className="num">{money(cf.closingTotal)}</span></div>
-                  <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'ব্যাংক' : 'Bank'} {money(cf.closingBank)}</div>
-                </div>
-              )}
-
-              {isAdmin && (
-                <div className="card db-panel">
-                  <h3>{bn ? 'মোট বকেয়া (আজ পর্যন্ত)' : 'Outstanding (as of now)'}</h3>
-                  <div className="db-line"><span>{bn ? 'কাস্টমারের কাছে পাওনা' : 'Customers owe'}</span><span className="num text-success">{money(data.position.assets.customerDue)}</span></div>
-                  <div className="db-line"><span>{bn ? 'এসআর-এর কাছে পাওনা' : 'SRs owe'}</span><span className="num text-success">{money(data.position.assets.staffDue)}</span></div>
-                  <div className="db-line"><span>{bn ? 'সাপ্লায়ারকে দেনা' : 'Owed to suppliers'}</span><span className="num text-danger">{money(data.position.liabilities.supplierDue)}</span></div>
-                  {loanStats.givenRemaining > 0 && (
-                    <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ পাওনা' : 'Loans given (owed to you)'}</span><span className="num text-success">{money(loanStats.givenRemaining)}</span></div>
                   )}
-                  {loanStats.takenRemaining > 0 && (
-                    <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ দেনা' : 'Loans taken (you owe)'}</span><span className="num text-danger">{money(loanStats.takenRemaining)}</span></div>
+
+                  {isAdmin && (
+                    <div className="card db-panel">
+                      <h3>{bn ? 'ক্যাশ চলাচল' : 'Cash movement'}</h3>
+                      <div className="db-line"><span>{bn ? 'দিনের শুরুতে' : 'Opening'}</span><span className="num">{money(cf.openingTotal)}</span></div>
+                      <div className="db-line"><span className="text-success">{bn ? 'এসেছে' : 'In'}</span><span className="num text-success">+{money(cf.inflow)}</span></div>
+                      {todayLoans.in > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ থেকে এসেছে' : '└ from loan inflow'}</span><span className="num text-success">+{money(todayLoans.in)}</span></div>}
+                      <div className="db-line"><span className="text-danger">{bn ? 'গেছে' : 'Out'}</span><span className="num text-danger">−{money(cf.outflow)}</span></div>
+                      {todayLoans.out > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ বাবদ গেছে' : '└ to loan outflow'}</span><span className="num text-danger">−{money(todayLoans.out)}</span></div>}
+                      <div className="db-line total"><span>{bn ? 'দিনের শেষে' : 'Closing'}</span><span className="num">{money(cf.closingTotal)}</span></div>
+                      <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'ব্যাংক' : 'Bank'} {money(cf.closingBank)}</div>
+                    </div>
+                  )}
+
+                  {isAdmin && (
+                    <div className="card db-panel">
+                      <h3>{bn ? 'মোট বকেয়া (আজ পর্যন্ত)' : 'Outstanding (as of now)'}</h3>
+                      <div className="db-line"><span>{bn ? 'কাস্টমারের কাছে পাওনা' : 'Customers owe'}</span><span className="num text-success">{money(data.position.assets.customerDue)}</span></div>
+                      <div className="db-line"><span>{bn ? 'এসআর-এর কাছে পাওনা' : 'SRs owe'}</span><span className="num text-success">{money(data.position.assets.staffDue)}</span></div>
+                      <div className="db-line"><span>{bn ? 'সাপ্লায়ারকে দেনা' : 'Owed to suppliers'}</span><span className="num text-danger">{money(data.position.liabilities.supplierDue)}</span></div>
+                      {loanStats.givenRemaining > 0 && (
+                        <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ পাওনা' : 'Loans given (owed to you)'}</span><span className="num text-success">{money(loanStats.givenRemaining)}</span></div>
+                      )}
+                      {loanStats.takenRemaining > 0 && (
+                        <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ দেনা' : 'Loans taken (you owe)'}</span><span className="num text-danger">{money(loanStats.takenRemaining)}</span></div>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Printable closing report */}
-          <div id="printable-daybook" style={{ display: 'none' }}>
-            <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '12px' }}>
-              <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allah Dan Gents Point'}</div>
-                <div style={{ fontSize: 13 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-                <tbody>
-                  {[
-                    ['Sales', money(s.netSales), `${s.invoiceCount} invoices`],
-                    ['Received', money(s.totalReceived), `counter ${money(s.paidAtCounter)} + dues ${money(s.dueCollected)}`],
-                    ['Sold on credit', money(s.dueCreated), ''],
-                    ...(isAdmin ? [
-                      ['Purchases', money(data.purchases.total), `paid ${money(data.purchases.paid + data.purchases.paidLater)}`],
-                      ['Expenses', money(data.expenses.total), ''],
-                      ['Loans given / paid (Out)', money(todayLoans.out), `${todayLoans.count} loan txns`],
-                      ['Loans received / collected (In)', money(todayLoans.in), ''],
-                      ['Cost of goods sold', money(data.cogs.total), `${data.cogs.unitsSold} units`],
-                      ['Gross profit', money(p.grossProfit), `${p.grossMargin}%`],
-                      [p.isLoss ? 'Net loss' : 'Net profit', money(Math.abs(p.netProfit)), ''],
-                      ['Cash opening → closing', `${money(cf.openingCash)} → ${money(cf.closingCash)}`, `bank ${money(cf.closingBank)}`],
-                    ] : [['Expenses', money(data.expenses.total), '']]),
-                  ].map(([l, v, h]) => (
-                    <tr key={l}>
-                      <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{l}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{v}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '5px 8px', color: '#555' }}>{h}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead>
-                  <tr style={{ background: '#f1f1f1' }}>
-                    {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.feed.map((row, idx) => (
-                    <tr key={`${row.kind}-${row.id}`}>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+
+              {/* Printable closing report */}
+              <div id="printable-daybook" style={{ display: 'none' }}>
+                <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '12px' }}>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allah Dan Gents Point'}</div>
+                    <div style={{ fontSize: 13 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
+                    <tbody>
+                      {[
+                        ['Sales', money(s.netSales), `${s.invoiceCount} invoices`],
+                        ['Received', money(s.totalReceived), `counter ${money(s.paidAtCounter)} + dues ${money(s.dueCollected)}`],
+                        ['Due Balance', money(s.dueCreated), ''],
+                        ...(isAdmin ? [
+                          ['Purchases', money(data.purchases.total), `paid ${money(data.purchases.paid + data.purchases.paidLater)}`],
+                          ['Expenses', money(data.expenses.total), ''],
+                          ['Loans given / paid (Out)', money(todayLoans.out), `${todayLoans.count} loan txns`],
+                          ['Loans received / collected (In)', money(todayLoans.in), ''],
+                          ['Cost of goods sold', money(data.cogs.total), `${data.cogs.unitsSold} units`],
+                          ['Gross profit', money(p.grossProfit), `${p.grossMargin}%`],
+                          [p.isLoss ? 'Net loss' : 'Net profit', money(Math.abs(p.netProfit)), ''],
+                          ['Cash opening → closing', `${money(cf.openingCash)} → ${money(cf.closingCash)}`, `bank ${money(cf.closingBank)}`],
+                        ] : [['Expenses', money(data.expenses.total), '']]),
+                      ].map(([l, v, h]) => (
+                        <tr key={l}>
+                          <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{l}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{v}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '5px 8px', color: '#555' }}>{h}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: '#f1f1f1' }}>
+                        {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.feed.map((row, idx) => (
+                        <tr key={`${row.kind}-${row.id}`}>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </>
-      )}
-      </>
       ) : (
         /* ========================================================== */
         /* LOAN / কর্জ ব্যবস্থাপনা VIEW (Isolated from Accounts)     */

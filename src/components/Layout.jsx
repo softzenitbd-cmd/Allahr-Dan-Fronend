@@ -33,6 +33,7 @@ import {
 import { useState, useEffect } from 'react';
 import './Layout.css';
 import logo from '../assets/allah_dan.jpeg';
+import { hasMenuAccess } from '../utils/navigationConfig';
 
 // Route-to-Data requirements mapping for lazy-loading
 const ROUTE_SLICES = {
@@ -60,7 +61,7 @@ const ROUTE_SLICES = {
 };
 
 const Layout = () => {
-  const { user, logout, theme, toggleTheme, language, setLanguage, ensureLoaded, refresh } = useStore();
+  const { user, logout, theme, toggleTheme, language, setLanguage, ensureLoaded, refresh, rolePermissions } = useStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -129,17 +130,17 @@ const Layout = () => {
     { name: language === 'bn' ? 'খরচ' : 'Expenses', path: '/expenses', icon: DollarSign },
     { name: language === 'bn' ? 'এসআর' : 'SR', path: '/sr', icon: Truck },
     { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
-  ];
+  ].filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 
-  const adminServices = user?.role === 'Admin' ? [
+  const adminServices = [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
     { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'ব্যালেন্স শিট' : 'Balance Sheet', icon: Scale, path: '/balance-sheet' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
     { name: language === 'bn' ? 'এসএমএস' : 'SMS', icon: MessageSquare, path: '/sms' },
-    { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' }
-  ] : [];
+    { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' },
+  ].filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 
   // Rendered as two labelled groups. Fifteen links in one undifferentiated
   // column is a wall; split into "day to day" and "management" it reads as two

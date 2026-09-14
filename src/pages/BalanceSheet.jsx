@@ -247,12 +247,25 @@ const BalanceSheet = () => {
               )}
             </>
           )}
-          <Row label={bn ? 'নিট বিক্রয়' : 'Net Sales'} value={money(sales.netSales)} variant="total" />
+          {sales.customerReturns > 0 ? (
+            <>
+              <Row label={bn ? 'নিট বিক্রয়' : 'Net Sales'} value={money(sales.netSales)} />
+              <Row
+                label={bn ? 'বাদ: কাস্টমার রিটার্ন' : 'Less: Customer returns'}
+                hint={`${returns.customer.units} ${bn ? 'ইউনিট ফেরত' : 'units back'}`}
+                value={money(sales.customerReturns)}
+                variant="deduct"
+              />
+              <Row label={bn ? 'রিটার্ন বাদে বিক্রয়' : 'Sales after returns'} value={money(sales.netSalesAfterReturns)} variant="total" />
+            </>
+          ) : (
+            <Row label={bn ? 'নিট বিক্রয়' : 'Net Sales'} value={money(sales.netSales)} variant="total" />
+          )}
 
           <Row
             label={bn ? 'বাদ: বিক্রীত পণ্যের ক্রয়মূল্য' : 'Less: Cost of Goods Sold'}
-            hint={`${cogs.unitsSold} ${bn ? 'ইউনিট বিক্রি' : 'units sold'}`}
-            value={money(cogs.total)}
+            hint={`${cogs.unitsSold} ${bn ? 'ইউনিট বিক্রি · বিক্রির দিনের ক্রয়মূল্যে' : 'units sold · at cost on the day of sale'}${cogs.returnsCost > 0 ? ` · ${bn ? 'রিটার্নের' : 'less returns'} ${money(cogs.returnsCost)}` : ''}`}
+            value={money(cogs.returnsCost > 0 ? cogs.netOfReturns : cogs.total)}
             variant="deduct"
           />
           {cogs.giftCost > 0 && (
@@ -295,7 +308,7 @@ const BalanceSheet = () => {
 
           <Row label={bn ? 'নিট বিক্রয়' : 'Net Sales'} value={money(sales.netSales)} />
           <Row label={bn ? 'কাউন্টারে পরিশোধ' : 'Paid at the counter'} value={money(sales.paidAtCounter)} variant="sub" />
-          <Row label={bn ? 'বাকিতে বিক্রয়' : 'Sold on credit (due raised)'} value={money(sales.dueCreated)} variant="sub" />
+          <Row label={bn ? 'বাকিতে বিক্রয়' : 'Due Balance (due raised)'} value={money(sales.dueCreated)} variant="sub" />
           <Row label={bn ? 'পুরোনো বকেয়া আদায়' : 'Old dues collected'} value={money(sales.dueCollected)} />
           {sales.staffDueRecovered > 0 && (
             <Row label={bn ? 'এসআর/কর্মীর কাছ থেকে আদায়' : 'Recovered from SR / staff'} value={money(sales.staffDueRecovered)} />
@@ -382,8 +395,8 @@ const BalanceSheet = () => {
               />
               <div className="bs-note">
                 {bn
-                  ? 'রিটার্নে এই সিস্টেমে কোনো টাকা ফেরত যায় না — শুধু পণ্য স্টকে যোগ বা বিয়োগ হয়। তাই এটি উপরের লাভ-লোকসানের হিসাবে ধরা হয়নি।'
-                  : 'A return moves goods only — no refund is posted in this system — so it is shown here rather than inside the profit above.'}
+                  ? 'কাস্টমার রিটার্ন উপরের লাভ-লোকসানে বিক্রয় ও ক্রয়মূল্য দুটো থেকেই বাদ গেছে; সাপ্লায়ারকে ফেরত ক্রয় থেকে বাদ গেছে। টাকা ফেরত এই সিস্টেমে যায় না — পার্টির বকেয়ায় সমন্বয় হয়।'
+                  : 'Customer returns are already taken off sales and cost of sales in the profit above; supplier rejects come off purchases. No cash moves on a return — it settles through the party\'s due.'}
               </div>
             </>
           )}
@@ -475,12 +488,18 @@ const BalanceSheet = () => {
             {position.assets.staffDue > 0 && (
               <Row label={bn ? 'কর্মী/এসআর-এর কাছে পাওনা' : 'Receivable from staff / SR'} value={money(position.assets.staffDue)} />
             )}
+            {position.assets.loansReceivable > 0 && (
+              <Row label={bn ? 'কর্জ দেওয়া (পাওনা)' : 'Loans given (receivable)'} value={money(position.assets.loansReceivable)} />
+            )}
             <Row label={bn ? 'মোট সম্পদ' : 'Total Assets'} value={money(position.assets.total)} variant="total" />
           </div>
 
           <div>
             <div className="bs-panel-title">{bn ? 'দায় (Liabilities)' : 'Liabilities'}</div>
             <Row label={bn ? 'সাপ্লায়ারকে দেনা' : 'Payable to suppliers'} value={money(position.liabilities.supplierDue)} />
+            {position.liabilities.loansPayable > 0 && (
+              <Row label={bn ? 'কর্জ নেওয়া (দেনা)' : 'Loans taken (payable)'} value={money(position.liabilities.loansPayable)} />
+            )}
             <Row label={bn ? 'মোট দায়' : 'Total Liabilities'} value={money(position.liabilities.total)} variant="total" />
 
             <div className="bs-panel-title" style={{ marginTop: '1.5rem' }}>
@@ -563,7 +582,9 @@ const PrintableStatement = ({ data, shopName, shopProfile }) => {
             line('Gross Sales', money(sales.grossSales)),
             sales.totalDiscount > 0 ? line('Less: Discounts', money(sales.totalDiscount)) : null,
             line('Net Sales', money(sales.netSales), { bold: true, rule: true }),
-            line('Less: Cost of Goods Sold', money(cogs.total)),
+            sales.customerReturns > 0 ? line('Less: Customer returns', money(sales.customerReturns)) : null,
+            sales.customerReturns > 0 ? line('Sales after returns', money(sales.netSalesAfterReturns), { bold: true, rule: true }) : null,
+            line('Less: Cost of Goods Sold', money(cogs.returnsCost > 0 ? cogs.netOfReturns : cogs.total)),
             line('Gross Profit', money(profit.grossProfit), { bold: true, rule: true }),
             line('Less: Operating Expenses', money(expenses.total)),
             ...expenses.categories.map((c) => line(c.category, money(c.amount), { indent: true })),
@@ -572,7 +593,7 @@ const PrintableStatement = ({ data, shopName, shopProfile }) => {
 
           {block('Sales & Collection', [
             line('Paid at the counter', money(sales.paidAtCounter)),
-            line('Sold on credit (due raised)', money(sales.dueCreated)),
+            line('Due Balance (due raised)', money(sales.dueCreated)),
             line('Old dues collected', money(sales.dueCollected)),
             line('Total received in period', money(sales.totalReceived), { bold: true, rule: true }),
           ])}
@@ -604,9 +625,15 @@ const PrintableStatement = ({ data, shopName, shopProfile }) => {
             position.assets.staffDue > 0
               ? line('Receivable from staff / SR', money(position.assets.staffDue), { indent: true })
               : null,
+            position.assets.loansReceivable > 0
+              ? line('Loans given (receivable)', money(position.assets.loansReceivable), { indent: true })
+              : null,
             line('Total Assets', money(position.assets.total), { bold: true, rule: true }),
             line('LIABILITIES', '', { bold: true }),
             line('Payable to suppliers', money(position.liabilities.supplierDue), { indent: true }),
+            position.liabilities.loansPayable > 0
+              ? line('Loans taken (payable)', money(position.liabilities.loansPayable), { indent: true })
+              : null,
             line('Total Liabilities', money(position.liabilities.total), { bold: true, rule: true }),
             line('NET WORTH', money(position.netWorth), { bold: true, rule: true }),
           ])}

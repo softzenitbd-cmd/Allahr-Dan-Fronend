@@ -81,6 +81,7 @@ export const ENDPOINTS = {
   TREASURY_TRANSACTIONS: '/treasury/transactions/',
   TREASURY_TRANSFER: '/treasury/transfer/',
   TREASURY_ENTRY: '/treasury/entry/',
+  TREASURY_LOANS: '/treasury/loans/',
 
   // SMS
   SMS_SEND: '/sms/send/',

@@ -138,6 +138,13 @@ export const TreasuryService = {
   transfer: (payload) => apiClient.post(ENDPOINTS.TREASURY_TRANSFER, payload),
   entry: (payload) => apiClient.post(ENDPOINTS.TREASURY_ENTRY, payload),
   unwind: (reference_id) => apiClient.delete(ENDPOINTS.TREASURY_ENTRY, { params: { reference_id } }),
+  // The karz book: money lent and borrowed, each with its repayments.
+  loans: () => apiClient.get(ENDPOINTS.TREASURY_LOANS),
+  createLoan: (payload) => apiClient.post(ENDPOINTS.TREASURY_LOANS, payload),
+  payLoan: (loanId, payload) => apiClient.post(`${ENDPOINTS.TREASURY_LOANS}${loanId}/pay/`, payload),
+  deleteLoan: (loanId) => apiClient.delete(`${ENDPOINTS.TREASURY_LOANS}${loanId}/`),
+  deleteLoanPayment: (loanId, paymentId) => apiClient.delete(`${ENDPOINTS.TREASURY_LOANS}${loanId}/payments/${paymentId}/`),
+  importLoans: (loans) => apiClient.post(`${ENDPOINTS.TREASURY_LOANS}import/`, { loans }),
 };
 
 export const SMSService = {

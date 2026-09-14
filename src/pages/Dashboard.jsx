@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DASHBOARD_CARDS, cardColor } from '../utils/dashboardCards';
+import { hasMenuAccess } from '../utils/navigationConfig';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance, dashboardCardColors } = useStore();
+  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance, dashboardCardColors, rolePermissions } = useStore();
   const isAdmin = user?.role === 'Admin';
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -93,7 +94,7 @@ const Dashboard = () => {
     };
   });
 
-  const bkashServices = [
+  const rawServices = [
     { name: language === 'bn' ? 'আজকের হিসাব' : 'Day Book', path: '/day-book', icon: CalendarDays },
     { name: language === 'bn' ? 'বিক্রয়' : 'POS', path: '/pos', icon: ShoppingCart },
     { name: language === 'bn' ? 'স্টক' : 'Inventory', path: '/inventory', icon: Package },
@@ -104,18 +105,15 @@ const Dashboard = () => {
     { name: language === 'bn' ? 'খরচ' : 'Expenses', path: '/expenses', icon: DollarSign },
     { name: language === 'bn' ? 'এসআর' : 'SR', path: '/sr', icon: Truck },
     { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
-  ];
-
-  const adminServices = user?.role === 'Admin' ? [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
     { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
     { name: language === 'bn' ? 'এসএমএস' : 'SMS', icon: MessageSquare, path: '/sms' },
-    { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' }
-  ] : [];
+    { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' },
+  ];
 
-  const allServices = [...bkashServices, ...adminServices];
+  const allServices = rawServices.filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 
   // Dynamic Chart Data Calculation (Zero Mock Data)
   const computedWeeklyChartData = [];
