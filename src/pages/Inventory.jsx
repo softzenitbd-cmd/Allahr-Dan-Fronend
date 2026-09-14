@@ -4,6 +4,7 @@ import {
   Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
   Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
@@ -107,7 +108,7 @@ const Inventory = () => {
   ]));
 
   const [newProduct, setNewProduct] = useState({
-    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0, cost_price: ''
+    id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, min_stock: 5, mrp: 0, discount_price: 0, price: 0, cost_price: ''
   });
 
   const calculateEan13CheckDigit = (twelveDigits) => {
@@ -212,6 +213,7 @@ const Inventory = () => {
       unit: availableUnits[0] || 'Pcs',
       variant: '',
       stock: 0,
+      min_stock: 5,
       mrp: 0,
       discount_price: 0,
       price: 0,
@@ -225,8 +227,11 @@ const Inventory = () => {
   const handleOpenEditModal = (item) => {
     const salePrice = item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price);
     const mrpPrice = item.mrp && Number(item.mrp) > 0 ? Number(item.mrp) : salePrice;
+    const alertLimit = item.min_stock !== undefined && item.min_stock !== null && item.min_stock !== '' ? item.min_stock : (item.minStock ?? 5);
     setEditingItem({
       ...item,
+      min_stock: alertLimit,
+      minStock: alertLimit,
       cost_price: item.cost_price ?? item.costPrice ?? '',
       mrp: mrpPrice,
       discount_price: salePrice,
@@ -262,6 +267,7 @@ const Inventory = () => {
     const mrpVal = parseFloat(editingItem.mrp) || 0;
     const discVal = parseFloat(editingItem.discount_price) || 0;
     const saleVal = discVal > 0 ? discVal : (parseFloat(editingItem.price) || mrpVal);
+    const minVal = parseInt(editingItem.min_stock !== undefined && editingItem.min_stock !== '' ? editingItem.min_stock : 5);
 
     if (editProductImage) {
       const formData = new FormData();
@@ -270,6 +276,8 @@ const Inventory = () => {
       formData.append('unit', editingItem.unit || 'Pcs');
       if (editingItem.variant) formData.append('variant', editingItem.variant);
       formData.append('stock', parseInt(editingItem.stock) || 0);
+      formData.append('min_stock', minVal);
+      formData.append('minStock', minVal);
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
@@ -277,12 +285,15 @@ const Inventory = () => {
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
+      const { minStock, ...restEditingItem } = editingItem;
       const payload = {
-        ...editingItem,
+        ...restEditingItem,
         mrp: mrpVal || saleVal,
         discount_price: discVal || saleVal,
         price: saleVal,
         stock: parseInt(editingItem.stock) || 0,
+        min_stock: minVal,
+        minStock: minVal,
         ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
       };
       res = await updateInventoryItem(editingItem.id, payload);
@@ -329,6 +340,7 @@ const Inventory = () => {
     const mrpVal = parseFloat(newProduct.mrp) || 0;
     const discVal = parseFloat(newProduct.discount_price) || 0;
     const saleVal = discVal > 0 ? discVal : (parseFloat(newProduct.price) || mrpVal);
+    const minVal = parseInt(newProduct.min_stock !== undefined && newProduct.min_stock !== '' ? newProduct.min_stock : 5);
 
     if (newProductImage) {
       const formData = new FormData();
@@ -338,6 +350,8 @@ const Inventory = () => {
       formData.append('unit', newProduct.unit || 'Pcs');
       if (newProduct.variant) formData.append('variant', newProduct.variant);
       formData.append('stock', parseInt(newProduct.stock) || 0);
+      formData.append('min_stock', minVal);
+      formData.append('minStock', minVal);
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
@@ -345,14 +359,17 @@ const Inventory = () => {
       formData.append('image', newProductImage);
       res = await addInventoryItem(formData);
     } else {
+      const { minStock, ...restNewProduct } = newProduct;
       const payload = {
-        ...newProduct,
+        ...restNewProduct,
         id: finalId,
         name: finalName,
         mrp: mrpVal || saleVal,
         discount_price: discVal || saleVal,
         price: saleVal,
         stock: parseInt(newProduct.stock) || 0,
+        min_stock: minVal,
+        minStock: minVal,
         ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
       };
       res = await addInventoryItem(payload);
@@ -360,7 +377,7 @@ const Inventory = () => {
 
     if (res?.ok) {
       setShowAddModal(false);
-      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, mrp: 0, discount_price: 0, price: 0, cost_price: '' });
+      setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, min_stock: 5, mrp: 0, discount_price: 0, price: 0, cost_price: '' });
       setNewProductImage(null);
       setNewProductImagePreview(null);
       showSuccessAlert(language === 'bn' ? 'নতুন পণ্য সফলভাবে যুক্ত হয়েছে!' : 'Product added successfully!');
@@ -399,6 +416,11 @@ const Inventory = () => {
     missingCost: acc.missingCost + (r.qty > 0 && r.cost <= 0 ? 1 : 0),
   }), { units: 0, costValue: 0, retailValue: 0, missingCost: 0 });
 
+  const lowStockCount = (inventory || []).filter((item) => {
+    const limit = Number(item.min_stock !== undefined && item.min_stock !== null && item.min_stock !== '' ? item.min_stock : (item.minStock ?? 5));
+    return Number(item.stock) <= limit;
+  }).length;
+
   const handleDownloadValuation = () => {
     printElement('printable-valuation', `Inventory-Valuation-${new Date().toISOString().slice(0, 10)}`);
   };
@@ -432,7 +454,7 @@ const Inventory = () => {
       {/* Inventory Stat Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(${isAdmin ? '210px' : '250px'}, 1fr))`,
+        gridTemplateColumns: `repeat(auto-fit, minmax(${isAdmin ? '200px' : '230px'}, 1fr))`,
         gap: '1rem',
         marginBottom: '1.25rem'
       }}>
@@ -460,6 +482,39 @@ const Inventory = () => {
             </div>
             <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
               {valuation.units || totalItems}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="card"
+          onClick={() => {
+            setCurrentPage(1);
+            setStockStatus(prev => (prev === 'low_stock' ? 'All' : 'low_stock'));
+          }}
+          style={{
+            padding: '1rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            margin: 0,
+            cursor: 'pointer',
+            border: stockStatus === 'low_stock' ? '2px solid #f59e0b' : undefined,
+            background: stockStatus === 'low_stock' ? 'rgba(245, 158, 11, 0.1)' : undefined,
+            boxShadow: stockStatus === 'low_stock' ? '0 0 12px rgba(245, 158, 11, 0.25)' : undefined,
+            transition: 'all 0.2s ease',
+          }}
+          title={language === 'bn' ? 'ক্লিক করে শুধু স্টক এলার্ট পণ্যগুলো দেখুন' : 'Click to show only stock alert items'}
+        >
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.12)', color: '#d97706' }}>
+            <AlertTriangle size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'স্টক এলার্ট' : 'Stock Alert'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: lowStockCount > 0 ? '#d97706' : 'var(--text-main)' }}>
+              {lowStockCount} {language === 'bn' ? 'টি পণ্য' : 'items'}
             </div>
           </div>
         </div>
@@ -581,7 +636,7 @@ const Inventory = () => {
             >
               <option value="All">{language === 'bn' ? 'সব স্টক' : 'All Stock'}</option>
               <option value="in_stock">{language === 'bn' ? 'স্টকে আছে' : 'In Stock'}</option>
-              <option value="low_stock">{language === 'bn' ? 'কম স্টক (Low)' : 'Low Stock'}</option>
+              <option value="low_stock">{language === 'bn' ? 'স্টক এলার্ট (Alert)' : 'Stock Alert'}</option>
               <option value="out_of_stock">{language === 'bn' ? 'স্টক শেষ (Out)' : 'Out of Stock'}</option>
             </select>
 
@@ -616,6 +671,48 @@ const Inventory = () => {
           </div>
         </div>
 
+        {stockStatus === 'low_stock' && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.65rem 1rem',
+            margin: '0 1.25rem 1rem 1.25rem',
+            borderRadius: '8px',
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            color: '#b45309',
+            fontSize: '0.88rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+              <AlertTriangle size={16} />
+              <span>
+                {language === 'bn'
+                  ? `শুধুমাত্র স্টক এলার্ট পণ্যগুলো ফিল্টার করা হয়েছে (${totalCount || paginatedProducts.length}টি)`
+                  : `Showing only stock alert products (${totalCount || paginatedProducts.length} items)`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentPage(1);
+                setStockStatus('All');
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#b45309',
+                cursor: 'pointer',
+                fontWeight: 600,
+                textDecoration: 'underline',
+                fontSize: '0.82rem'
+              }}
+            >
+              {language === 'bn' ? 'ফিল্টার সরান (সব পণ্য দেখুন)' : 'Clear Filter (Show All)'}
+            </button>
+          </div>
+        )}
+
         <div className="table-responsive inventory-table-loading">
           <table className="data-table">
             <thead>
@@ -626,7 +723,7 @@ const Inventory = () => {
                 <th>{t(language, 'Category')}</th>
                 <th>{t(language, 'Variant' || 'Variant')}</th>
                 <th>{t(language, 'Unit')}</th>
-                <th>{t(language, 'Stock')}</th>
+                <th>{language === 'bn' ? 'স্টক ও এলার্ট' : 'Stock & Alert'}</th>
                 <th>{t(language, 'Price')} (BDT)</th>
                 {isAdmin && (
                   <th style={{ whiteSpace: 'nowrap', color: '#059669' }}>
@@ -681,9 +778,33 @@ const Inventory = () => {
                     <td>{item.variant || '-'}</td>
                     <td>{item.unit}</td>
                     <td>
-                      <span className={`badge ${item.stock <= 5 ? 'badge-danger' : item.stock <= 15 ? 'badge-warning' : 'badge-success'}`}>
-                        {item.stock}
-                      </span>
+                      {(() => {
+                        const alertLimit = item.min_stock !== undefined && item.min_stock !== null ? Number(item.min_stock) : 5;
+                        const stockQty = Number(item.stock) || 0;
+                        const isOutOfStock = stockQty <= 0;
+                        const isLowStock = stockQty > 0 && stockQty <= alertLimit;
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                            <span
+                              className={`badge ${
+                                isOutOfStock
+                                  ? 'badge-danger'
+                                  : isLowStock
+                                  ? 'badge-warning'
+                                  : 'badge-success'
+                              }`}
+                              style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              {isLowStock && <AlertTriangle size={12} />}
+                              {stockQty}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: isLowStock ? '#d97706' : 'var(--text-muted)' }}>
+                              {language === 'bn' ? `এলার্ট: ≤${alertLimit}` : `Alert: ≤${alertLimit}`}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td>
                       {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
@@ -1092,6 +1213,23 @@ const Inventory = () => {
                       onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                     />
                   </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'স্টক এলার্ট লিমিট (Alert Minimum)' : 'Stock Alert Limit (Min)'} *
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full"
+                      required
+                      min="0"
+                      placeholder="e.g. 5"
+                      value={newProduct.min_stock ?? 5}
+                      onChange={(e) => setNewProduct({ ...newProduct, min_stock: e.target.value })}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {language === 'bn' ? 'স্টক এই পরিমাণের সমান বা নিচে নামলে এলার্ট দেখাবে।' : 'Alerts when stock is at or below this quantity.'}
+                    </span>
+                  </div>
                   {isAdmin && (
                     <div>
                       <label className="text-muted text-sm block mb-1">
@@ -1267,6 +1405,23 @@ const Inventory = () => {
                       value={editingItem.stock}
                       onChange={(e) => setEditingItem({ ...editingItem, stock: e.target.value })}
                     />
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'স্টক এলার্ট লিমিট (Alert Minimum)' : 'Stock Alert Limit (Min)'} *
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full"
+                      required
+                      min="0"
+                      placeholder="e.g. 5"
+                      value={editingItem.min_stock ?? 5}
+                      onChange={(e) => setEditingItem({ ...editingItem, min_stock: e.target.value })}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {language === 'bn' ? 'স্টক এই পরিমাণের সমান বা নিচে নামলে এলার্ট দেখাবে।' : 'Alerts when stock is at or below this quantity.'}
+                    </span>
                   </div>
                   {isAdmin && (
                     <div>

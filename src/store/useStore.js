@@ -128,6 +128,11 @@ const useStore = create(
       accountTransactions: [],
 
       cart: [],
+      offlineSalesQueue: [],
+      isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      isSyncing: false,
+      setIsOnline: (status) => set({ isOnline: Boolean(status) }),
+      clearOfflineQueue: () => set({ offlineSalesQueue: [] }),
 
       // ---------------------------------------------------------------- //
       // Session
@@ -557,17 +562,81 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       processSale: ({ id, invoiceId, date, cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount, notes, account, isSplit, cashPaid, mfsPaid, mfsProvider, mfsTrxId }) =>
         enqueue(async () => {
-          try {
-            const invoice = await SaleService.create({
-              id: id || invoiceId,
-              invoiceId: id || invoiceId,
-              date,
-              cartItems,
+          const salePayload = {
+            id: id || invoiceId,
+            invoiceId: id || invoiceId,
+            date,
+            cartItems,
+            paymentType,
+            customerInfo,
+            invoiceDiscount: invoiceDiscount || 0,
+            salesman: salesman || {},
+            paidAmount: (paymentType === 'Partial' || isSplit || paidAmount !== undefined) ? Number(paidAmount) || 0 : undefined,
+            notes,
+            account: isSplit ? 'Cash' : account,
+            isSplit,
+            cashPaid,
+            mfsPaid,
+            mfsProvider,
+            mfsTrxId,
+          };
+
+          const isOfflineNetwork = (err) => {
+            if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+            if (!err) return false;
+            const msg = String(err.message || '').toLowerCase();
+            const code = String(err.code || '').toLowerCase();
+            return (
+              code === 'err_network' ||
+              code === 'econnrefused' ||
+              msg.includes('network error') ||
+              msg.includes('failed to fetch') ||
+              msg.includes('load failed') ||
+              (!err.response && (err.isAxiosError || msg.includes('timeout')))
+            );
+          };
+
+          const createOfflineRecord = () => {
+            const offlineId = `OFF-${Date.now().toString().slice(-6)}`;
+            const items = (cartItems || []).map(item => ({
+              id: item.id,
+              product_code: item.id,
+              product: item.id,
+              name: item.name,
+              item_name: item.name,
+              quantity: Number(item.quantity) || 1,
+              unit_price: Number(item.price) || 0,
+              subtotal: (Number(item.quantity) || 1) * (Number(item.price) || 0),
+              unit: item.unit || 'Pcs',
+              variant: item.variant || '',
+            }));
+            const subtotal = items.reduce((sum, it) => sum + it.subtotal, 0);
+            const discount = Number(invoiceDiscount) || 0;
+            const finalTotal = Math.max(0, subtotal - discount);
+            const paid = (paymentType === 'Partial' || isSplit || paidAmount !== undefined) ? Number(paidAmount) || 0 : finalTotal;
+            const due = Math.max(0, finalTotal - paid);
+
+            const offlineInvoice = {
+              id: offlineId,
+              invoice_number: offlineId,
+              date: date || new Date().toISOString(),
+              customer_name: customerInfo?.name || 'Cash Customer',
+              customer_phone: customerInfo?.phone || '',
+              customer_location: customerInfo?.location || '',
+              payment_method: isSplit ? `Split (Cash + ${mfsProvider || 'MFS'})` : paymentType,
               paymentType,
-              customerInfo,
-              invoiceDiscount: invoiceDiscount || 0,
+              items,
+              cartItems,
+              subtotal,
+              discount,
+              total: finalTotal,
+              total_amount: finalTotal,
+              paid_amount: paid,
+              paidAmount: paid,
+              due_amount: due,
+              due,
               salesman: salesman || {},
-              paidAmount: (paymentType === 'Partial' || isSplit || paidAmount !== undefined) ? Number(paidAmount) || 0 : undefined,
+              salesman_name: salesman?.name || get().user?.name || 'Staff',
               notes,
               account: isSplit ? 'Cash' : account,
               isSplit,
@@ -575,7 +644,45 @@ const useStore = create(
               mfsPaid,
               mfsProvider,
               mfsTrxId,
+              is_offline: true,
+              isOffline: true,
+              created_at: new Date().toISOString(),
+            };
+
+            // Deduct stock locally
+            const currentInventory = get().inventory || [];
+            const updatedInventory = currentInventory.map(prod => {
+              const cartMatch = (cartItems || []).find(c => String(c.id) === String(prod.id));
+              if (cartMatch) {
+                return {
+                  ...prod,
+                  stock: Math.max(0, (Number(prod.stock) || 0) - (Number(cartMatch.quantity) || 1)),
+                };
+              }
+              return prod;
             });
+
+            const newQueue = [...(get().offlineSalesQueue || []), { payload: salePayload, offlineInvoice, timestamp: Date.now() }];
+            const currentSales = get().sales || [];
+
+            set({
+              cart: [],
+              inventory: updatedInventory,
+              sales: [offlineInvoice, ...currentSales],
+              offlineSalesQueue: newQueue,
+              isOnline: false,
+            });
+
+            return { ok: true, invoice: offlineInvoice, isOffline: true };
+          };
+
+          // If navigator explicitly reports offline, don't wait for server timeout
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            return createOfflineRecord();
+          }
+
+          try {
+            const invoice = await SaleService.create(salePayload);
 
             // If it's a split payment (Cash + MFS), sale was deposited to Cash by default;
             // transfer the MFS portion from Cash to Bank so both drawer and bank remain exact!
@@ -592,16 +699,75 @@ const useStore = create(
               }
             }
 
+            set({ isOnline: true });
             await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
-            // Hand the saved invoice back so the receipt can print the number
-            // the shop actually filed, not one made up on the client.
-            return { ok: true, invoice };
+            return { ok: true, invoice, isOffline: false };
           } catch (error) {
+            if (isOfflineNetwork(error)) {
+              return createOfflineRecord();
+            }
             // The cart is cleared by the page optimistically, so put it back
-            // rather than leaving the counter staff to key it in a second time.
             set({ cart: cartItems || [] });
             return fail(error, 'The sale could not be saved.');
           }
+        }),
+
+      syncOfflineSales: () =>
+        enqueue(async () => {
+          const queue = get().offlineSalesQueue || [];
+          if (!queue.length) return { synced: 0, failed: 0 };
+          if (get().isSyncing) return { synced: 0, failed: 0 };
+
+          set({ isSyncing: true });
+          let syncedCount = 0;
+          const failedItems = [];
+
+          for (const item of queue) {
+            try {
+              const invoice = await SaleService.create(item.payload);
+              if (item.payload?.isSplit && Number(item.payload?.mfsPaid) > 0) {
+                try {
+                  await TreasuryService.transfer({
+                    from_account: 'Cash',
+                    to_account: 'Bank',
+                    amount: Number(item.payload.mfsPaid),
+                    description: `Split payment (${item.payload.mfsProvider || 'MFS'}) for ${invoice?.invoice_number || invoice?.id || 'sale'}`,
+                  });
+                } catch (tErr) {
+                  console.warn('Split payment internal treasury transfer:', tErr);
+                }
+              }
+              syncedCount++;
+            } catch (err) {
+              console.error('Failed to sync offline sale:', err);
+              failedItems.push(item);
+            }
+          }
+
+          set({
+            offlineSalesQueue: failedItems,
+            isSyncing: false,
+            isOnline: failedItems.length === 0,
+          });
+
+          if (syncedCount > 0) {
+            await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
+            toast.success(
+              get().language === 'bn'
+                ? `${syncedCount}টি অফলাইন সেল সফলভাবে সার্ভারে সিঙ্ক হয়েছে!`
+                : `${syncedCount} offline sale(s) synced to server!`
+            );
+          }
+
+          if (failedItems.length > 0) {
+            toast.warn(
+              get().language === 'bn'
+                ? `${failedItems.length}টি অফলাইন সেল সিঙ্ক হতে পারেনি, পরে আবার চেষ্টা করা হবে।`
+                : `${failedItems.length} offline sale(s) could not be synced yet.`
+            );
+          }
+
+          return { synced: syncedCount, failed: failedItems.length };
         }),
 
       /**
@@ -1365,6 +1531,7 @@ const useStore = create(
         bankBalance: state.bankBalance,
         accountTransactions: state.accountTransactions,
         dashboardSummary: state.dashboardSummary,
+        offlineSalesQueue: state.offlineSalesQueue,
       }),
     }
   )

@@ -5,7 +5,8 @@ import useStore from '../store/useStore';
 import {
   Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
   FilePlus, Edit, Wallet, ShoppingCart, User, UserCheck, Phone,
-  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone, Download
+  MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone, Download,
+  RefreshCw, Wifi, WifiOff
 } from 'lucide-react';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
@@ -31,8 +32,12 @@ const MFS_OPTIONS = [
 
 const POS = () => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart, loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft, drafts, sales, customers, language, shopProfile } = useStore();
+  const {
+    cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart,
+    loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft,
+    drafts, sales, customers, language, shopProfile,
+    offlineSalesQueue, isOnline, isSyncing, syncOfflineSales
+  } = useStore();
   // Editing or deleting a sale reverses stock and balances, which the server
   // only lets an Admin do. Hiding the controls keeps a salesman from
   // confirming a destructive dialog and then meeting a 403.
@@ -561,6 +566,7 @@ const POS = () => {
         changeGiven: rec > total ? rec - total : 0,
         splitDetails: splitDetailsText,
         notes: computedNotes,
+        isOffline: Boolean(res.isOffline),
       };
 
       setCompletedSale(completedObj);
@@ -576,7 +582,12 @@ const POS = () => {
       setMfsTrxId('');
       setEditingSaleId(null);
       setEditingSale(null);
-      toast.success(editingSale ? (language === 'bn' ? 'চালান সফলভাবে আপডেট করা হয়েছে!' : 'Invoice updated successfully!') : (language === 'bn' ? 'বিক্রয় সম্পন্ন হয়েছে!' : 'Sale processed successfully!'));
+      
+      if (res.isOffline) {
+        toast.info(language === 'bn' ? 'অফলাইনে সেল সম্পন্ন হয়েছে! ইন্টারনেট সংযোগ পেলে এটি অটো-সিঙ্ক হবে।' : 'Sale completed in offline mode! It will auto-sync when online.');
+      } else {
+        toast.success(editingSale ? (language === 'bn' ? 'চালান সফলভাবে আপডেট করা হয়েছে!' : 'Invoice updated successfully!') : (language === 'bn' ? 'বিক্রয় সম্পন্ন হয়েছে!' : 'Sale processed successfully!'));
+      }
 
       // Automatically trigger thermal printer
       setTimeout(() => {
@@ -866,21 +877,91 @@ const POS = () => {
             {/* ---------------------------------------------------------------- */}
             <section className="pos-left">
               <div className="pos-left-head">
-                <div className="pos-title-row">
+                <div className="pos-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                   <h2>{editingSaleId ? t(language, 'Edit Sale') : t(language, 'Point of Sale')}</h2>
-                  {/* Opens the drawer without a sale, for making change from an
-                  earlier customer or putting the float in. Needs the printer's
-                  "open cash drawer" setting switched on -- see utils/cashDrawer.js. */}
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={() => openCashDrawer({ operator: user?.name })}
-                    title={language === 'bn'
-                      ? 'বিক্রি ছাড়াই ড্রয়ার খুলুন (একটি No Sale স্লিপ ছাপবে)'
-                      : 'Open the drawer without a sale (prints a No Sale slip)'}
-                  >
-                    <Wallet size={15} /> {t(language, 'Open Drawer')}
-                  </button>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* Online / Offline status badge */}
+                    {isOnline ? (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: '#ecfdf5',
+                          color: '#059669',
+                          border: '1px solid #a7f3d0'
+                        }}
+                      >
+                        <Wifi size={13} />
+                        {language === 'bn' ? 'অনলাইন' : 'Online'}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1px solid #fecaca'
+                        }}
+                      >
+                        <WifiOff size={13} />
+                        {language === 'bn' ? 'অফলাইন মোড' : 'Offline Mode'}
+                      </span>
+                    )}
+
+                    {/* Pending offline sales sync button */}
+                    {(offlineSalesQueue || []).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => syncOfflineSales()}
+                        disabled={isSyncing}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          background: '#fffbeb',
+                          color: '#b45309',
+                          border: '1px solid #fde68a',
+                          cursor: isSyncing ? 'not-allowed' : 'pointer'
+                        }}
+                        title={language === 'bn' ? 'ক্লিক করে অফলাইন সেলগুলো সার্ভারে সিঙ্ক করুন' : 'Click to sync offline sales to server'}
+                      >
+                        <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />
+                        <span>
+                          {isSyncing
+                            ? (language === 'bn' ? 'সিঙ্ক হচ্ছে...' : 'Syncing...')
+                            : `${offlineSalesQueue.length} ${language === 'bn' ? 'পেন্ডিং সিঙ্ক' : 'Pending Sync'}`}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* Opens the drawer without a sale */}
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={() => openCashDrawer({ operator: user?.name })}
+                      title={language === 'bn'
+                        ? 'বিক্রি ছাড়াই ড্রয়ার খুলুন (একটি No Sale স্লিপ ছাপবে)'
+                        : 'Open the drawer without a sale (prints a No Sale slip)'}
+                    >
+                      <Wallet size={15} /> {t(language, 'Open Drawer')}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="barcode-wrap">
@@ -1950,6 +2031,23 @@ const POS = () => {
                       <X size={20} />
                     </button>
                   </div>
+
+                  {completedSale.isOffline && (
+                    <div style={{
+                      padding: '8px 16px',
+                      background: '#fffbeb',
+                      borderBottom: '1px solid #fde68a',
+                      color: '#b45309',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <WifiOff size={14} />
+                      <span>{language === 'bn' ? 'এই সেলটি অফলাইনে সম্পন্ন হয়েছে। ইন্টারনেট সংযোগ পেলে এটি অটো-সিঙ্ক হবে।' : 'This sale was recorded offline. It will auto-sync when online.'}</span>
+                    </div>
+                  )}
 
                   <div className="drawer-body" style={{ padding: '16px 12px', background: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
                     <div style={{ background: '#fff', borderRadius: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', width: '100%', maxWidth: '320px' }}>

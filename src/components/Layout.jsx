@@ -73,12 +73,30 @@ const Layout = () => {
   const location = useLocation();
   const isDashboard = location.pathname === '/';
 
+  const offlineQueueCount = (useStore(state => state.offlineSalesQueue) || []).length;
+  const isSyncing = useStore(state => state.isSyncing);
+  const syncOfflineSales = useStore(state => state.syncOfflineSales);
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => {
+      setIsOnline(true);
+      useStore.getState().setIsOnline(true);
+      if ((useStore.getState().offlineSalesQueue || []).length > 0) {
+        useStore.getState().syncOfflineSales();
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      useStore.getState().setIsOnline(false);
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // If online on initial load and offline items exist, trigger auto-sync
+    if (navigator.onLine && (useStore.getState().offlineSalesQueue || []).length > 0) {
+      useStore.getState().syncOfflineSales();
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -232,6 +250,35 @@ const Layout = () => {
               {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
               <span className="hide-on-mobile">{isOnline ? 'Synced' : 'Offline'}</span>
             </div>
+
+            {offlineQueueCount > 0 && (
+              <button
+                type="button"
+                onClick={() => syncOfflineSales()}
+                disabled={isSyncing}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 10px',
+                  borderRadius: '16px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  background: '#fffbeb',
+                  color: '#b45309',
+                  border: '1px solid #fde68a',
+                  cursor: isSyncing ? 'not-allowed' : 'pointer'
+                }}
+                title={language === 'bn' ? 'ক্লিক করে অফলাইন সেল সার্ভারে সিঙ্ক করুন' : 'Click to sync offline sales to server'}
+              >
+                <RefreshCcw size={12} className={isSyncing ? 'animate-spin' : ''} />
+                <span>
+                  {isSyncing
+                    ? (language === 'bn' ? 'সিঙ্ক হচ্ছে...' : 'Syncing...')
+                    : `${offlineQueueCount} ${language === 'bn' ? 'পেন্ডিং সেল' : 'Pending Sales'}`}
+                </span>
+              </button>
+            )}
 
             <button
               className="btn-icon"
