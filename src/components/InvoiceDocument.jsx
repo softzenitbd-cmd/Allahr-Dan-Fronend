@@ -200,7 +200,7 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
 
   const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allah Dan Gents Point');
+    : (shopProfile?.shop_name || 'Allahr dan gents point');
 
   const settled = sale.due <= 0;
   const totalUnits = sale.items.reduce((n, i) => n + i.quantity, 0);

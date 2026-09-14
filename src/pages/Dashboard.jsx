@@ -178,7 +178,7 @@ const Dashboard = () => {
           <p className="text-muted">
             {language === 'bn'
               ? 'আল্লাহর দান জেন্টস পয়েন্টে স্বাগতম। আজকের কাজের সারাংশ এখানে।'
-              : "Welcome back to Allah Dan Gents Point. Here is what's happening today."}
+              : "Welcome back to Allahr dan gents point. Here is what's happening today."}
           </p>
         </div>
 

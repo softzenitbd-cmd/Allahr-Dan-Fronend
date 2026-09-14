@@ -325,7 +325,7 @@ const Ledger = () => {
     };
   }, [data, kind, bn, isSalesmanAdmin]);
 
-  const shopName = shopProfile?.shop_name || 'Allah Dan Gents Point';
+  const shopName = shopProfile?.shop_name || 'Allahr dan gents point';
   const hasWindow = Boolean(startDate || endDate);
   const windowLabel = hasWindow ? `${startDate || '…'} → ${endDate || '…'}` : (bn ? 'সব সময়' : 'all time');
   const kindMeta = KINDS.find((k) => k.key === kind);

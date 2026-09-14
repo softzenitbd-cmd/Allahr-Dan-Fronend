@@ -95,7 +95,7 @@ const BalanceSheet = () => {
 
   const shopName = (bn && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allah Dan Gents Point');
+    : (shopProfile?.shop_name || 'Allahr dan gents point');
 
   if (!data) {
     return (

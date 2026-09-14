@@ -30,7 +30,7 @@ const PaymentVoucher = ({ sale, shopProfile, domId = 'printable-voucher', langua
 
   const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allah Dan Gents Point');
+    : (shopProfile?.shop_name || 'Allahr dan gents point');
 
   // What the customer actually handed over, which is what a voucher attests.
   const received = Number(sale.totalReceived) || 0;

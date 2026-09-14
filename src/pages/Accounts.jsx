@@ -34,7 +34,7 @@ const Accounts = () => {
     e.preventDefault();
     const amount = parseFloat(transferForm.amount);
     if (!amount || amount <= 0) return toast.error('Invalid amount');
-    
+
     if (transferForm.from === 'Cash' && amount > cashBalance) return toast.error('Insufficient Cash Balance');
     if (transferForm.from === 'Bank' && amount > bankBalance) return toast.error('Insufficient Bank Balance');
 
@@ -195,7 +195,7 @@ const Accounts = () => {
               `}
             </style>
             <div className="print-only-header" style={{ display: 'none' }}>
-              <h2 style={{ textAlign: 'center', marginBottom: '1rem' }}>Allah Dan Gents Point - Transaction History</h2>
+              <h2 style={{ textAlign: 'center', marginBottom: '1rem' }}>Allahr dan gents point - Transaction History</h2>
             </div>
             <table className="data-table">
               <thead>

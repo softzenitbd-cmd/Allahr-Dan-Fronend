@@ -8,16 +8,16 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
 
 const Suppliers = () => {
-  const { 
-    suppliers, 
-    deletedSuppliers, 
-    addSupplier, 
-    updateSupplier, 
-    deleteSupplier, 
-    restoreSupplier, 
-    permanentDeleteSupplier, 
-    purchases, 
-    settlements, 
+  const {
+    suppliers,
+    deletedSuppliers,
+    addSupplier,
+    updateSupplier,
+    deleteSupplier,
+    restoreSupplier,
+    permanentDeleteSupplier,
+    purchases,
+    settlements,
     language,
     refresh,
     ensureLoaded,
@@ -43,7 +43,7 @@ const Suppliers = () => {
 
   const getSupplierTransactions = (supplierId) => {
     if (!supplierId) return [];
-    
+
     const supplierPurchases = (purchases || []).filter(p => p.supplierId === supplierId || p.supplierId === selectedPerson?.supplier_code || String(p.supplierId) === String(supplierId)).map(p => ({
       id: p.id,
       date: p.date,
@@ -82,7 +82,7 @@ const Suppliers = () => {
   const selectedPersonTransactions = selectedPerson ? getSupplierTransactions(selectedPerson.id) : [];
   const totalPurchased = selectedPersonTransactions.filter(t => t.type === 'Purchase').reduce((sum, t) => sum + t.amount, 0);
   const totalPaid = selectedPersonTransactions.filter(t => t.type === 'Payment').reduce((sum, t) => sum + t.amount, 0);
-  
+
   // Add/Edit Supplier Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPerson, setEditingPerson] = useState(null);
@@ -182,8 +182,8 @@ const Suppliers = () => {
   const handleDelete = async (id) => {
     const isConfirmed = await showConfirmDialog({
       title: language === 'bn' ? 'সাপ্লায়ার মুছে ফেলবেন?' : 'Delete Supplier?',
-      text: language === 'bn' 
-        ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
+      text: language === 'bn'
+        ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।'
         : 'Are you sure you want to delete this supplier? Full purchase and transaction history will be safely preserved in the Deleted History tab.',
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
@@ -200,8 +200,8 @@ const Suppliers = () => {
   const handleRestore = async (id) => {
     const isConfirmed = await showConfirmDialog({
       title: language === 'bn' ? 'সাপ্লায়ার রিস্টোর করবেন?' : 'Restore Supplier?',
-      text: language === 'bn' 
-        ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
+      text: language === 'bn'
+        ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?'
         : 'Do you want to restore this supplier back to active status?',
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, রিস্টোর' : 'Yes, restore',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
@@ -218,8 +218,8 @@ const Suppliers = () => {
   const handlePermanentDelete = async (id, name) => {
     const isConfirmed = await showConfirmDialog({
       title: language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলবেন?' : 'Permanently Delete?',
-      text: language === 'bn' 
-        ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
+      text: language === 'bn'
+        ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!`
         : `Are you sure you want to permanently delete supplier '${name}' from the database? This action CANNOT be undone!`,
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, স্থায়ীভাবে মুছুন' : 'Yes, Delete Permanently',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
@@ -245,13 +245,13 @@ const Suppliers = () => {
       <div className="card">
         <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div className="segmented-control" style={{ maxWidth: '420px' }}>
-            <button 
+            <button
               className={activeTab === 'Active' ? 'active' : ''}
               onClick={() => setActiveTab('Active')}
             >
               {language === 'bn' ? 'সক্রিয় সাপ্লায়ার' : 'Active Suppliers'} ({suppliers?.length || 0})
             </button>
-            <button 
+            <button
               className={activeTab === 'Deleted' ? 'active' : ''}
               onClick={() => setActiveTab('Deleted')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
@@ -263,9 +263,9 @@ const Suppliers = () => {
 
           <div className="search-bar">
             <Search size={18} className="text-muted" />
-            <input 
-              type="text" 
-              placeholder={language === 'bn' ? 'নাম বা ফোন দিয়ে খুঁজুন...' : 'Search suppliers by name or phone...'} 
+            <input
+              type="text"
+              placeholder={language === 'bn' ? 'নাম বা ফোন দিয়ে খুঁজুন...' : 'Search suppliers by name or phone...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -337,11 +337,11 @@ const Suppliers = () => {
                         </td>
                       )}
                       <td>
-                        <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
-                          <button 
-                            className="btn-outline flex-align-gap" 
+                        <div className="action-buttons flex-align-gap" style={{ flexWrap: 'nowrap' }}>
+                          <button
+                            className="btn-outline flex-align-gap"
                             style={{ padding: '0.2rem 0.55rem', fontSize: '0.8rem', color: 'var(--primary)', borderColor: 'rgba(59,130,246,0.35)', fontWeight: 600 }}
-                            title={language === 'bn' ? 'সাপ্লায়ারের হিস্ট্রি ও লেজার দেখুন (Details)' : 'View Details & Ledger'} 
+                            title={language === 'bn' ? 'সাপ্লায়ারের হিস্ট্রি ও লেজার দেখুন (Details)' : 'View Details & Ledger'}
                             onClick={() => setSelectedPerson(person)}
                           >
                             <Eye size={14} /> Details
@@ -367,17 +367,17 @@ const Suppliers = () => {
                           )}
                           {activeTab === 'Deleted' && (
                             <>
-                              <button 
-                                className="btn-outline flex-align-gap" 
-                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }} 
-                                title={language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier'} 
+                              <button
+                                className="btn-outline flex-align-gap"
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }}
+                                title={language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier'}
                                 onClick={() => handleRestore(person.id)}
                               >
                                 <RotateCcw size={14} /> {language === 'bn' ? 'রিস্টোর' : 'Restore'}
                               </button>
-                              <button 
-                                className="btn-icon text-danger" 
-                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'} 
+                              <button
+                                className="btn-icon text-danger"
+                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'}
                                 onClick={() => handlePermanentDelete(person.id, person.name)}
                               >
                                 <Trash2 size={16} />
@@ -410,12 +410,12 @@ const Suppliers = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Supplier Name *</label>
-                    <input 
-                      type="text" 
-                      value={newSupplier.name} 
-                      onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} 
-                      required 
-                      placeholder="e.g. Rahim Text" 
+                    <input
+                      type="text"
+                      value={newSupplier.name}
+                      onChange={e => setNewSupplier({ ...newSupplier, name: e.target.value })}
+                      required
+                      placeholder="e.g. Rahim Text"
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -423,60 +423,60 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
                     </label>
-                    <input 
-                      type="text" 
-                      value={newSupplier.company} 
-                      onChange={e => setNewSupplier({...newSupplier, company: e.target.value})} 
-                      placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স, রহিম টেক্স' : 'e.g. Bata, Apex, Rahim Group'} 
+                    <input
+                      type="text"
+                      value={newSupplier.company}
+                      onChange={e => setNewSupplier({ ...newSupplier, company: e.target.value })}
+                      placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স, রহিম টেক্স' : 'e.g. Bata, Apex, Rahim Group'}
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Phone Number</label>
-                    <input 
-                      type="text" 
-                      value={newSupplier.phone} 
-                      onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} 
-                      placeholder="e.g. 01712345678" 
+                    <input
+                      type="text"
+                      value={newSupplier.phone}
+                      onChange={e => setNewSupplier({ ...newSupplier, phone: e.target.value })}
+                      placeholder="e.g. 01712345678"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Email Address</label>
-                    <input 
-                      type="email" 
-                      value={newSupplier.email} 
-                      onChange={e => setNewSupplier({...newSupplier, email: e.target.value})} 
-                      placeholder="e.g. rahim@example.com" 
+                    <input
+                      type="email"
+                      value={newSupplier.email}
+                      onChange={e => setNewSupplier({ ...newSupplier, email: e.target.value })}
+                      placeholder="e.g. rahim@example.com"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Location / Address</label>
-                    <input 
-                      type="text" 
-                      value={newSupplier.location} 
-                      onChange={e => setNewSupplier({...newSupplier, location: e.target.value})} 
-                      placeholder="e.g. Dhaka" 
+                    <input
+                      type="text"
+                      value={newSupplier.location}
+                      onChange={e => setNewSupplier({ ...newSupplier, location: e.target.value })}
+                      placeholder="e.g. Dhaka"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Opening Balance (Due)</label>
-                    <input 
-                      type="number" 
-                      value={newSupplier.due} 
-                      onChange={e => setNewSupplier({...newSupplier, due: e.target.value})} 
-                      placeholder="e.g. 5000" 
+                    <input
+                      type="number"
+                      value={newSupplier.due}
+                      onChange={e => setNewSupplier({ ...newSupplier, due: e.target.value })}
+                      placeholder="e.g. 5000"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Notes / Remarks</label>
-                    <textarea 
-                      value={newSupplier.notes} 
-                      onChange={e => setNewSupplier({...newSupplier, notes: e.target.value})} 
-                      placeholder="Any additional information..." 
+                    <textarea
+                      value={newSupplier.notes}
+                      onChange={e => setNewSupplier({ ...newSupplier, notes: e.target.value })}
+                      placeholder="Any additional information..."
                       style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
                       rows={2}
                     />
@@ -510,11 +510,11 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'সাপ্লায়ারের নাম' : 'Supplier Name'} *
                     </label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.name} 
-                      onChange={e => setEditingPerson({...editingPerson, name: e.target.value})} 
-                      required 
+                    <input
+                      type="text"
+                      value={editingPerson.name}
+                      onChange={e => setEditingPerson({ ...editingPerson, name: e.target.value })}
+                      required
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -522,10 +522,10 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
                     </label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.company || ''} 
-                      onChange={e => setEditingPerson({...editingPerson, company: e.target.value})} 
+                    <input
+                      type="text"
+                      value={editingPerson.company || ''}
+                      onChange={e => setEditingPerson({ ...editingPerson, company: e.target.value })}
                       placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স, রহিম টেক্স' : 'e.g. Bata, Apex, Rahim Group'}
                       style={{ width: '100%' }}
                     />
@@ -534,10 +534,10 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'ফোন নম্বর' : 'Phone Number'}
                     </label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.phone || ''} 
-                      onChange={e => setEditingPerson({...editingPerson, phone: e.target.value})} 
+                    <input
+                      type="text"
+                      value={editingPerson.phone || ''}
+                      onChange={e => setEditingPerson({ ...editingPerson, phone: e.target.value })}
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -545,10 +545,10 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'ঠিকানা / লোকেশন' : 'Location / Address'}
                     </label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.location || ''} 
-                      onChange={e => setEditingPerson({...editingPerson, location: e.target.value})} 
+                    <input
+                      type="text"
+                      value={editingPerson.location || ''}
+                      onChange={e => setEditingPerson({ ...editingPerson, location: e.target.value })}
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -556,10 +556,10 @@ const Suppliers = () => {
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                       {language === 'bn' ? 'বর্তমান বাকি' : 'Total Due'} (BDT)
                     </label>
-                    <input 
-                      type="number" 
-                      value={editingPerson.due} 
-                      onChange={e => setEditingPerson({...editingPerson, due: e.target.value})} 
+                    <input
+                      type="number"
+                      value={editingPerson.due}
+                      onChange={e => setEditingPerson({ ...editingPerson, due: e.target.value })}
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -585,116 +585,116 @@ const Suppliers = () => {
                 <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
               </button>
             </div>
-            
+
             <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
               <div id="printable-single-person" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   {(selectedPerson.is_deleted || activeTab === 'Deleted') ? 'Deleted Supplier Due & Transaction Statement' : 'Supplier Statement'}<br/>
-                   Date: {new Date().toLocaleDateString()}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <p style={{ margin: 0 }}><strong>Name:</strong> {selectedPerson.name}</p>
-                     {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
-                       <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 'bold' }}>
-                         {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি (আর্কাইভ)' : 'Deleted Supplier Record'}
-                       </span>
-                     )}
-                   </div>
-                   <p style={{ margin: 0 }}><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
-                   {selectedPerson.company && (
-                     <p style={{ margin: 0 }}>
-                       <strong>{language === 'bn' ? 'ব্র্যান্ড / কোম্পানি:' : 'Company / Brand:'}</strong> {selectedPerson.company}
-                     </p>
-                   )}
-                   {selectedPerson.deleted_at && (
-                     <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
-                       <strong>{language === 'bn' ? 'মুছে ফেলার তারিখ:' : 'Deleted At:'}</strong> {new Date(selectedPerson.deleted_at).toLocaleString()}
-                     </p>
-                   )}
-                   <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                   
-                   <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-subtle)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid var(--border-color)', marginTop: '1rem' }}>
-                     <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Purchase (মাল কেনা)</p>
-                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>৳{totalPurchased.toLocaleString()}</p>
-                     </div>
-                     <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Paid (জমা)</p>
-                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)' }}>৳{totalPaid.toLocaleString()}</p>
-                     </div>
-                     <div style={{ textAlign: 'center' }}>
-                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Current Due (বাকি)</p>
-                       <p style={{ fontSize: '1.05rem', fontWeight: 700, color: selectedPerson.due > 0 ? 'var(--danger)' : 'var(--success)' }}>৳{selectedPerson.due.toLocaleString()}</p>
-                     </div>
-                   </div>
-                   
-                   {selectedPersonTransactions.length > 0 && (
-                     <div style={{ marginTop: '1.5rem' }}>
-                       <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.75rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>Transaction History (লেনদেন)</h4>
-                       <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
-                         <thead>
-                           <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-color)' }}>
-                             <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
-                             <th style={{ padding: '0.5rem', textAlign: 'left' }}>Details</th>
-                             <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {selectedPersonTransactions.map(t => (
-                             <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                               <td style={{ padding: '0.5rem' }}>{new Date(t.date).toLocaleDateString()}</td>
-                               <td style={{ padding: '0.5rem' }}>{t.description}</td>
-                               <td style={{ padding: '0.5rem', textAlign: 'right', color: t.isCredit ? 'red' : 'green' }}>
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
-                                    <span>{t.isCredit ? '+' : '-'}৳{t.amount.toLocaleString()}</span>
-                                    {!t.isCredit && (
-                                      <button
-                                        type="button"
-                                        className="btn-icon"
-                                        title={language === 'bn' ? 'ভাউচার প্রিন্ট করুন' : 'Print Payment Voucher'}
-                                        style={{ width: '22px', height: '22px', padding: 0, color: 'var(--primary)' }}
-                                        onClick={() => setReceiptModal({
-                                          show: true,
-                                          settlement: {
-                                            id: t.id,
-                                            amount: t.amount,
-                                            date: t.date,
-                                            type: 'Supplier',
-                                            targetId: selectedPerson.id,
-                                            partyName: selectedPerson.name,
-                                          },
-                                          party: selectedPerson,
-                                        })}
-                                      >
-                                        <Printer size={13} />
-                                      </button>
-                                    )}
-                                  </div>
-                               </td>
-                             </tr>
-                           ))}
-                         </tbody>
-                       </table>
-                     </div>
-                   )}
-                 </div>
+                <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+                <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
+                  {(selectedPerson.is_deleted || activeTab === 'Deleted') ? 'Deleted Supplier Due & Transaction Statement' : 'Supplier Statement'}<br />
+                  Date: {new Date().toLocaleDateString()}
+                </p>
+                <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+
+                <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ margin: 0 }}><strong>Name:</strong> {selectedPerson.name}</p>
+                    {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
+                      <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 'bold' }}>
+                        {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি (আর্কাইভ)' : 'Deleted Supplier Record'}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: 0 }}><strong>Phone:</strong> {selectedPerson.phone || 'N/A'}</p>
+                  {selectedPerson.company && (
+                    <p style={{ margin: 0 }}>
+                      <strong>{language === 'bn' ? 'ব্র্যান্ড / কোম্পানি:' : 'Company / Brand:'}</strong> {selectedPerson.company}
+                    </p>
+                  )}
+                  {selectedPerson.deleted_at && (
+                    <p style={{ fontSize: '0.85rem', color: '#666', margin: 0 }}>
+                      <strong>{language === 'bn' ? 'মুছে ফেলার তারিখ:' : 'Deleted At:'}</strong> {new Date(selectedPerson.deleted_at).toLocaleString()}
+                    </p>
+                  )}
+                  <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-subtle)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid var(--border-color)', marginTop: '1rem' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Purchase (মাল কেনা)</p>
+                      <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>৳{totalPurchased.toLocaleString()}</p>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total Paid (জমা)</p>
+                      <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)' }}>৳{totalPaid.toLocaleString()}</p>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Current Due (বাকি)</p>
+                      <p style={{ fontSize: '1.05rem', fontWeight: 700, color: selectedPerson.due > 0 ? 'var(--danger)' : 'var(--success)' }}>৳{selectedPerson.due.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  {selectedPersonTransactions.length > 0 && (
+                    <div style={{ marginTop: '1.5rem' }}>
+                      <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '0.75rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>Transaction History (লেনদেন)</h4>
+                      <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-color)' }}>
+                            <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'left' }}>Details</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedPersonTransactions.map(t => (
+                            <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '0.5rem' }}>{new Date(t.date).toLocaleDateString()}</td>
+                              <td style={{ padding: '0.5rem' }}>{t.description}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'right', color: t.isCredit ? 'red' : 'green' }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
+                                  <span>{t.isCredit ? '+' : '-'}৳{t.amount.toLocaleString()}</span>
+                                  {!t.isCredit && (
+                                    <button
+                                      type="button"
+                                      className="btn-icon"
+                                      title={language === 'bn' ? 'ভাউচার প্রিন্ট করুন' : 'Print Payment Voucher'}
+                                      style={{ width: '22px', height: '22px', padding: 0, color: 'var(--primary)' }}
+                                      onClick={() => setReceiptModal({
+                                        show: true,
+                                        settlement: {
+                                          id: t.id,
+                                          amount: t.amount,
+                                          date: t.date,
+                                          type: 'Supplier',
+                                          targetId: selectedPerson.id,
+                                          partyName: selectedPerson.name,
+                                        },
+                                        party: selectedPerson,
+                                      })}
+                                    >
+                                      <Printer size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-single-person', 'Suppliers');
+                printElement('printable-single-person', 'Suppliers');
               }}>
                 <Printer size={20} /> Print Document
               </button>
               {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
                 <>
-                  <button 
-                    className="btn-outline flex-align-gap" 
+                  <button
+                    className="btn-outline flex-align-gap"
                     style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#059669', borderColor: '#059669' }}
                     onClick={async () => {
                       await handleRestore(selectedPerson.id);
@@ -703,8 +703,8 @@ const Suppliers = () => {
                   >
                     <RotateCcw size={18} /> {language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier'}
                   </button>
-                  <button 
-                    className="btn-outline flex-align-gap" 
+                  <button
+                    className="btn-outline flex-align-gap"
                     style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#dc2626', borderColor: '#dc2626' }}
                     onClick={async () => {
                       await handlePermanentDelete(selectedPerson.id, selectedPerson.name);
@@ -739,12 +739,12 @@ const Suppliers = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'পরিশোধের পরিমাণ' : 'Amount to Pay'} (BDT)</label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
-                      value={settleModal.amount} 
-                      onChange={e => setSettleModal({...settleModal, amount: e.target.value})} 
-                      required 
+                    <input
+                      type="number"
+                      className="w-full"
+                      value={settleModal.amount}
+                      onChange={e => setSettleModal({ ...settleModal, amount: e.target.value })}
+                      required
                       min="1"
                       max={settleModal.target?.due}
                       step="any"
@@ -754,12 +754,12 @@ const Suppliers = () => {
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'তারিখ' : 'Date'}</label>
-                    <input 
-                      type="date" 
-                      className="w-full" 
-                      value={settleModal.date} 
-                      onChange={e => setSettleModal({...settleModal, date: e.target.value})} 
-                      required 
+                    <input
+                      type="date"
+                      className="w-full"
+                      value={settleModal.date}
+                      onChange={e => setSettleModal({ ...settleModal, date: e.target.value })}
+                      required
                     />
                   </div>
                   <div>
@@ -767,7 +767,7 @@ const Suppliers = () => {
                     <select
                       className="w-full"
                       value={settleModal.method || 'Cash'}
-                      onChange={e => setSettleModal({...settleModal, method: e.target.value})}
+                      onChange={e => setSettleModal({ ...settleModal, method: e.target.value })}
                     >
                       <option value="Cash">{language === 'bn' ? 'ক্যাশ (নগদ)' : 'Cash'}</option>
                       <option value="Bank">{language === 'bn' ? 'ব্যাংক ট্রান্সফার' : 'Bank Transfer'}</option>
@@ -782,7 +782,7 @@ const Suppliers = () => {
                       className="w-full"
                       placeholder={language === 'bn' ? 'যেমন: চেক নং বা লেনদেন রেফারেন্স' : 'e.g. Check / Txn reference'}
                       value={settleModal.notes || ''}
-                      onChange={e => setSettleModal({...settleModal, notes: e.target.value})}
+                      onChange={e => setSettleModal({ ...settleModal, notes: e.target.value })}
                     />
                   </div>
                 </div>

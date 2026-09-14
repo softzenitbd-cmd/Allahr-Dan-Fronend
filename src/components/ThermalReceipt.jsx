@@ -17,7 +17,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
 
   const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allah Dan Gents Point');
+    : (shopProfile?.shop_name || 'Allahr dan gents point');
 
   const received = Number(sale.totalReceived ?? sale.paid_amount ?? sale.paidAtSale) || 0;
   const due = Number(sale.due ?? sale.due_amount ?? sale.dueRemaining) || 0;
@@ -53,7 +53,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
     >
       {/* Safe margin container */}
       <div style={{ width: '100%', boxSizing: 'border-box', padding: '0', color: '#000000' }}>
-        
+
         {/* ---- Header & Logo ---- */}
         <div style={{ textAlign: 'center', marginBottom: '6px' }}>
           <img
@@ -254,9 +254,9 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'পেমেন্ট মেথড:' : 'Payment Method:'}</span>
             <span style={{ fontWeight: 800, color: '#000000' }}>
               {sale.paymentType === 'Cash' ? (language === 'bn' ? 'নগদ (Cash)' : 'Cash') :
-               sale.paymentType === 'Baki' ? (language === 'bn' ? 'বাকি (Credit)' : 'Credit/Baki') :
-               sale.paymentType === 'Partial' ? (language === 'bn' ? 'আংশিক (Partial)' : 'Partial') :
-               sale.paymentType}
+                sale.paymentType === 'Baki' ? (language === 'bn' ? 'বাকি (Credit)' : 'Credit/Baki') :
+                  sale.paymentType === 'Partial' ? (language === 'bn' ? 'আংশিক (Partial)' : 'Partial') :
+                    sale.paymentType}
             </span>
           </div>
           {(sale.splitDetails || (sale.notes && sale.notes.includes('Split:'))) && (

@@ -38,7 +38,7 @@ const Expenses = () => {
       return;
     }
     const finalDescription = (newExpense.description || '').trim() || newExpense.category || 'Shop Expense';
-    
+
     const res = await addExpense({
       ...newExpense,
       amount: parsedAmount,
@@ -120,13 +120,13 @@ const Expenses = () => {
       <div className="grid responsive-grid-3" style={{ marginBottom: '1.5rem' }}>
         <div className="card flex-align-gap" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
           <div className="flex-align-gap w-full" style={{ justifyContent: 'space-between', width: '100%' }}>
-             <h3 className="text-muted text-sm">{t(language, 'Today\'s Expense' || 'Today\'s Expense')}</h3>
-             <DollarSign className="text-danger" size={20} />
+            <h3 className="text-muted text-sm">{t(language, 'Today\'s Expense' || 'Today\'s Expense')}</h3>
+            <DollarSign className="text-danger" size={20} />
           </div>
           <p className="text-xl font-bold mt-2 text-danger" style={{ fontSize: '1.5rem', marginTop: '0.5rem' }}>৳{totalDailyExpense.toLocaleString()}</p>
         </div>
       </div>
-      
+
       <div className="grid">
         <div className="card">
           <div className="card-toolbar" style={{ marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -187,38 +187,38 @@ const Expenses = () => {
       {/* Hidden Printable Expenses List (Excel Style) */}
       <div id="printable-expenses-list" style={{ display: 'none' }}>
         <div style={{ padding: '1.5rem', background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
-          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <p style={{ textAlign: 'center', fontSize: '1rem', marginBottom: '1.5rem', color: '#333' }}>
             Expense List
           </p>
-          
+
           <table style={{ width: '100%', fontSize: '0.85rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>Date</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>Category</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>Description</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Amount (BDT)</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Date</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Category</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Description</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Amount (BDT)</th>
               </tr>
             </thead>
             <tbody>
               {expenses.length > 0 ? expenses.map((exp) => (
                 <tr key={exp.id}>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{exp.date}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{exp.category}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{exp.description}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>৳{exp.amount.toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.date}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.category}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.description}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>৳{exp.amount.toLocaleString()}</td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="4" style={{border: '1px solid #ccc', padding: '1rem', textAlign: 'center'}}>No expenses recorded.</td>
+                  <td colSpan="4" style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center' }}>No expenses recorded.</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ background: '#f8f9fa', fontWeight: 'bold' }}>
-                <td colSpan="3" style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Total Expense:</td>
-                <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: 'red'}}>
+                <td colSpan="3" style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Total Expense:</td>
+                <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: 'red' }}>
                   ৳{expenses.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
                 </td>
               </tr>
@@ -241,43 +241,43 @@ const Expenses = () => {
               <div className="drawer-body">
                 <div className="form-group mb-4 mt-4">
                   <label>Date</label>
-                  <input 
+                  <input
                     type="date"
                     className="w-full"
                     required
                     value={newExpense.date}
-                    onChange={e => setNewExpense({...newExpense, date: e.target.value})}
+                    onChange={e => setNewExpense({ ...newExpense, date: e.target.value })}
                   />
                 </div>
                 <div className="form-group mb-4">
                   <label>Category</label>
-                  <select 
+                  <select
                     className="w-full"
-                    value={newExpense.category} 
-                    onChange={e => setNewExpense({...newExpense, category: e.target.value})}
+                    value={newExpense.category}
+                    onChange={e => setNewExpense({ ...newExpense, category: e.target.value })}
                   >
                     {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
                 <div className="form-group mb-4">
                   <label>Amount (BDT)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     className="w-full"
-                    required 
+                    required
                     min="1"
                     value={newExpense.amount}
-                    onChange={e => setNewExpense({...newExpense, amount: e.target.value})}
+                    onChange={e => setNewExpense({ ...newExpense, amount: e.target.value })}
                   />
                 </div>
                 <div className="form-group mb-4">
                   <label>Description (Optional)</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="w-full"
                     placeholder={language === 'bn' ? 'বিবরণ (ঐচ্ছিক)' : 'e.g. Monthly shop rent'}
                     value={newExpense.description}
-                    onChange={e => setNewExpense({...newExpense, description: e.target.value})}
+                    onChange={e => setNewExpense({ ...newExpense, description: e.target.value })}
                   />
                 </div>
               </div>
@@ -305,43 +305,43 @@ const Expenses = () => {
               <div className="drawer-body">
                 <div className="form-group mb-4 mt-4">
                   <label>Date</label>
-                  <input 
+                  <input
                     type="date"
                     className="w-full"
                     required
                     value={editingExpense.date}
-                    onChange={e => setEditingExpense({...editingExpense, date: e.target.value})}
+                    onChange={e => setEditingExpense({ ...editingExpense, date: e.target.value })}
                   />
                 </div>
                 <div className="form-group mb-4">
                   <label>Category</label>
-                  <select 
+                  <select
                     className="w-full"
-                    value={editingExpense.category} 
-                    onChange={e => setEditingExpense({...editingExpense, category: e.target.value})}
+                    value={editingExpense.category}
+                    onChange={e => setEditingExpense({ ...editingExpense, category: e.target.value })}
                   >
                     {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
                 <div className="form-group mb-4">
                   <label>Amount (BDT)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     className="w-full"
-                    required 
+                    required
                     min="1"
                     value={editingExpense.amount}
-                    onChange={e => setEditingExpense({...editingExpense, amount: e.target.value})}
+                    onChange={e => setEditingExpense({ ...editingExpense, amount: e.target.value })}
                   />
                 </div>
                 <div className="form-group mb-4">
                   <label>Description (Optional)</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="w-full"
                     placeholder={language === 'bn' ? 'বিবরণ (ঐচ্ছিক)' : 'e.g. Monthly shop rent'}
                     value={editingExpense.description}
-                    onChange={e => setEditingExpense({...editingExpense, description: e.target.value})}
+                    onChange={e => setEditingExpense({ ...editingExpense, description: e.target.value })}
                   />
                 </div>
               </div>
@@ -361,14 +361,14 @@ const Expenses = () => {
           <div className="drawer-container" style={{ maxWidth: '600px', width: '100%' }}>
             <div className="drawer-header">
               <h2>Monthly Expense Report</h2>
-              <button className="drawer-close-btn text-danger" onClick={() => setShowReport(false)}><X size={24}/></button>
+              <button className="drawer-close-btn text-danger" onClick={() => setShowReport(false)}><X size={24} /></button>
             </div>
-            
+
             <div className="drawer-body">
               <div className="form-group mb-4">
                 <label>Select Month</label>
-                <input 
-                  type="month" 
+                <input
+                  type="month"
                   className="w-full p-2 bg-input border border-gray-700 rounded text-main"
                   value={reportMonth}
                   onChange={e => setReportMonth(e.target.value)}
@@ -406,10 +406,10 @@ const Expenses = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="drawer-footer" style={{ gap: '1rem' }}>
               <button className="btn-primary flex-align-gap w-full center-content" onClick={() => {
-                 printElement('printable-monthly-expense', 'Expenses');
+                printElement('printable-monthly-expense', 'Expenses');
               }}>
                 <Printer size={18} /> Print Report
               </button>
@@ -429,29 +429,29 @@ const Expenses = () => {
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
               <div id="printable-single-expense" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   Expense Voucher<br/>
-                   ID: {selectedExpense.id}<br/>
-                   Date: {selectedExpense.date}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
-                   <p><strong>Category:</strong> {selectedExpense.category}</p>
-                   <p><strong>Description:</strong> {selectedExpense.description}</p>
-                   <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                   <p style={{ fontWeight: 'bold', fontSize: '0.9rem', marginTop: '1rem', color: 'red' }}><strong>Amount:</strong> ৳{selectedExpense.amount.toLocaleString()}</p>
-                 </div>
+                <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+                <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
+                  Expense Voucher<br />
+                  ID: {selectedExpense.id}<br />
+                  Date: {selectedExpense.date}
+                </p>
+                <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+
+                <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
+                  <p><strong>Category:</strong> {selectedExpense.category}</p>
+                  <p><strong>Description:</strong> {selectedExpense.description}</p>
+                  <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+                  <p style={{ fontWeight: 'bold', fontSize: '0.9rem', marginTop: '1rem', color: 'red' }}><strong>Amount:</strong> ৳{selectedExpense.amount.toLocaleString()}</p>
+                </div>
               </div>
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-single-expense', 'Expenses');
+                printElement('printable-single-expense', 'Expenses');
               }}>
                 <Printer size={20} /> Print Document
               </button>

@@ -9,24 +9,24 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
 
 const Customers = () => {
-  const { 
-    customers, 
-    deletedCustomers, 
-    suppliers, 
+  const {
+    customers,
+    deletedCustomers,
+    suppliers,
     deletedSuppliers,
-    settleCustomerDue, 
-    settleSupplierDue, 
-    sales, 
-    purchases, 
-    settlements, 
-    sendSms, 
-    language, 
-    addCustomer, 
-    updateCustomer, 
-    deleteCustomer, 
-    restoreCustomer, 
+    settleCustomerDue,
+    settleSupplierDue,
+    sales,
+    purchases,
+    settlements,
+    sendSms,
+    language,
+    addCustomer,
+    updateCustomer,
+    deleteCustomer,
+    restoreCustomer,
     permanentDeleteCustomer,
-    updateSupplier, 
+    updateSupplier,
     deleteSupplier,
     restoreSupplier,
     permanentDeleteSupplier,
@@ -62,13 +62,13 @@ const Customers = () => {
   // Compute Ledger for selected person
   let personLedger = [];
   if (selectedPerson) {
-    const isPersonCustomer = (activeTab === 'Customer') || 
+    const isPersonCustomer = (activeTab === 'Customer') ||
       (activeTab === 'Deleted' && (deletedType === 'Customer' || selectedPerson.customer_code)) ||
       Boolean(selectedPerson.customer_code);
 
-    const personSettlements = (settlements || []).filter(s => 
-      s.targetId === selectedPerson.id || 
-      s.targetId === selectedPerson.customer_code || 
+    const personSettlements = (settlements || []).filter(s =>
+      s.targetId === selectedPerson.id ||
+      s.targetId === selectedPerson.customer_code ||
       s.targetId === selectedPerson.supplier_code
     ).map(s => ({
       id: s.id,
@@ -224,7 +224,7 @@ const Customers = () => {
       company: (editingPerson.company || '').trim(),
       due,
     };
-    const res = activeTab === 'Customer' 
+    const res = activeTab === 'Customer'
       ? await updateCustomer(editingPerson.id, payload)
       : await updateSupplier(editingPerson.id, payload);
 
@@ -236,16 +236,16 @@ const Customers = () => {
 
   const handleDelete = async (id, isSupplier = activeTab === 'Supplier') => {
     const isConfirmed = await showConfirmDialog({
-      title: isSupplier 
+      title: isSupplier
         ? (language === 'bn' ? 'সাপ্লায়ার মুছে ফেলবেন?' : 'Delete Supplier?')
         : (language === 'bn' ? 'কাস্টমার মুছে ফেলবেন?' : 'Delete Customer?'),
       text: isSupplier
-        ? (language === 'bn' 
-            ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
-            : 'Are you sure you want to delete this supplier? Full purchase and transaction history will be safely preserved in the Deleted History tab.')
-        : (language === 'bn' 
-            ? 'আপনি কি নিশ্চিত এই কাস্টমার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল সেলস ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।' 
-            : 'Are you sure you want to delete this customer? Full transaction and sales history will be safely preserved in the Deleted History tab.'),
+        ? (language === 'bn'
+          ? 'আপনি কি নিশ্চিত এই সাপ্লায়ার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল ক্রয় ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।'
+          : 'Are you sure you want to delete this supplier? Full purchase and transaction history will be safely preserved in the Deleted History tab.')
+        : (language === 'bn'
+          ? 'আপনি কি নিশ্চিত এই কাস্টমার মুছে ফেলতে চান? মুছে ফেলা হলেও তার সকল সেলস ও লেনদেনের হিস্ট্রি সংরক্ষিত থাকবে এবং Deleted History ট্যাব থেকে যেকোনো সময় দেখা যাবে।'
+          : 'Are you sure you want to delete this customer? Full transaction and sales history will be safely preserved in the Deleted History tab.'),
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
       isDanger: true,
@@ -264,12 +264,12 @@ const Customers = () => {
         ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করবেন?' : 'Restore Supplier?')
         : (language === 'bn' ? 'কাস্টমার রিস্টোর করবেন?' : 'Restore Customer?'),
       text: isSupplier
-        ? (language === 'bn' 
-            ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
-            : 'Do you want to restore this supplier back to active status?')
-        : (language === 'bn' 
-            ? 'এই কাস্টমারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?' 
-            : 'Do you want to restore this customer back to active status?'),
+        ? (language === 'bn'
+          ? 'এই সাপ্লায়ারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?'
+          : 'Do you want to restore this supplier back to active status?')
+        : (language === 'bn'
+          ? 'এই কাস্টমারকে কি পুনরায় সক্রিয় (Active) তালিকায় ফিরিয়ে আনতে চান?'
+          : 'Do you want to restore this customer back to active status?'),
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, রিস্টোর' : 'Yes, restore',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
       isDanger: false,
@@ -277,7 +277,7 @@ const Customers = () => {
     if (isConfirmed) {
       const res = isSupplier ? await restoreSupplier(id) : await restoreCustomer(id);
       if (res?.ok) {
-        showSuccessAlert(isSupplier 
+        showSuccessAlert(isSupplier
           ? (language === 'bn' ? 'সাপ্লায়ার সফলভাবে রিস্টোর হয়েছে!' : 'Supplier restored successfully!')
           : (language === 'bn' ? 'কাস্টমার সফলভাবে রিস্টোর হয়েছে!' : 'Customer restored successfully!')
         );
@@ -289,12 +289,12 @@ const Customers = () => {
     const isConfirmed = await showConfirmDialog({
       title: language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলবেন?' : 'Permanently Delete?',
       text: isSupplier
-        ? (language === 'bn' 
-            ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
-            : `Are you sure you want to permanently delete supplier '${name}' from the database? This action CANNOT be undone!`)
-        : (language === 'bn' 
-            ? `আপনি কি নিশ্চিত '${name}' কাস্টমারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!` 
-            : `Are you sure you want to permanently delete customer '${name}' from the database? This action CANNOT be undone!`),
+        ? (language === 'bn'
+          ? `আপনি কি নিশ্চিত '${name}' সাপ্লায়ারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!`
+          : `Are you sure you want to permanently delete supplier '${name}' from the database? This action CANNOT be undone!`)
+        : (language === 'bn'
+          ? `আপনি কি নিশ্চিত '${name}' কাস্টমারকে ডাটাবেজ থেকে সম্পূর্ণ স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর কখনই ফিরিয়ে আনা যাবে না!`
+          : `Are you sure you want to permanently delete customer '${name}' from the database? This action CANNOT be undone!`),
       confirmButtonText: language === 'bn' ? 'হ্যাঁ, স্থায়ীভাবে মুছুন' : 'Yes, Delete Permanently',
       cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
       isDanger: true,
@@ -322,19 +322,19 @@ const Customers = () => {
       <div className="card">
         <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div className="segmented-control" style={{ maxWidth: '540px' }}>
-            <button 
+            <button
               className={activeTab === 'Customer' ? 'active' : ''}
               onClick={() => setActiveTab('Customer')}
             >
               {t(language, 'Customers Due')} ({customers?.length || 0})
             </button>
-            <button 
+            <button
               className={activeTab === 'Supplier' ? 'active' : ''}
               onClick={() => setActiveTab('Supplier')}
             >
               {t(language, 'Suppliers Due')} ({suppliers?.length || 0})
             </button>
-            <button 
+            <button
               className={activeTab === 'Deleted' ? 'active' : ''}
               onClick={() => setActiveTab('Deleted')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
@@ -346,13 +346,13 @@ const Customers = () => {
 
           {activeTab === 'Deleted' && (
             <div className="segmented-control" style={{ maxWidth: '320px' }}>
-              <button 
+              <button
                 className={deletedType === 'Customer' ? 'active' : ''}
                 onClick={() => setDeletedType('Customer')}
               >
                 {language === 'bn' ? 'কাস্টমার' : 'Customers'} ({deletedCustomers?.length || 0})
               </button>
-              <button 
+              <button
                 className={deletedType === 'Supplier' ? 'active' : ''}
                 onClick={() => setDeletedType('Supplier')}
               >
@@ -363,9 +363,9 @@ const Customers = () => {
 
           <div className="search-bar">
             <Search size={18} className="text-muted" />
-            <input 
-              type="text" 
-              placeholder={t(language, 'Search')} 
+            <input
+              type="text"
+              placeholder={t(language, 'Search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -373,7 +373,7 @@ const Customers = () => {
           <div className="toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
             {activeTab === 'Customer' && (
               <button className="btn-primary flex-align-gap" onClick={() => setShowAddModal(true)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 New Customer
               </button>
             )}
@@ -436,27 +436,27 @@ const Customers = () => {
                         </td>
                       )}
                       <td>
-                        <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
-                          <button 
-                            className="btn-outline flex-align-gap" 
+                        <div className="action-buttons flex-align-gap" style={{ flexWrap: 'nowrap' }}>
+                          <button
+                            className="btn-outline flex-align-gap"
                             style={{ padding: '0.2rem 0.55rem', fontSize: '0.8rem', color: 'var(--primary)', borderColor: 'rgba(59,130,246,0.35)', fontWeight: 600 }}
-                            title={language === 'bn' ? 'কাস্টমারের হিস্ট্রি ও লেজার দেখুন (Details)' : 'View Details & Ledger'} 
+                            title={language === 'bn' ? 'কাস্টমারের হিস্ট্রি ও লেজার দেখুন (Details)' : 'View Details & Ledger'}
                             onClick={() => setSelectedPerson(person)}
                           >
                             <Eye size={14} /> Details
                           </button>
                           {activeTab !== 'Deleted' && (
                             <>
-                              <button className="btn-outline" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, date: new Date().toISOString().split('T')[0] })}>{t(language, 'Settle Due' || 'Settle')}</button>
+                              <button className="btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, date: new Date().toISOString().split('T')[0] })}>{t(language, 'Settle Due' || 'Settle')}</button>
                               {activeTab === 'Customer' && (
-                                <button 
-                                  className="btn-primary flex-align-gap" style={{padding:'0.2rem 0.5rem', fontSize:'0.8rem'}}
+                                <button
+                                  className="btn-primary flex-align-gap" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
                                   onClick={() => setSmsModal({ show: true, target: person, message: `Dear ${person.name}, your due amount is ৳${person.due}. Please settle your account.` })}
                                 >
                                   <MessageSquare size={14} /> SMS
                                 </button>
                               )}
-                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({...person})}>
+                              <button className="btn-icon text-info" title="Edit" onClick={() => setEditingPerson({ ...person })}>
                                 <Edit size={16} />
                               </button>
                               <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(person.id, isSupplierRow)}>
@@ -466,17 +466,17 @@ const Customers = () => {
                           )}
                           {activeTab === 'Deleted' && (
                             <>
-                              <button 
-                                className="btn-outline flex-align-gap" 
-                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }} 
-                                title={isSupplierRow ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier') : (language === 'bn' ? 'কাস্টমার রিস্টোর করুন' : 'Restore Customer')} 
+                              <button
+                                className="btn-outline flex-align-gap"
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', color: '#059669', borderColor: '#059669' }}
+                                title={isSupplierRow ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier') : (language === 'bn' ? 'কাস্টমার রিস্টোর করুন' : 'Restore Customer')}
                                 onClick={() => handleRestore(person.id, isSupplierRow)}
                               >
                                 <RotateCcw size={14} /> {language === 'bn' ? 'রিস্টোর' : 'Restore'}
                               </button>
-                              <button 
-                                className="btn-icon text-danger" 
-                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'} 
+                              <button
+                                className="btn-icon text-danger"
+                                title={language === 'bn' ? 'স্থায়ীভাবে মুছে ফেলুন' : 'Permanently Delete'}
                                 onClick={() => handlePermanentDelete(person.id, person.name, isSupplierRow)}
                               >
                                 <Trash2 size={16} />
@@ -497,38 +497,38 @@ const Customers = () => {
       {/* Hidden Printable List (Excel Style) */}
       <div id="printable-customers-list" style={{ display: 'none' }}>
         <div style={{ padding: '1.5rem', background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
-          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <p style={{ textAlign: 'center', fontSize: '1rem', marginBottom: '1.5rem', color: '#333' }}>
             {activeTab === 'Customer' ? 'Customers' : 'Suppliers'} Due List
           </p>
-          
+
           <table style={{ width: '100%', fontSize: '0.85rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>ID</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>Name</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left'}}>Phone</th>
-                <th style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Total Due (BDT)</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>ID</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Name</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'left' }}>Phone</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Total Due (BDT)</th>
               </tr>
             </thead>
             <tbody>
               {filteredList.length > 0 ? filteredList.map((person) => (
                 <tr key={person.id}>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{person.id}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{person.name}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{person.phone}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>৳{person.due.toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{person.id}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{person.name}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{person.phone}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>৳{person.due.toLocaleString()}</td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="4" style={{border: '1px solid #ccc', padding: '1rem', textAlign: 'center'}}>No records found.</td>
+                  <td colSpan="4" style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center' }}>No records found.</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ background: '#f8f9fa', fontWeight: 'bold' }}>
-                <td colSpan="3" style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Total Due:</td>
-                <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: 'red'}}>
+                <td colSpan="3" style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Total Due:</td>
+                <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: 'red' }}>
                   ৳{filteredList.reduce((sum, item) => sum + item.due, 0).toLocaleString()}
                 </td>
               </tr>
@@ -555,12 +555,12 @@ const Customers = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'পরিশোধের পরিমাণ' : 'Amount to Settle'} (BDT)</label>
-                    <input 
-                      type="number" 
-                      className="w-full" 
-                      value={settleModal.amount} 
-                      onChange={e => setSettleModal({...settleModal, amount: e.target.value})} 
-                      required 
+                    <input
+                      type="number"
+                      className="w-full"
+                      value={settleModal.amount}
+                      onChange={e => setSettleModal({ ...settleModal, amount: e.target.value })}
+                      required
                       min="1"
                       max={settleModal.target?.due}
                       step="any"
@@ -570,12 +570,12 @@ const Customers = () => {
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Date')}</label>
-                    <input 
-                      type="date" 
-                      className="w-full" 
-                      value={settleModal.date} 
-                      onChange={e => setSettleModal({...settleModal, date: e.target.value})} 
-                      required 
+                    <input
+                      type="date"
+                      className="w-full"
+                      value={settleModal.date}
+                      onChange={e => setSettleModal({ ...settleModal, date: e.target.value })}
+                      required
                     />
                   </div>
                   <div>
@@ -583,7 +583,7 @@ const Customers = () => {
                     <select
                       className="w-full"
                       value={settleModal.method || 'Cash'}
-                      onChange={e => setSettleModal({...settleModal, method: e.target.value})}
+                      onChange={e => setSettleModal({ ...settleModal, method: e.target.value })}
                     >
                       <option value="Cash">{language === 'bn' ? 'ক্যাশ (নগদ)' : 'Cash'}</option>
                       <option value="Bank">{language === 'bn' ? 'ব্যাংক ট্রান্সফার' : 'Bank Transfer'}</option>
@@ -598,7 +598,7 @@ const Customers = () => {
                       className="w-full"
                       placeholder={language === 'bn' ? 'যেমন: চেক নং বা লেনদেন রেফারেন্স' : 'e.g. Check / Txn reference'}
                       value={settleModal.notes || ''}
-                      onChange={e => setSettleModal({...settleModal, notes: e.target.value})}
+                      onChange={e => setSettleModal({ ...settleModal, notes: e.target.value })}
                     />
                   </div>
                 </div>
@@ -711,51 +711,51 @@ const Customers = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Customer Name *</label>
-                    <input 
-                      type="text" 
-                      value={newCustomer.name} 
-                      onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} 
-                      placeholder="e.g. Rahim Rahman" 
-                      required 
+                    <input
+                      type="text"
+                      value={newCustomer.name}
+                      onChange={e => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                      placeholder="e.g. Rahim Rahman"
+                      required
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Phone Number</label>
-                    <input 
-                      type="text" 
-                      value={newCustomer.phone} 
-                      onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})} 
-                      placeholder="e.g. 01712345678" 
+                    <input
+                      type="text"
+                      value={newCustomer.phone}
+                      onChange={e => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                      placeholder="e.g. 01712345678"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Location / Address</label>
-                    <input 
-                      type="text" 
-                      value={newCustomer.location} 
-                      onChange={e => setNewCustomer({...newCustomer, location: e.target.value})} 
-                      placeholder="e.g. Dhaka" 
+                    <input
+                      type="text"
+                      value={newCustomer.location}
+                      onChange={e => setNewCustomer({ ...newCustomer, location: e.target.value })}
+                      placeholder="e.g. Dhaka"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Opening Balance (Due)</label>
-                    <input 
-                      type="number" 
-                      value={newCustomer.due} 
-                      onChange={e => setNewCustomer({...newCustomer, due: e.target.value})} 
-                      placeholder="e.g. 5000" 
+                    <input
+                      type="number"
+                      value={newCustomer.due}
+                      onChange={e => setNewCustomer({ ...newCustomer, due: e.target.value })}
+                      placeholder="e.g. 5000"
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Notes / Remarks</label>
-                    <textarea 
-                      value={newCustomer.notes} 
-                      onChange={e => setNewCustomer({...newCustomer, notes: e.target.value})} 
-                      placeholder="Any additional information..." 
+                    <textarea
+                      value={newCustomer.notes}
+                      onChange={e => setNewCustomer({ ...newCustomer, notes: e.target.value })}
+                      placeholder="Any additional information..."
                       style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
                       rows={2}
                     />
@@ -787,30 +787,30 @@ const Customers = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Name *</label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.name} 
-                      onChange={e => setEditingPerson({...editingPerson, name: e.target.value})} 
-                      required 
+                    <input
+                      type="text"
+                      value={editingPerson.name}
+                      onChange={e => setEditingPerson({ ...editingPerson, name: e.target.value })}
+                      required
                       style={{ width: '100%' }}
                     />
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Phone Number</label>
-                    <input 
-                      type="text" 
-                      value={editingPerson.phone || ''} 
-                      onChange={e => setEditingPerson({...editingPerson, phone: e.target.value})} 
+                    <input
+                      type="text"
+                      value={editingPerson.phone || ''}
+                      onChange={e => setEditingPerson({ ...editingPerson, phone: e.target.value })}
                       style={{ width: '100%' }}
                     />
                   </div>
                   {activeTab === 'Customer' && (
                     <div>
                       <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Location / Address</label>
-                      <input 
-                        type="text" 
-                        value={editingPerson.location || ''} 
-                        onChange={e => setEditingPerson({...editingPerson, location: e.target.value})} 
+                      <input
+                        type="text"
+                        value={editingPerson.location || ''}
+                        onChange={e => setEditingPerson({ ...editingPerson, location: e.target.value })}
                         style={{ width: '100%' }}
                       />
                     </div>
@@ -820,10 +820,10 @@ const Customers = () => {
                       <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
                         {language === 'bn' ? 'কোম্পানি / ব্র্যান্ড নেম' : 'Company / Brand Name'}
                       </label>
-                      <input 
-                        type="text" 
-                        value={editingPerson.company || ''} 
-                        onChange={e => setEditingPerson({...editingPerson, company: e.target.value})} 
+                      <input
+                        type="text"
+                        value={editingPerson.company || ''}
+                        onChange={e => setEditingPerson({ ...editingPerson, company: e.target.value })}
                         placeholder={language === 'bn' ? 'যেমন: বাটা, এপেক্স' : 'e.g. Bata, Apex'}
                         style={{ width: '100%' }}
                       />
@@ -831,10 +831,10 @@ const Customers = () => {
                   )}
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Total Due (BDT)</label>
-                    <input 
-                      type="number" 
-                      value={editingPerson.due} 
-                      onChange={e => setEditingPerson({...editingPerson, due: e.target.value})} 
+                    <input
+                      type="number"
+                      value={editingPerson.due}
+                      onChange={e => setEditingPerson({ ...editingPerson, due: e.target.value })}
                       style={{ width: '100%' }}
                     />
                   </div>
@@ -891,28 +891,28 @@ const Customers = () => {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            
+
             <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
               {(() => {
                 const isSelectedSupplier = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(selectedPerson.supplier_code)));
                 return (
                   <div id="printable-single-person" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                    <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+                    <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
                     <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                      {(selectedPerson.is_deleted || activeTab === 'Deleted') 
+                      {(selectedPerson.is_deleted || activeTab === 'Deleted')
                         ? (isSelectedSupplier ? 'Deleted Supplier Due & Transaction Statement' : 'Deleted Customer Due & Transaction Statement')
                         : (isSelectedSupplier ? 'Supplier Due Statement' : 'Due Statement')
-                      }<br/>
+                      }<br />
                       Date: {new Date().toLocaleDateString()}
                     </p>
                     <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                    
+
                     <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '1.6', marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <p style={{ margin: 0 }}><strong>Name:</strong> {selectedPerson.name}</p>
                         {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
                           <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 'bold' }}>
-                            {isSelectedSupplier 
+                            {isSelectedSupplier
                               ? (language === 'bn' ? 'মুছে ফেলা সাপ্লায়ার হিস্ট্রি (আর্কাইভ)' : 'Deleted Supplier Record')
                               : (language === 'bn' ? 'মুছে ফেলা কাস্টমার হিস্ট্রি (আর্কাইভ)' : 'Deleted Customer Record')
                             }
@@ -921,8 +921,8 @@ const Customers = () => {
                       </div>
                       <p><strong>Phone:</strong> {selectedPerson.phone || '-'}</p>
                       <p><strong>Type:</strong> {
-                        selectedPerson.is_deleted || activeTab === 'Deleted' 
-                          ? (isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার (মুছে ফেলা হিস্ট্রি)' : 'Supplier (Deleted Record)') : (language === 'bn' ? 'কাস্টমার (মুছে ফেলা হিস্ট্রি)' : 'Customer (Deleted Record)')) 
+                        selectedPerson.is_deleted || activeTab === 'Deleted'
+                          ? (isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার (মুছে ফেলা হিস্ট্রি)' : 'Supplier (Deleted Record)') : (language === 'bn' ? 'কাস্টমার (মুছে ফেলা হিস্ট্রি)' : 'Customer (Deleted Record)'))
                           : (isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার' : 'Supplier') : (language === 'bn' ? 'কাস্টমার' : 'Customer'))
                       }</p>
                       {selectedPerson.deleted_at && (
@@ -1004,7 +1004,7 @@ const Customers = () => {
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-single-person', 'Customers');
+                printElement('printable-single-person', 'Customers');
               }}>
                 <Printer size={20} /> Print Document
               </button>
@@ -1012,8 +1012,8 @@ const Customers = () => {
                 const isSelectedSupplier = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(selectedPerson.supplier_code)));
                 return (
                   <>
-                    <button 
-                      className="btn-outline flex-align-gap" 
+                    <button
+                      className="btn-outline flex-align-gap"
                       style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#059669', borderColor: '#059669' }}
                       onClick={async () => {
                         await handleRestore(selectedPerson.id, isSelectedSupplier);
@@ -1022,8 +1022,8 @@ const Customers = () => {
                     >
                       <RotateCcw size={18} /> {isSelectedSupplier ? (language === 'bn' ? 'সাপ্লায়ার রিস্টোর করুন' : 'Restore Supplier') : (language === 'bn' ? 'কাস্টমার রিস্টোর করুন' : 'Restore Customer')}
                     </button>
-                    <button 
-                      className="btn-outline flex-align-gap" 
+                    <button
+                      className="btn-outline flex-align-gap"
                       style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px', color: '#dc2626', borderColor: '#dc2626' }}
                       onClick={async () => {
                         await handlePermanentDelete(selectedPerson.id, selectedPerson.name, isSelectedSupplier);

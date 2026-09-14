@@ -722,7 +722,7 @@ const DayBook = () => {
               <div id="printable-daybook" style={{ display: 'none' }}>
                 <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '12px' }}>
                   <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allah Dan Gents Point'}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allahr dan gents point'}</div>
                     <div style={{ fontSize: 13 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>

@@ -90,15 +90,23 @@ const StockLog = () => {
   const productName = product ? (inventory.find((p) => p.id === product)?.name || product) : null;
 
   const stats = summary ? [
-    { key: 'entries', label: t(language, 'Total Entries'), value: summary.totalEntries,
-      colour: 'var(--info)', Icon: Layers },
-    { key: 'in', label: t(language, 'Stock In'), value: `+${summary.totalIn}`,
-      colour: 'var(--success)', Icon: TrendingUp },
-    { key: 'out', label: t(language, 'Stock Out'), value: `-${summary.totalOut}`,
-      colour: 'var(--danger)', Icon: TrendingDown },
-    { key: 'net', label: t(language, 'Net Change'),
+    {
+      key: 'entries', label: t(language, 'Total Entries'), value: summary.totalEntries,
+      colour: 'var(--info)', Icon: Layers
+    },
+    {
+      key: 'in', label: t(language, 'Stock In'), value: `+${summary.totalIn}`,
+      colour: 'var(--success)', Icon: TrendingUp
+    },
+    {
+      key: 'out', label: t(language, 'Stock Out'), value: `-${summary.totalOut}`,
+      colour: 'var(--danger)', Icon: TrendingDown
+    },
+    {
+      key: 'net', label: t(language, 'Net Change'),
       value: `${summary.netChange >= 0 ? '+' : ''}${summary.netChange}`,
-      colour: summary.netChange >= 0 ? 'var(--success)' : 'var(--danger)', Icon: Scale },
+      colour: summary.netChange >= 0 ? 'var(--success)' : 'var(--danger)', Icon: Scale
+    },
   ] : [];
 
   return (
@@ -300,7 +308,7 @@ const StockLog = () => {
       <div style={{ display: 'none' }}>
         <div id="printable-stock-log" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Allah Dan Gents Point
+            Allahr dan gents point
           </h2>
           <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>Stock Movement Log</h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.9rem' }}>

@@ -35,7 +35,7 @@ const Login = () => {
           <div className="login-logo">
             <img src={logo} alt="" />
           </div>
-          <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
+          <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allahr dan gents point'}</h2>
           <p>{language === 'bn' ? 'আপনার অ্যাকাউন্টে সাইন ইন করুন' : 'Sign in to your account'}</p>
         </div>
         <form onSubmit={handleLogin} className="login-form">

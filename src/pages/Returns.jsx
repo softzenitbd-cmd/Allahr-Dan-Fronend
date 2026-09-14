@@ -12,7 +12,7 @@ const Returns = () => {
   // Deleting a return undoes its stock adjustment; Admin only on the server.
   const isAdmin = user?.role === 'Admin';
   const [activeTab, setActiveTab] = useState('New'); // 'New' or 'History'
-  
+
   // New Return State
   const [returnType, setReturnType] = useState('Customer');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
@@ -32,7 +32,7 @@ const Returns = () => {
       toast.error('Please select a product');
       return;
     }
-    
+
     const res = await processReturn({
       returnType,
       date: entryDate,
@@ -41,7 +41,7 @@ const Returns = () => {
       reason,
       referenceId
     });
-    
+
     if (res?.ok) {
       toast.success(`${returnType} Return/Reject processed successfully! Stock has been adjusted.`);
       setProduct('');
@@ -73,7 +73,7 @@ const Returns = () => {
       setQuantity(ret.quantity);
       setReason(ret.reason);
       setReferenceId(ret.referenceId || '');
-      
+
       await deleteReturn(ret.id);
       setActiveTab('New');
       toast.info('Return loaded for editing.');
@@ -112,7 +112,7 @@ const Returns = () => {
       {activeTab === 'New' && (
         <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
           <div className="segmented-control" style={{ marginBottom: '2rem' }}>
-            <button 
+            <button
               type="button"
               className={returnType === 'Customer' ? 'active' : ''}
               onClick={() => setReturnType('Customer')}
@@ -120,7 +120,7 @@ const Returns = () => {
             >
               <PackagePlus size={16} /> {t(language, 'Customer Return (In)')}
             </button>
-            <button 
+            <button
               type="button"
               className={returnType === 'Supplier' ? 'active' : ''}
               onClick={() => setReturnType('Supplier')}
@@ -133,8 +133,8 @@ const Returns = () => {
           <form onSubmit={handleSubmit} className="return-form">
             <div className="form-group mb-4">
               <label>Date</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={entryDate}
                 onChange={(e) => setEntryDate(e.target.value)}
                 required
@@ -144,8 +144,8 @@ const Returns = () => {
 
             <div className="form-group mb-4">
               <label>{returnType === 'Customer' ? t(language, 'Sale Invoice ID (Optional)' || 'Invoice ID') : t(language, 'Purchase ID (Optional)' || 'Invoice ID')}</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder={returnType === 'Customer' ? 'e.g. INV001' : 'e.g. PUR001'}
                 value={referenceId}
                 onChange={(e) => setReferenceId(e.target.value)}
@@ -165,10 +165,10 @@ const Returns = () => {
 
             <div className="form-group mb-4">
               <label>{t(language, 'Qty')}</label>
-              <input 
-                type="number" 
-                min="1" 
-                value={quantity} 
+              <input
+                type="number"
+                min="1"
+                value={quantity}
                 onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
                 required
               />
@@ -176,8 +176,8 @@ const Returns = () => {
 
             <div className="form-group mb-4">
               <label>{t(language, 'Return Reason')}</label>
-              <textarea 
-                rows="3" 
+              <textarea
+                rows="3"
                 placeholder="Explain reason for return/reject..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
@@ -196,102 +196,102 @@ const Returns = () => {
       {activeTab === 'History' && (
         <div className="card glass animate-slide-up">
           <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
-             <h3>Returns & Rejects History</h3>
-             <div className="flex-align-gap">
-               <label className="text-muted text-sm">Filter by Date:</label>
-               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
-               <span className="text-muted">to</span>
-               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
-               <button className="btn-primary flex-align-gap" onClick={() => {
-                 printElement('printable-all-returns-details', 'Returns');
-               }}>
-                  <Printer size={18} /> Print All Details
-               </button>
-             </div>
+            <h3>Returns & Rejects History</h3>
+            <div className="flex-align-gap">
+              <label className="text-muted text-sm">Filter by Date:</label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
+              <span className="text-muted">to</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
+              <button className="btn-primary flex-align-gap" onClick={() => {
+                printElement('printable-all-returns-details', 'Returns');
+              }}>
+                <Printer size={18} /> Print All Details
+              </button>
+            </div>
           </div>
           <div className="table-responsive">
-             <table className="data-table">
-               <thead>
-                 <tr>
-                   <th>ID</th>
-                   <th>{t(language, 'Date')}</th>
-                   <th>{t(language, 'Invoice ID' || 'Ref ID')}</th>
-                   <th>{t(language, 'Type')}</th>
-                   <th>{t(language, 'Item Name')}</th>
-                   <th>{t(language, 'Qty')}</th>
-                   <th>{t(language, 'Return Reason' || 'Reason')}</th>
-                   <th style={{textAlign: 'center'}}>{t(language, 'Actions')}</th>
-                 </tr>
-               </thead>
-               <tbody>
-                 {filteredReturns.map(r => (
-                   <tr key={r.id}>
-                     <td>{r.id}</td>
-                     <td>{r.date.split('T')[0]}</td>
-                     <td>{r.referenceId || '-'}</td>
-                     <td>
-                        <span className={`badge ${r.returnType === 'Customer' ? 'bg-success text-success' : 'bg-danger text-danger'}`} style={{padding: '0.2rem 0.5rem', borderRadius: '4px', background: r.returnType === 'Customer' ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)'}}>
-                          {r.returnType} {r.returnType === 'Customer' ? 'Return' : 'Reject'}
-                        </span>
-                     </td>
-                     <td>{getProductName(r.productId)}</td>
-                     <td className="font-bold">{r.quantity}</td>
-                     <td>{r.reason}</td>
-                     <td style={{textAlign: 'center'}}>
-                        <div className="flex-align-gap" style={{justifyContent:'center', flexWrap: 'nowrap'}}>
-                          <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(r)}>
-                            <Eye size={16} />
-                          </button>
-                          {isAdmin && (
-                            <>
-                              <button className="btn-icon text-info" title="Edit" onClick={() => handleEditReturn(r)}>
-                                <Edit size={16} />
-                              </button>
-                              <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeleteReturn(r.id)}>
-                                <Trash2 size={16} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                     </td>
-                   </tr>
-                 ))}
-                 {filteredReturns.length === 0 && <tr><td colSpan="7" className="text-center text-muted">No returns found.</td></tr>}
-               </tbody>
-             </table>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>{t(language, 'Date')}</th>
+                  <th>{t(language, 'Invoice ID' || 'Ref ID')}</th>
+                  <th>{t(language, 'Type')}</th>
+                  <th>{t(language, 'Item Name')}</th>
+                  <th>{t(language, 'Qty')}</th>
+                  <th>{t(language, 'Return Reason' || 'Reason')}</th>
+                  <th style={{ textAlign: 'center' }}>{t(language, 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReturns.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td>{r.date.split('T')[0]}</td>
+                    <td>{r.referenceId || '-'}</td>
+                    <td>
+                      <span className={`badge ${r.returnType === 'Customer' ? 'bg-success text-success' : 'bg-danger text-danger'}`} style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', background: r.returnType === 'Customer' ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)' }}>
+                        {r.returnType} {r.returnType === 'Customer' ? 'Return' : 'Reject'}
+                      </span>
+                    </td>
+                    <td>{getProductName(r.productId)}</td>
+                    <td className="font-bold">{r.quantity}</td>
+                    <td>{r.reason}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div className="flex-align-gap" style={{ justifyContent: 'center', flexWrap: 'nowrap' }}>
+                        <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(r)}>
+                          <Eye size={16} />
+                        </button>
+                        {isAdmin && (
+                          <>
+                            <button className="btn-icon text-info" title="Edit" onClick={() => handleEditReturn(r)}>
+                              <Edit size={16} />
+                            </button>
+                            <button className="btn-icon text-danger" title="Delete" onClick={() => handleDeleteReturn(r.id)}>
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredReturns.length === 0 && <tr><td colSpan="7" className="text-center text-muted">No returns found.</td></tr>}
+              </tbody>
+            </table>
           </div>
-          
+
           <div style={{ display: 'none' }}>
             <div id="printable-all-returns-details" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
-            <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+              <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
               <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>Detailed Returns & Rejects History</h3>
-              {(startDate || endDate) && <p style={{textAlign: 'center', marginBottom: '1rem', fontSize: '0.9rem'}}>Date Filter: {startDate || 'Any'} to {endDate || 'Any'}</p>}
-              
+              {(startDate || endDate) && <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.9rem' }}>Date Filter: {startDate || 'Any'} to {endDate || 'Any'}</p>}
+
               <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
                 <thead>
                   <tr style={{ background: '#f1f5f9' }}>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Date</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Return ID</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Ref ID</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Type</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Product</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>Qty</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Reason</th>
-                    <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Notes</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Date</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Return ID</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Ref ID</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Type</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Product</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Qty</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Reason</th>
+                    <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredReturns.map(r => (
-                     <tr key={r.id} style={{ borderBottom: '1px solid #eee' }}>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{new Date(r.date).toLocaleDateString()}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{r.id}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{r.referenceId || '-'}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{r.returnType}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{getProductName(r.productId)} (ID: {r.productId})</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', verticalAlign: 'top'}}>{r.quantity}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{r.reason}</td>
-                       <td style={{border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top'}}>{r.notes || '-'}</td>
-                     </tr>
+                    <tr key={r.id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{new Date(r.date).toLocaleDateString()}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.id}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.referenceId || '-'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.returnType}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{getProductName(r.productId)} (ID: {r.productId})</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', verticalAlign: 'top' }}>{r.quantity}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.reason}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.notes || '-'}</td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -310,37 +310,37 @@ const Returns = () => {
                 <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
               </button>
             </div>
-            
+
             <div className="drawer-body" style={{ padding: '0', backgroundColor: '#fff' }}>
               <div id="printable-single-return" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
-                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
-                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
-                   {selectedInvoice.returnType} {selectedInvoice.returnType === 'Customer' ? 'Return' : 'Reject'} Receipt<br/>
-                   ID: {selectedInvoice.id}<br/>
-                   Date: {new Date(selectedInvoice.date).toLocaleString()}
-                 </p>
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 
-                 <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
-                   <p><strong>Product Name:</strong> {getProductName(selectedInvoice.productId)}</p>
-                   {selectedInvoice.referenceId && (
-                     <p><strong>{selectedInvoice.returnType === 'Customer' ? 'Sale Invoice ID' : 'Purchase ID'}:</strong> {selectedInvoice.referenceId}</p>
-                   )}
-                   <p><strong>Quantity:</strong> <span className="font-bold text-xl">{selectedInvoice.quantity}</span></p>
-                   <p><strong>Reason:</strong> {selectedInvoice.reason}</p>
-                   <p><strong>Effect:</strong> {selectedInvoice.returnType === 'Customer' ? 'Added to Stock (+)' : 'Removed from Stock (-)'}</p>
-                 </div>
-                 
-                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
-                 <p style={{ textAlign: 'center', fontSize: '0.9rem', color: '#666', marginTop: '1.5rem' }}>
-                   Thank you!
-                 </p>
+                <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+                <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
+                  {selectedInvoice.returnType} {selectedInvoice.returnType === 'Customer' ? 'Return' : 'Reject'} Receipt<br />
+                  ID: {selectedInvoice.id}<br />
+                  Date: {new Date(selectedInvoice.date).toLocaleString()}
+                </p>
+                <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+
+                <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '2' }}>
+                  <p><strong>Product Name:</strong> {getProductName(selectedInvoice.productId)}</p>
+                  {selectedInvoice.referenceId && (
+                    <p><strong>{selectedInvoice.returnType === 'Customer' ? 'Sale Invoice ID' : 'Purchase ID'}:</strong> {selectedInvoice.referenceId}</p>
+                  )}
+                  <p><strong>Quantity:</strong> <span className="font-bold text-xl">{selectedInvoice.quantity}</span></p>
+                  <p><strong>Reason:</strong> {selectedInvoice.reason}</p>
+                  <p><strong>Effect:</strong> {selectedInvoice.returnType === 'Customer' ? 'Added to Stock (+)' : 'Removed from Stock (-)'}</p>
+                </div>
+
+                <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
+                <p style={{ textAlign: 'center', fontSize: '0.9rem', color: '#666', marginTop: '1.5rem' }}>
+                  Thank you!
+                </p>
               </div>
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
-                 printElement('printable-single-return', 'Returns');
+                printElement('printable-single-return', 'Returns');
               }}>
                 <Printer size={20} /> Print Receipt
               </button>

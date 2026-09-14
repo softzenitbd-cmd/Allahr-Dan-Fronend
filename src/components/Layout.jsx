@@ -213,12 +213,12 @@ const Layout = () => {
             )}
 
             <div className="brand-link" onClick={() => navigate('/')} role="button" tabIndex={0}
-                 onKeyDown={(e) => { if (e.key === 'Enter') navigate('/'); }}>
+              onKeyDown={(e) => { if (e.key === 'Enter') navigate('/'); }}>
               <div className="brand-logo">
                 <img src={logo} alt="" />
               </div>
               <div className="brand-text">
-                <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
+                <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allahr dan gents point'}</h2>
               </div>
             </div>
           </div>
@@ -267,7 +267,7 @@ const Layout = () => {
 
         <div className="content-area">
           <div className="print-only-header">
-            <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allah Dan Gents Point'}</h2>
+            <h2>{language === 'bn' ? 'আল্লাহর দান জেন্টস পয়েন্ট' : 'Allahr dan gents point'}</h2>
           </div>
           <Outlet />
         </div>

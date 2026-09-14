@@ -128,9 +128,9 @@ const SR = () => {
   // What the SR owes is decided by what he did not bring back.
   const settleSold = settling
     ? settling.items.reduce(
-        (acc, i) => acc + (i.quantity - (Number(returnQtys[i.productId]) || 0)) * Number(i.price),
-        0
-      )
+      (acc, i) => acc + (i.quantity - (Number(returnQtys[i.productId]) || 0)) * Number(i.price),
+      0
+    )
     : 0;
   const settleShortfall = Math.max(0, settleSold - (parseFloat(cashReceived) || 0));
 
@@ -500,7 +500,7 @@ const SR = () => {
           <div style={{ display: 'none' }}>
             <div id="printable-sr-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
               <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Allah Dan Gents Point
+                Allahr dan gents point
               </h2>
               <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>SR Consignment History</h3>
               {(startDate || endDate) && (
@@ -656,7 +656,7 @@ const SR = () => {
             <div className="drawer-body" style={{ padding: 0, backgroundColor: '#fff' }}>
               <div id="printable-sr-slip" style={{ padding: '1.5rem', background: '#fff', color: '#000' }}>
                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold' }}>
-                  Allah Dan Gents Point
+                  Allahr dan gents point
                 </h2>
                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
                   SR Consignment Slip: {viewing.id}<br />

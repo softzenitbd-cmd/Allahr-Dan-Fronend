@@ -831,7 +831,7 @@ const Inventory = () => {
         <div style={{ display: 'none' }}>
           <div id="printable-valuation" style={{ padding: '1.25rem', background: '#fff', color: '#111827', fontSize: '12px' }}>
             <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
-              <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopProfile?.shop_name || 'Allah Dan Gents Point'}</div>
+              <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopProfile?.shop_name || 'Allahr dan gents point'}</div>
               {shopProfile?.address && <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile.address}</div>}
               <div style={{ marginTop: '6px', fontWeight: 700, letterSpacing: '0.1em', fontSize: '13px' }}>INVENTORY VALUATION SUMMARY</div>
               <div style={{ fontSize: '11px', color: '#4b5563' }}>
@@ -905,7 +905,7 @@ const Inventory = () => {
 
       <div id="printable-inventory-list" style={{ display: 'none' }}>
         <div style={{ padding: '1.5rem', background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
-          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allah Dan Gents Point</h2>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <p style={{ textAlign: 'center', fontSize: '1rem', marginBottom: '0.5rem', color: '#333' }}>Inventory Stock List</p>
           <p style={{ textAlign: 'center', fontSize: '0.9rem', marginBottom: '1.5rem', color: '#666' }}>
             {selectedCategory !== 'All' ? `Category: ${selectedCategory}` : 'All Categories'}
@@ -914,31 +914,31 @@ const Inventory = () => {
           <table style={{ width: '100%', fontSize: '0.85rem', color: '#000', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8f9fa' }}>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Barcode / ID</th>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Product Name</th>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Category</th>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left'}}>Variant</th>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>Stock</th>
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>Unit</th>
-                {isAdmin && <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669'}}>Original Price (BDT)</th>}
-                <th style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>Price (BDT)</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Barcode / ID</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Product Name</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Category</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Variant</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Stock</th>
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Unit</th>
+                {isAdmin && <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669' }}>Original Price (BDT)</th>}
+                <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>Price (BDT)</th>
               </tr>
             </thead>
             <tbody>
               {paginatedProducts.length > 0 ? paginatedProducts.map((item, idx) => (
                 <tr key={idx}>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.id}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.name}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.category}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem'}}>{item.variant || '-'}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', fontWeight: 'bold'}}>{item.stock}</td>
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center'}}>{item.unit}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{item.id}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{item.name}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{item.category}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{item.variant || '-'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', fontWeight: 'bold' }}>{item.stock}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>{item.unit}</td>
                   {isAdmin && (
-                    <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 600, color: '#059669'}}>
+                    <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 600, color: '#059669' }}>
                       {Number(item.cost_price ?? item.costPrice) > 0 ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}` : '—'}
                     </td>
                   )}
-                  <td style={{border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right'}}>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>
                     {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
                       <>
                         <span style={{ textDecoration: 'line-through', color: '#888', marginRight: '6px' }}>৳{Number(item.mrp).toLocaleString()}</span>
@@ -951,19 +951,19 @@ const Inventory = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} style={{border: '1px solid #ccc', padding: '1rem', textAlign: 'center'}}>No items found.</td>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center' }}>No items found.</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ background: '#f8f9fa', fontWeight: 'bold' }}>
-                <td colSpan="4" style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>Totals:</td>
-                <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center'}}>{totalItems}</td>
-                <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center'}}>-</td>
+                <td colSpan="4" style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Totals:</td>
+                <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center' }}>{totalItems}</td>
+                <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center' }}>-</td>
                 {isAdmin && (
-                  <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: '#059669'}}>৳{valuation.costValue.toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: '#059669' }}>৳{valuation.costValue.toLocaleString()}</td>
                 )}
-                <td style={{border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right'}}>৳{totalValue.toLocaleString()}</td>
+                <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>৳{totalValue.toLocaleString()}</td>
               </tr>
             </tfoot>
           </table>
@@ -1035,7 +1035,7 @@ const Inventory = () => {
                       required
                       placeholder="e.g. 8941170000013"
                       value={newProduct.id}
-                      onChange={(e) => setNewProduct({...newProduct, id: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, id: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1046,7 +1046,7 @@ const Inventory = () => {
                       required
                       placeholder="e.g. Silk Punjabi"
                       value={newProduct.name}
-                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1054,7 +1054,7 @@ const Inventory = () => {
                     <select
                       className="w-full"
                       value={newProduct.category}
-                      onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
                     >
                       {renderCategoryOptions()}
                     </select>
@@ -1066,7 +1066,7 @@ const Inventory = () => {
                       className="w-full"
                       placeholder="e.g. XL, Red, 42"
                       value={newProduct.variant}
-                      onChange={(e) => setNewProduct({...newProduct, variant: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, variant: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1074,7 +1074,7 @@ const Inventory = () => {
                     <select
                       className="w-full"
                       value={newProduct.unit}
-                      onChange={(e) => setNewProduct({...newProduct, unit: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })}
                     >
                       {availableUnits.map(u => (
                         <option key={u} value={u}>{u}</option>
@@ -1089,7 +1089,7 @@ const Inventory = () => {
                       required
                       min="0"
                       value={newProduct.stock}
-                      onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                     />
                   </div>
                   {isAdmin && (
@@ -1104,7 +1104,7 @@ const Inventory = () => {
                         step="any"
                         placeholder="e.g. 900"
                         value={newProduct.cost_price ?? ''}
-                        onChange={(e) => setNewProduct({...newProduct, cost_price: e.target.value})}
+                        onChange={(e) => setNewProduct({ ...newProduct, cost_price: e.target.value })}
                       />
                     </div>
                   )}
@@ -1119,7 +1119,7 @@ const Inventory = () => {
                       step="any"
                       placeholder="e.g. 1500"
                       value={newProduct.mrp}
-                      onChange={(e) => setNewProduct({...newProduct, mrp: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, mrp: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1134,7 +1134,7 @@ const Inventory = () => {
                       step="any"
                       placeholder="e.g. 1400"
                       value={newProduct.discount_price}
-                      onChange={(e) => setNewProduct({...newProduct, discount_price: e.target.value, price: e.target.value})}
+                      onChange={(e) => setNewProduct({ ...newProduct, discount_price: e.target.value, price: e.target.value })}
                     />
                   </div>
                 </div>
@@ -1223,7 +1223,7 @@ const Inventory = () => {
                       className="w-full"
                       required
                       value={editingItem.name}
-                      onChange={(e) => setEditingItem({...editingItem, name: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1231,7 +1231,7 @@ const Inventory = () => {
                     <select
                       className="w-full"
                       value={editingItem.category}
-                      onChange={(e) => setEditingItem({...editingItem, category: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}
                     >
                       {renderCategoryOptions()}
                     </select>
@@ -1242,7 +1242,7 @@ const Inventory = () => {
                       type="text"
                       className="w-full"
                       value={editingItem.variant || ''}
-                      onChange={(e) => setEditingItem({...editingItem, variant: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, variant: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1250,7 +1250,7 @@ const Inventory = () => {
                     <select
                       className="w-full"
                       value={editingItem.unit}
-                      onChange={(e) => setEditingItem({...editingItem, unit: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
                     >
                       {availableUnits.map(u => (
                         <option key={u} value={u}>{u}</option>
@@ -1265,7 +1265,7 @@ const Inventory = () => {
                       required
                       min="0"
                       value={editingItem.stock}
-                      onChange={(e) => setEditingItem({...editingItem, stock: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, stock: e.target.value })}
                     />
                   </div>
                   {isAdmin && (
@@ -1280,7 +1280,7 @@ const Inventory = () => {
                         step="any"
                         placeholder="e.g. 900"
                         value={editingItem.cost_price ?? ''}
-                        onChange={(e) => setEditingItem({...editingItem, cost_price: e.target.value})}
+                        onChange={(e) => setEditingItem({ ...editingItem, cost_price: e.target.value })}
                       />
                     </div>
                   )}
@@ -1295,7 +1295,7 @@ const Inventory = () => {
                       step="any"
                       placeholder="e.g. 1500"
                       value={editingItem.mrp || ''}
-                      onChange={(e) => setEditingItem({...editingItem, mrp: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, mrp: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1310,7 +1310,7 @@ const Inventory = () => {
                       step="any"
                       placeholder="e.g. 1400"
                       value={editingItem.discount_price || editingItem.price || ''}
-                      onChange={(e) => setEditingItem({...editingItem, discount_price: e.target.value, price: e.target.value})}
+                      onChange={(e) => setEditingItem({ ...editingItem, discount_price: e.target.value, price: e.target.value })}
                     />
                   </div>
                 </div>
