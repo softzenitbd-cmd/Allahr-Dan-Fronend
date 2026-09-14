@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
-import { Wallet, Landmark, ArrowRightLeft, History, Plus, Printer } from 'lucide-react';
+import { Wallet, Home, ArrowRightLeft, History, Plus, Printer } from 'lucide-react';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
@@ -15,16 +15,19 @@ const Accounts = () => {
   const handleManualEntry = async (e) => {
     e.preventDefault();
     const amount = parseFloat(entryForm.amount);
-    if (!amount || amount <= 0) return toast.error('Enter an amount greater than zero.');
+    if (!amount || amount <= 0) return toast.error(language === 'bn' ? '০-এর বেশি পরিমাণ লিখুন।' : 'Enter an amount greater than zero.');
 
     setSavingEntry(true);
     const res = await addManualEntry({ ...entryForm, amount });
     setSavingEntry(false);
     if (res?.ok) {
+      const accLabel = entryForm.accountId === 'Bank' 
+        ? (language === 'bn' ? 'বাসার ব্যালেন্স' : 'Home') 
+        : (language === 'bn' ? 'দোকানের ক্যাশ' : 'Cash');
       toast.success(
         entryForm.type === 'In'
-          ? `৳${amount.toLocaleString()} added to ${entryForm.accountId}.`
-          : `৳${amount.toLocaleString()} taken out of ${entryForm.accountId}.`
+          ? `৳${amount.toLocaleString()} ${accLabel}-এ জমা হয়েছে।`
+          : `৳${amount.toLocaleString()} ${accLabel} থেকে উত্তোলন হয়েছে।`
       );
       setEntryForm({ accountId: 'Cash', type: 'In', amount: '', description: '' });
     }
@@ -33,14 +36,18 @@ const Accounts = () => {
   const handleTransfer = async (e) => {
     e.preventDefault();
     const amount = parseFloat(transferForm.amount);
-    if (!amount || amount <= 0) return toast.error('Invalid amount');
+    if (!amount || amount <= 0) return toast.error(language === 'bn' ? 'সঠিক পরিমাণ লিখুন' : 'Invalid amount');
 
-    if (transferForm.from === 'Cash' && amount > cashBalance) return toast.error('Insufficient Cash Balance');
-    if (transferForm.from === 'Bank' && amount > bankBalance) return toast.error('Insufficient Bank Balance');
+    if (transferForm.from === 'Cash' && amount > cashBalance) {
+      return toast.error(language === 'bn' ? 'দোকানের ক্যাশে পর্যাপ্ত ব্যালেন্স নেই' : 'Insufficient Cash Balance');
+    }
+    if (transferForm.from === 'Bank' && amount > bankBalance) {
+      return toast.error(language === 'bn' ? 'বাসার ব্যালেন্সে পর্যাপ্ত টাকা নেই' : 'Insufficient Home Balance');
+    }
 
     const res = await transferFunds(transferForm.from, transferForm.to, amount);
     if (res?.ok) {
-      toast.success('Transfer Successful!');
+      toast.success(language === 'bn' ? 'সফলভাবে স্থানান্তর সম্পন্ন হয়েছে!' : 'Transfer Successful!');
       setTransferForm({ from: 'Cash', to: 'Bank', amount: '' });
       setActiveTab('Dashboard');
     }
@@ -60,20 +67,20 @@ const Accounts = () => {
       <div className="page-header">
         <div>
           <h1>{t(language, 'Accounts')}</h1>
-          <p className="text-muted">{language === 'bn' ? 'ক্যাশ, ব্যাংক ব্যালেন্স এবং ফান্ড ট্রান্সফার ম্যানেজ করুন।' : 'Manage Cash, Bank balances, and internal transfers.'}</p>
+          <p className="text-muted">{language === 'bn' ? 'ক্যাশ, বাসার ব্যালেন্স এবং ফান্ড স্থানান্তর ম্যানেজ করুন।' : 'Manage Cash, Home balances, and internal transfers.'}</p>
         </div>
       </div>
 
       <div className="card glass mb-4" style={{ padding: '0.5rem' }}>
         <div className="return-type-selector" style={{ gap: '0.5rem' }}>
           <button className={`type-btn ${activeTab === 'Dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('Dashboard')}>
-            <Wallet size={16} className="inline mr-2" /> {t(language, 'Balances' || 'Balances')}
+            <Wallet size={16} className="inline mr-2" /> {language === 'bn' ? 'ব্যালেন্স ও সমন্বয়' : 'Balances'}
           </button>
           <button className={`type-btn ${activeTab === 'Transfer' ? 'active' : ''}`} onClick={() => setActiveTab('Transfer')}>
-            <ArrowRightLeft size={16} className="inline mr-2" /> {t(language, 'Bank Transfer' || 'Fund Transfer')}
+            <ArrowRightLeft size={16} className="inline mr-2" /> {language === 'bn' ? 'বাসায় ক্যাশ স্থানান্তর' : 'Home Transfer'}
           </button>
           <button className={`type-btn ${activeTab === 'History' ? 'active' : ''}`} onClick={() => setActiveTab('History')}>
-            <History size={16} className="inline mr-2" /> {t(language, 'Transactions')}
+            <History size={16} className="inline mr-2" /> {language === 'bn' ? 'লেনদেনের বিবরণী' : 'Transactions'}
           </button>
         </div>
       </div>
@@ -82,32 +89,29 @@ const Accounts = () => {
         <div className="grid responsive-grid-2">
           <div className="card text-center" style={{ borderLeft: '4px solid var(--success)' }}>
             <Wallet size={40} className="mx-auto text-success mb-2" />
-            <h3 className="text-muted">{t(language, 'Cash Balance' || 'Cash in Hand')}</h3>
+            <h3 className="text-muted">{language === 'bn' ? 'দোকানের ক্যাশ' : 'Cash in Hand'}</h3>
             <p className="text-3xl font-bold mt-2">৳{(cashBalance || 0).toLocaleString()}</p>
           </div>
           <div className="card text-center" style={{ borderLeft: '4px solid var(--primary)' }}>
-            <Landmark size={40} className="mx-auto text-primary mb-2" />
-            <h3 className="text-muted">{t(language, 'Bank Balance')}</h3>
+            <Home size={40} className="mx-auto text-primary mb-2" />
+            <h3 className="text-muted">{language === 'bn' ? 'বাসার ব্যালেন্স (হোম ব্যালেন্স)' : 'Home Balance'}</h3>
             <p className="text-3xl font-bold mt-2">৳{(bankBalance || 0).toLocaleString()}</p>
           </div>
 
-          {/* Money the owner puts in or takes out with no document behind it:
-              the opening float, a capital injection, drawings. Without this,
-              a drawer that runs dry cannot be topped up and every payment is
-              refused with nowhere to go. */}
+          {/* Money the owner puts in or takes out with no document behind it */}
           <div className="card glass" style={{ gridColumn: '1 / -1' }}>
             <h3 className="mb-2">{t(language, 'Add or Withdraw Money')}</h3>
             <p className="text-muted text-sm mb-4">
               {language === 'bn'
-                ? 'কোনো বিক্রয় বা ক্রয় ছাড়াই টাকা রাখা বা তোলা — যেমন সকালের খুচরা, মালিকের জমা বা উত্তোলন।'
+                ? 'কোনো বিক্রয় বা ক্রয় ছাড়াই টাকা রাখা বা তোলা — যেমন সকালের খুচরা, বাসার টাকা জমা বা উত্তোলন।'
                 : 'Cash put in or taken out directly: the opening float, owner capital, or drawings.'}
             </p>
             <form onSubmit={handleManualEntry} className="flex-align-gap" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div className="form-group" style={{ minWidth: '120px' }}>
-                <label className="text-muted text-sm block mb-1">{t(language, 'Account')}</label>
+              <div className="form-group" style={{ minWidth: '150px' }}>
+                <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'অ্যাকাউন্ট' : 'Account'}</label>
                 <select value={entryForm.accountId} onChange={e => setEntryForm({ ...entryForm, accountId: e.target.value })}>
-                  <option value="Cash">Cash</option>
-                  <option value="Bank">Bank</option>
+                  <option value="Cash">{language === 'bn' ? 'দোকানের ক্যাশ (Cash)' : 'Cash'}</option>
+                  <option value="Bank">{language === 'bn' ? 'বাসার ব্যালেন্স (Home)' : 'Home Balance'}</option>
                 </select>
               </div>
               <div className="form-group" style={{ minWidth: '120px' }}>
@@ -132,7 +136,7 @@ const Accounts = () => {
                   type="text" required className="w-full"
                   value={entryForm.description}
                   onChange={e => setEntryForm({ ...entryForm, description: e.target.value })}
-                  placeholder={language === 'bn' ? 'যেমন: সকালের খুচরা টাকা' : 'e.g. Opening float for the day'}
+                  placeholder={language === 'bn' ? 'যেমন: ক্যাশ থেকে বাসায় নেওয়া / সকালের খুচরা' : 'e.g. Taking cash home or opening float'}
                 />
               </div>
               <button type="submit" className="btn-primary" style={{ height: '42px' }} disabled={savingEntry}>
@@ -145,30 +149,32 @@ const Accounts = () => {
 
       {activeTab === 'Transfer' && (
         <div className="card glass" style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <h2 className="mb-4">Internal Fund Transfer</h2>
+          <h2 className="mb-4">{language === 'bn' ? 'ক্যাশ ⇄ বাসা ফান্ড স্থানান্তর' : 'Cash & Home Transfer'}</h2>
           <form onSubmit={handleTransfer}>
             <div className="form-group mb-4">
-              <label>From Account</label>
+              <label>{language === 'bn' ? 'কোন অ্যাকাউন্ট থেকে (From)' : 'From Account'}</label>
               <select className="w-full" value={transferForm.from} onChange={e => setTransferForm({ ...transferForm, from: e.target.value, to: e.target.value === 'Cash' ? 'Bank' : 'Cash' })}>
-                <option value="Cash">Cash (Balance: ৳{cashBalance || 0})</option>
-                <option value="Bank">Bank (Balance: ৳{bankBalance || 0})</option>
+                <option value="Cash">{language === 'bn' ? `দোকানের ক্যাশ (ব্যালেন্স: ৳${(cashBalance || 0).toLocaleString()})` : `Cash (Balance: ৳${cashBalance || 0})`}</option>
+                <option value="Bank">{language === 'bn' ? `বাসার ব্যালেন্স (ব্যালেন্স: ৳${(bankBalance || 0).toLocaleString()})` : `Home Balance (Balance: ৳${bankBalance || 0})`}</option>
               </select>
             </div>
             <div className="text-center my-2 text-muted">
               <ArrowRightLeft size={24} className="mx-auto" style={{ transform: 'rotate(90deg)' }} />
             </div>
             <div className="form-group mb-4">
-              <label>To Account</label>
+              <label>{language === 'bn' ? 'কোন অ্যাকাউন্টে (To)' : 'To Account'}</label>
               <select className="w-full" disabled value={transferForm.to}>
-                <option value="Bank">Bank</option>
-                <option value="Cash">Cash</option>
+                <option value="Bank">{language === 'bn' ? 'বাসার ব্যালেন্স (Home)' : 'Home Balance'}</option>
+                <option value="Cash">{language === 'bn' ? 'দোকানের ক্যাশ (Cash)' : 'Cash'}</option>
               </select>
             </div>
             <div className="form-group mb-6">
-              <label>Amount (BDT)</label>
-              <input required type="number" min="1" className="w-full" value={transferForm.amount} onChange={e => setTransferForm({ ...transferForm, amount: e.target.value })} placeholder="Enter amount to transfer" />
+              <label>{language === 'bn' ? 'টাকার পরিমাণ (BDT)' : 'Amount (BDT)'}</label>
+              <input required type="number" min="1" className="w-full" value={transferForm.amount} onChange={e => setTransferForm({ ...transferForm, amount: e.target.value })} placeholder={language === 'bn' ? 'স্থানান্তরের পরিমাণ লিখুন' : 'Enter amount to transfer'} />
             </div>
-            <button type="submit" className="btn-primary w-full py-3" style={{ marginTop: '1.5rem' }}>Confirm Transfer</button>
+            <button type="submit" className="btn-primary w-full py-3" style={{ marginTop: '1.5rem' }}>
+              {language === 'bn' ? 'স্থানান্তর নিশ্চিত করুন' : 'Confirm Transfer'}
+            </button>
           </form>
         </div>
       )}
@@ -176,11 +182,11 @@ const Accounts = () => {
       {activeTab === 'History' && (
         <div className="card glass">
           <div className="card-toolbar" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 className="mb-0">All Account Transactions</h3>
+            <h3 className="mb-0">{language === 'bn' ? 'সকল লেনদেনের হিস্ট্রি' : 'All Account Transactions'}</h3>
             <button className="btn-primary flex-align-gap" onClick={() => {
               printElement('printable-transactions', 'Accounts');
             }}>
-              <Printer size={16} /> Print Transactions
+              <Printer size={16} /> {language === 'bn' ? 'প্রিন্ট করুন' : 'Print Transactions'}
             </button>
           </div>
           <div className="table-responsive" id="printable-transactions">
@@ -201,7 +207,7 @@ const Accounts = () => {
               <thead>
                 <tr>
                   <th>{t(language, 'Date')}</th>
-                  <th>{t(language, 'Account' || 'Account')}</th>
+                  <th>{language === 'bn' ? 'অ্যাকাউন্ট' : 'Account'}</th>
                   <th>{t(language, 'Type')}</th>
                   <th>{t(language, 'Description')}</th>
                   <th style={{ textAlign: 'right' }}>{t(language, 'Amount' || 'Amount')}</th>
@@ -209,15 +215,19 @@ const Accounts = () => {
               </thead>
               <tbody>
                 {(!accountTransactions || accountTransactions.length === 0) ? (
-                  <tr><td colSpan="5" className="text-center text-muted">No transactions found.</td></tr>
+                  <tr><td colSpan="5" className="text-center text-muted">{language === 'bn' ? 'কোনো লেনদেন পাওয়া যায়নি।' : 'No transactions found.'}</td></tr>
                 ) : (
                   accountTransactions.map(t => (
                     <tr key={t.id}>
                       <td>{new Date(t.date).toLocaleString()}</td>
-                      <td className="font-bold">{t.accountId}</td>
+                      <td className="font-bold">
+                        {t.accountId === 'Bank' 
+                          ? (language === 'bn' ? 'বাসা (Home)' : 'Home') 
+                          : (language === 'bn' ? 'দোকানের ক্যাশ' : 'Cash')}
+                      </td>
                       <td>
                         <span className={`badge ${t.type === 'In' ? 'bg-success text-white px-2 py-1 rounded' : 'bg-danger text-white px-2 py-1 rounded'}`}>
-                          {t.type}
+                          {t.type === 'In' ? (language === 'bn' ? 'জমা (In)' : 'In') : (language === 'bn' ? 'উত্তোলন (Out)' : 'Out')}
                         </span>
                       </td>
                       <td>{t.description}</td>

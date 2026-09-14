@@ -7,6 +7,7 @@ export const ENDPOINTS = {
   LOGIN: '/auth/login/',
   REGISTER: '/auth/register/',
   PROFILE: '/auth/profile/',
+  CHANGE_PASSWORD: '/auth/change-password/',
   TOKEN_REFRESH: '/auth/token/refresh/',
   USERS: '/auth/users/',
 

@@ -8,7 +8,7 @@ import {
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
 import { printElement } from '../utils/pdfGenerator';
-import { printBarcodeLabels, labelSpecFrom } from '../utils/printLabels';
+import { printBarcodeLabels, labelSpecFrom, LABEL_SHOP_NAME } from '../utils/printLabels';
 import { ProductService } from '../api/services';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
@@ -370,7 +370,7 @@ const Inventory = () => {
   };
 
   const handlePrintBarcode = (product) => {
-    printBarcodeLabels(product, 1, "Allah'r Dan", labelSpecFrom(shopProfile));
+    printBarcodeLabels(product, 1, LABEL_SHOP_NAME, labelSpecFrom(shopProfile));
   };
 
   const totalItems = (inventory || []).reduce((sum, item) => sum + (Number(item.stock) || 0), 0);
@@ -630,7 +630,7 @@ const Inventory = () => {
                 <th>{t(language, 'Price')} (BDT)</th>
                 {isAdmin && (
                   <th style={{ whiteSpace: 'nowrap', color: '#059669' }}>
-                    {language === 'bn' ? 'আসল দাম (Original)' : 'Original Price'} (BDT)
+                    {language === 'bn' ? 'আসল দাম (Original)' : 'Original Price'}
                   </th>
                 )}
                 <th>{t(language, 'Actions')}</th>
@@ -920,7 +920,7 @@ const Inventory = () => {
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Variant</th>
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Stock</th>
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Unit</th>
-                {isAdmin && <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669' }}>Original Price (BDT)</th>}
+                {isAdmin && <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669' }}>Original Price</th>}
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>Price (BDT)</th>
               </tr>
             </thead>

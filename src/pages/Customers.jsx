@@ -46,7 +46,7 @@ const Customers = () => {
   // Add/Edit Customer Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPerson, setEditingPerson] = useState(null);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', due: '', notes: '' });
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', notes: '' });
 
   // Fetch needed slices on mount & refresh deleted lists when switching to Deleted tab
   useEffect(() => {
@@ -69,13 +69,17 @@ const Customers = () => {
     const personSettlements = (settlements || []).filter(s =>
       s.targetId === selectedPerson.id ||
       s.targetId === selectedPerson.customer_code ||
-      s.targetId === selectedPerson.supplier_code
+      s.targetId === selectedPerson.supplier_code ||
+      String(s.targetId) === String(selectedPerson.id) ||
+      (selectedPerson.customer_code && String(s.targetId) === String(selectedPerson.customer_code))
     ).map(s => ({
       id: s.id,
       date: s.date,
       description: 'Payment / Settlement',
-      amount: s.amount,
-      type: 'payment' // decreases due
+      amount: Number(s.amount) || 0,
+      type: 'payment', // decreases due
+      method: s.payment_method || s.method || 'Cash',
+      notes: s.notes || '',
     }));
 
     if (isPersonCustomer) {
@@ -116,13 +120,42 @@ const Customers = () => {
       return String(a.date) < String(b.date) ? -1 : 1;
     });
 
-    // The balance opens at whatever they already owed before any of this, which
-    // is what makes the closing figure agree with the due on their record.
-    let balance = Number(selectedPerson.opening_due) || 0;
-    personLedger = personLedger.map(tx => {
-      if (tx.type === 'charge') balance += tx.amount;
-      else if (tx.type === 'payment') balance -= tx.amount;
-      return { ...tx, balance };
+    // Calculate true opening balance before transactions:
+    // currentActualDue = initialBalance + totalCharges - totalPayments
+    // initialBalance = currentActualDue - totalCharges + totalPayments
+    const totalCharges = personLedger.filter(t => t.type === 'charge').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const totalPayments = personLedger.filter(t => t.type === 'payment').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+    const currentActualDue = Number(selectedPerson.due) || 0;
+
+    let initialBalance = currentActualDue - totalCharges + totalPayments;
+    if (initialBalance < 0) initialBalance = 0;
+
+    const ledgerRows = [];
+    if (initialBalance > 0) {
+      ledgerRows.push({
+        id: 'OPENING_' + selectedPerson.id,
+        date: selectedPerson.created_at ? String(selectedPerson.created_at).slice(0, 10) : (personLedger[0]?.date ? String(personLedger[0]?.date).slice(0, 10) : new Date().toISOString().split('T')[0]),
+        description: language === 'bn' ? 'পূর্বের বকেয়া (Opening Balance)' : 'Previous / Opening Balance',
+        amount: initialBalance,
+        type: 'charge',
+        isOpening: true,
+      });
+    }
+
+    ledgerRows.push(...personLedger);
+
+    let runningBalance = 0;
+    personLedger = ledgerRows.map(tx => {
+      const prevBal = runningBalance;
+      if (tx.type === 'charge') runningBalance += tx.amount;
+      else if (tx.type === 'payment') runningBalance -= tx.amount;
+      const currentBal = Math.max(0, runningBalance);
+      return {
+        ...tx,
+        balance: currentBal,
+        previousDue: prevBal,
+        remainingDue: currentBal,
+      };
     });
   }
 
@@ -199,13 +232,16 @@ const Customers = () => {
       return;
     }
     const customerToSave = {
-      ...newCustomer,
       name: newCustomer.name.trim(),
-      due: parseFloat(newCustomer.due) || 0,
+      phone: (newCustomer.phone || '').trim(),
+      location: (newCustomer.location || '').trim(),
+      notes: (newCustomer.notes || '').trim(),
+      due: 0,
+      opening_due: 0,
     };
     const res = await addCustomer(customerToSave);
     if (res?.ok) {
-      setNewCustomer({ name: '', phone: '', location: '', due: '', notes: '' });
+      setNewCustomer({ name: '', phone: '', location: '', notes: '' });
       setShowAddModal(false);
       showSuccessAlert(language === 'bn' ? 'কাস্টমার সফলভাবে যুক্ত হয়েছে!' : 'Customer added successfully!');
     }
@@ -217,12 +253,13 @@ const Customers = () => {
       toast.error(language === 'bn' ? 'কাস্টমারের নাম দেওয়া আবশ্যক!' : 'Name is required');
       return;
     }
-    const due = parseFloat(editingPerson.due) || 0;
     const payload = {
       ...editingPerson,
       name: editingPerson.name.trim(),
+      phone: (editingPerson.phone || '').trim(),
+      location: (editingPerson.location || '').trim(),
       company: (editingPerson.company || '').trim(),
-      due,
+      due: Number(editingPerson.due) || 0,
     };
     const res = activeTab === 'Customer'
       ? await updateCustomer(editingPerson.id, payload)
@@ -741,16 +778,6 @@ const Customers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Opening Balance (Due)</label>
-                    <input
-                      type="number"
-                      value={newCustomer.due}
-                      onChange={e => setNewCustomer({ ...newCustomer, due: e.target.value })}
-                      placeholder="e.g. 5000"
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Notes / Remarks</label>
                     <textarea
                       value={newCustomer.notes}
@@ -830,13 +857,25 @@ const Customers = () => {
                     </div>
                   )}
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Total Due (BDT)</label>
-                    <input
-                      type="number"
-                      value={editingPerson.due}
-                      onChange={e => setEditingPerson({ ...editingPerson, due: e.target.value })}
-                      style={{ width: '100%' }}
-                    />
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'বর্তমান মোট বকেয়া (অপরিবর্তনযোগ্য)' : 'Total Due (Non-editable)'}
+                    </label>
+                    <div style={{
+                      padding: '0.55rem 0.85rem',
+                      background: 'var(--bg-subtle)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.05rem', color: Number(editingPerson.due) > 0 ? '#dc2626' : 'var(--success)' }}>
+                        ৳{Number(editingPerson.due || 0).toLocaleString()}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {language === 'bn' ? '(বকেয়া পরিবর্তনযোগ্য নয়)' : '(Updated via sales/payments only)'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -967,8 +1006,10 @@ const Customers = () => {
                                           id: tx.id,
                                           amount: tx.amount,
                                           date: tx.date,
-                                          remainingDue: Math.max(0, tx.balance),
-                                          previousDue: Math.max(0, tx.balance) + tx.amount,
+                                          remainingDue: tx.remainingDue !== undefined ? tx.remainingDue : Math.max(0, tx.balance),
+                                          previousDue: tx.previousDue !== undefined ? tx.previousDue : (Math.max(0, tx.balance) + tx.amount),
+                                          method: tx.method || 'Cash',
+                                          notes: tx.notes || '',
                                           type: isSelectedSupplier ? 'Supplier' : 'Customer',
                                           targetId: selectedPerson.id,
                                           partyName: selectedPerson.name,

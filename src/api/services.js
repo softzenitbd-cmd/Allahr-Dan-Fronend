@@ -11,6 +11,7 @@ export const AuthService = {
     return data.user;
   },
   profile: () => apiClient.get(ENDPOINTS.PROFILE),
+  changePassword: (payload) => apiClient.post(ENDPOINTS.CHANGE_PASSWORD, payload),
   logout: () => clearTokens(),
 };
 

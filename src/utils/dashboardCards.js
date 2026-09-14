@@ -7,7 +7,7 @@
  * apart before a single label is read.
  */
 export const DASHBOARD_CARDS = [
-  { key: 'totalBalance',   en: 'Total Balance (Cash + Bank)', bn: 'মোট ব্যালেন্স (ক্যাশ + ব্যাংক)', color: '#059669' },
+  { key: 'totalBalance',   en: 'Total Balance (Cash + Home)', bn: 'মোট ব্যালেন্স (ক্যাশ + বাসা)', color: '#059669' },
   { key: 'todaySales',     en: "Today's Sales",               bn: 'আজকের বিক্রয়',                   color: '#0284c7' },
   { key: 'todayExpense',   en: "Today's Expense",             bn: 'আজকের খরচ',                     color: '#dc2626' },
   { key: 'todayProfit',    en: "Today's Net Profit",          bn: 'আজকের নিট লাভ',                 color: '#16a34a' },

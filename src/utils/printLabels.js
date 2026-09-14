@@ -36,6 +36,9 @@ export const generateBarcodeSvg = (value) => {
   }
 };
 
+/** The heading on every sticker. */
+export const LABEL_SHOP_NAME = 'Allahr Dan Gents Point';
+
 /** The sticker size to print on, from the shop profile with safe defaults. */
 export const labelSpecFrom = (shopProfile) => ({
   width: Number(shopProfile?.label_width_mm) || 40,
@@ -58,7 +61,7 @@ export const labelSpecFrom = (shopProfile) => ({
  * @param shopName  the heading on each sticker
  * @param spec      { width, height, perRow } in mm — see labelSpecFrom()
  */
-export const printBarcodeLabels = (product, count = 1, shopName = "Allah'r Dan", spec = {}) => {
+export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAME, spec = {}) => {
   if (!product) return;
 
   const width = Number(spec.width) || 40;
@@ -173,9 +176,8 @@ export const printBarcodeLabels = (product, count = 1, shopName = "Allah'r Dan",
     .label-card.blank { visibility: hidden; }
     .shop-name {
       font-weight: 900;
-      font-size: ${pt(7.5)};
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
+      font-size: ${pt(7.2)};
+      letter-spacing: 0;
       line-height: 1.1;
       width: 100%;
       white-space: nowrap;

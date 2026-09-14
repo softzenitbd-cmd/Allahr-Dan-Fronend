@@ -11,7 +11,7 @@ import { t } from '../utils/i18n';
 const DEFAULT_CATEGORIES = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
 
 const Expenses = () => {
-  const { expenses, expenseCategories, addExpense, updateExpense, deleteExpense, language } = useStore();
+  const { expenses, expenseCategories, staff, addExpense, updateExpense, deleteExpense, language } = useStore();
   const [showModal, setShowModal] = useState(false);
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -22,7 +22,7 @@ const Expenses = () => {
     ...expenses.map(e => e.category).filter(Boolean)
   ]));
 
-  const [newExpense, setNewExpense] = useState({ date: todayStr, category: dynamicCategories[0] || 'Shop Rent', amount: '', description: '' });
+  const [newExpense, setNewExpense] = useState({ date: todayStr, category: dynamicCategories[0] || 'Shop Rent', amount: '', description: '', staffId: '' });
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [editingExpense, setEditingExpense] = useState(null);
 
@@ -41,6 +41,8 @@ const Expenses = () => {
 
     const res = await addExpense({
       ...newExpense,
+      staff: newExpense.staffId || undefined,
+      staffId: newExpense.staffId || undefined,
       amount: parsedAmount,
       description: finalDescription,
       date: newExpense.date || todayStr,
@@ -48,7 +50,7 @@ const Expenses = () => {
 
     if (res?.ok) {
       setShowModal(false);
-      setNewExpense({ date: todayStr, category: dynamicCategories[0] || 'Shop Rent', amount: '', description: '' });
+      setNewExpense({ date: todayStr, category: dynamicCategories[0] || 'Shop Rent', amount: '', description: '', staffId: '' });
       toast.success(language === 'bn' ? 'খরচ সফলভাবে যুক্ত হয়েছে' : 'Expense recorded successfully');
     }
   };
@@ -64,6 +66,8 @@ const Expenses = () => {
 
     const res = await updateExpense(editingExpense.id, {
       ...editingExpense,
+      staff: editingExpense.staffId || editingExpense.staff || undefined,
+      staffId: editingExpense.staffId || editingExpense.staff || undefined,
       amount: parsedAmount,
       description: finalDescription,
       date: editingExpense.date || todayStr,
@@ -157,7 +161,14 @@ const Expenses = () => {
                 {expenses.slice(0, 50).map(exp => ( // show only recent 50
                   <tr key={exp.id}>
                     <td>{exp.date}</td>
-                    <td>{exp.category}</td>
+                    <td>
+                      <span>{exp.category}</span>
+                      {exp.staffName && (
+                        <span className="badge" style={{ marginLeft: '0.4rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontSize: '0.75rem', padding: '0.15rem 0.4rem', borderRadius: '4px', display: 'inline-block' }}>
+                          👤 {exp.staffName}
+                        </span>
+                      )}
+                    </td>
                     <td>{exp.description}</td>
                     <td className="text-danger font-bold">৳{exp.amount.toLocaleString()}</td>
                     <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
@@ -259,6 +270,31 @@ const Expenses = () => {
                     {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
+                {(newExpense.category === 'Staff Cost' || newExpense.staffId) && (
+                  <div className="form-group mb-4" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{language === 'bn' ? 'কর্মী নির্বাচন করুন (Staff)' : 'Select Staff'}</span>
+                      <span className="text-xs text-muted">({language === 'bn' ? 'ঐচ্ছিক' : 'Optional'})</span>
+                    </label>
+                    <select
+                      className="w-full mt-1"
+                      value={newExpense.staffId || ''}
+                      onChange={e => setNewExpense({ ...newExpense, staffId: e.target.value })}
+                    >
+                      <option value="">{language === 'bn' ? '-- কর্মী নির্বাচন করুন --' : '-- Select Staff --'}</option>
+                      {(staff || []).map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role || 'Staff'}) — {language === 'bn' ? 'চলতি বকেয়া' : 'Current Due'}: ৳{s.due || 0}
+                        </option>
+                      ))}
+                    </select>
+                    {newExpense.staffId && (
+                      <p className="text-warning text-xs mt-1" style={{ margin: '0.35rem 0 0 0', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        ⚠️ {language === 'bn' ? 'এই খরচের টাকা কর্মীর বকেয়া (Due) হিসাবে জমা হবে।' : 'This amount will be added to the staff member\'s due balance.'}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="form-group mb-4">
                   <label>Amount (BDT)</label>
                   <input
@@ -323,6 +359,26 @@ const Expenses = () => {
                     {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
+                {(editingExpense.category === 'Staff Cost' || editingExpense.staffId || editingExpense.staff) && (
+                  <div className="form-group mb-4" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{language === 'bn' ? 'কর্মী নির্বাচন করুন (Staff)' : 'Select Staff'}</span>
+                      <span className="text-xs text-muted">({language === 'bn' ? 'ঐচ্ছিক' : 'Optional'})</span>
+                    </label>
+                    <select
+                      className="w-full mt-1"
+                      value={editingExpense.staffId || editingExpense.staff || ''}
+                      onChange={e => setEditingExpense({ ...editingExpense, staffId: e.target.value, staff: e.target.value })}
+                    >
+                      <option value="">{language === 'bn' ? '-- কর্মী নির্বাচন করুন --' : '-- Select Staff --'}</option>
+                      {(staff || []).map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role || 'Staff'}) — {language === 'bn' ? 'চলতি বকেয়া' : 'Current Due'}: ৳{s.due || 0}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="form-group mb-4">
                   <label>Amount (BDT)</label>
                   <input

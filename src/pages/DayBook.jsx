@@ -93,7 +93,7 @@ const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = fals
 
 const DayBook = () => {
   const {
-    user, language, shopProfile, sales, customers, expenseCategories, expenses,
+    user, language, shopProfile, sales, customers, staff, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
     loans, fetchLoans, addLoan, payLoan, deleteLoan, importLocalLoans,
   } = useStore();
@@ -109,7 +109,7 @@ const DayBook = () => {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);        // invoice open in the drawer
   const [pay, setPay] = useState(null);                  // { invoice, amount, method }
-  const [expenseForm, setExpenseForm] = useState(null);  // { category, amount, description }
+  const [expenseForm, setExpenseForm] = useState(null);  // { category, amount, description, staffId }
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async (silent = false) => {
@@ -129,9 +129,10 @@ const DayBook = () => {
   }, [date, today, load]);
 
   const categories = useMemo(() => {
-    const fromApi = (expenseCategories || []).map((c) => c.name);
+    const DEFAULT_CATS = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
+    const fromApi = (expenseCategories || []).map((c) => (typeof c === 'string' ? c : c.name));
     const fromRows = (expenses || []).map((e) => e.category);
-    return [...new Set([...fromApi, ...fromRows].filter(Boolean))];
+    return [...new Set([...DEFAULT_CATS, ...fromApi, ...fromRows].filter(Boolean))];
   }, [expenseCategories, expenses]);
 
   const feed = useMemo(() => {
@@ -188,7 +189,11 @@ const DayBook = () => {
     if (!amount || amount <= 0) { toast.error(bn ? 'সঠিক পরিমাণ লিখুন' : 'Enter a valid amount'); return; }
     setSaving(true);
     const res = await addExpense({
-      date, category: expenseForm.category, amount,
+      date,
+      category: expenseForm.category,
+      amount,
+      staff: expenseForm.staffId || undefined,
+      staffId: expenseForm.staffId || undefined,
       description: (expenseForm.description || '').trim() || expenseForm.category,
     });
     setSaving(false);
@@ -434,7 +439,17 @@ const DayBook = () => {
           {activeTab === 'daily' ? (
             <>
               <button className="btn-outline" onClick={() => load()} disabled={loading}><RefreshCcw size={16} className={loading ? 'animate-spin' : ''} /> {bn ? 'রিফ্রেশ' : 'Refresh'}</button>
-              <button className="btn-outline" onClick={() => printElement('printable-daybook', `DayBook-${date}`)} disabled={!data}><Printer size={16} /> {bn ? 'দিন শেষের রিপোর্ট' : 'Closing Report'}</button>
+              <button
+                className="btn-outline flex-align-gap"
+                onClick={() => downloadElementAsPDF('printable-daybook', `Closing-Report-${date}`)}
+                disabled={!data}
+                title={bn ? 'ক্লোজিং রিপোর্ট PDF ডাউনলোড করুন' : 'Download Closing Report as PDF'}
+              >
+                <Download size={16} /> {bn ? 'PDF ডাউনলোড' : 'Download PDF'}
+              </button>
+              <button className="btn-outline flex-align-gap" onClick={() => printElement('printable-daybook', `DayBook-${date}`)} disabled={!data}>
+                <Printer size={16} /> {bn ? 'দিন শেষের রিপোর্ট' : 'Closing Report'}
+              </button>
             </>
           ) : (
             <button className="btn-primary flex-align-gap" onClick={() => setLoanDrawer(true)}>
@@ -549,7 +564,7 @@ const DayBook = () => {
               {/* Get things done from here */}
               <div className="db-quick">
                 <button className="db-quick-btn primary" onClick={() => navigate('/pos')}><ShoppingCart size={18} /> {bn ? 'নতুন বিক্রি' : 'New sale'}</button>
-                <button className="db-quick-btn" onClick={() => setExpenseForm({ category: categories[0] || 'Others', amount: '', description: '' })}><Plus size={18} /> {bn ? 'খরচ লিখুন' : 'Add expense'}</button>
+                <button className="db-quick-btn" onClick={() => setExpenseForm({ category: categories[0] || 'Others', amount: '', description: '', staffId: '' })}><Plus size={18} /> {bn ? 'খরচ লিখুন' : 'Add expense'}</button>
                 {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/ledger')}><Wallet size={18} /> {bn ? 'বকেয়া নিন / দিন' : 'Receive / pay due'}</button>}
                 {isAdmin && <button className="db-quick-btn" onClick={() => navigate('/purchases')}><Truck size={18} /> {bn ? 'নতুন ক্রয়' : 'New purchase'}</button>}
                 <button className="db-quick-btn" onClick={() => navigate('/returns')}><RotateCcw size={18} /> {bn ? 'রিটার্ন' : 'Return'}</button>
@@ -725,7 +740,29 @@ const DayBook = () => {
                     <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allahr dan gents point'}</div>
                     <div style={{ fontSize: 13 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
                   </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
+                    <thead>
+                      <tr style={{ background: '#f1f1f1' }}>
+                        {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.feed.map((row, idx) => (
+                        <tr key={`${row.kind}-${row.id}`}>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <tbody>
                       {[
                         ['Sales', money(s.netSales), `${s.invoiceCount} invoices`],
@@ -746,28 +783,6 @@ const DayBook = () => {
                           <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{l}</td>
                           <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{v}</td>
                           <td style={{ border: '1px solid #ccc', padding: '5px 8px', color: '#555' }}>{h}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                    <thead>
-                      <tr style={{ background: '#f1f1f1' }}>
-                        {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.feed.map((row, idx) => (
-                        <tr key={`${row.kind}-${row.id}`}>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1043,6 +1058,33 @@ const DayBook = () => {
                 <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
                   {(categories.length ? categories : ['Others']).map((c) => <option key={c}>{c}</option>)}
                 </select>
+
+                {(expenseForm.category === 'Staff Cost' || expenseForm.staffId) && (
+                  <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '0.75rem', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '1rem', marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{bn ? 'কর্মী নির্বাচন করুন (Staff)' : 'Select Staff'}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({bn ? 'ঐচ্ছিক' : 'Optional'})</span>
+                    </label>
+                    <select
+                      style={{ width: '100%', marginTop: '0.35rem', padding: '0.4rem', backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-main)' }}
+                      value={expenseForm.staffId || ''}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, staffId: e.target.value })}
+                    >
+                      <option value="">{bn ? '-- কর্মী নির্বাচন করুন --' : '-- Select Staff --'}</option>
+                      {(staff || []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role || 'Staff'}) — {bn ? 'চলতি বকেয়া' : 'Current Due'}: ৳{s.due || 0}
+                        </option>
+                      ))}
+                    </select>
+                    {expenseForm.staffId && (
+                      <p style={{ color: '#f59e0b', fontSize: '0.75rem', margin: '0.35rem 0 0 0' }}>
+                        ⚠️ {bn ? 'এই খরচের টাকা কর্মীর বকেয়া (Due) হিসাবে জমা হবে।' : 'This amount will be added to the staff member\'s due balance.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <label>{bn ? 'পরিমাণ' : 'Amount'} (BDT)</label>
                 <input type="number" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} min="1" step="any" required autoFocus />
                 <label>{bn ? 'বিবরণ' : 'Description'}</label>

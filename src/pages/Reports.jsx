@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, Printer, Database, ShoppingCart, Eye, Plus, X, Gift } from 'lucide-react';
+import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, Printer, Database, ShoppingCart, Eye, Plus, X, Gift, Download } from 'lucide-react';
 import useStore from '../store/useStore';
-import { printElement } from '../utils/pdfGenerator';
+import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 
 const Reports = () => {
@@ -15,13 +15,41 @@ const Reports = () => {
   const { sales, inventory, purchases, expenses, customers, suppliers, staff, payrolls, returns, attendance, leaves, loadDummyData, accountTransactions, settlements, language } = useStore();
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [selectedAttStaffId, setSelectedAttStaffId] = useState('');
 
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const currentMonthStr = today.toISOString().substring(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
 
   const lastWeek = new Date(today);
   lastWeek.setDate(today.getDate() - 7);
+
+  const formatStatementDate = (dStr) => {
+    if (!dStr) return '';
+    const [y, m, d] = dStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const day = String(d).padStart(2, '0');
+    const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+    const year = date.getFullYear();
+    return `${day} ${monthName} ${year}`;
+  };
+
+  // Helper to generate days of a given YYYY-MM month
+  const getDaysInMonth = (monthStr) => {
+    if (!monthStr) return [];
+    const [year, month] = monthStr.split('-').map(Number);
+    const numDays = new Date(year, month, 0).getDate();
+    const days = [];
+    for (let d = 1; d <= numDays; d++) {
+      const dayStr = String(d).padStart(2, '0');
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${dayStr}`;
+      const dateObj = new Date(year, month - 1, d);
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      days.push({ dayNumber: d, dateStr, dayName, isFriday: dateObj.getDay() === 5 });
+    }
+    return days;
+  };
 
   // Helper to check if a date string falls within the selected filter
   const isWithinFilter = (dateStr) => {
@@ -34,7 +62,7 @@ const Reports = () => {
       const itemDate = new Date(itemDateStr);
       return itemDate >= lastWeek && itemDate <= today;
     } else if (dateFilter === 'Monthly') {
-      return itemDateStr.startsWith(currentMonthStr);
+      return itemDateStr.startsWith(selectedMonth || currentMonthStr);
     } else if (dateFilter === 'Custom') {
       if (!startDate && !endDate) return true;
       if (startDate && itemDateStr < startDate) return false;
@@ -137,6 +165,34 @@ const Reports = () => {
   const totalSalaryPaid = filteredPayrolls.reduce((acc, p) => acc + p.netPay, 0);
   const totalBonusPaid = filteredPayrolls.reduce((acc, p) => acc + p.bonus, 0);
 
+  // 7.2 Attendance Report Data
+  const filteredAttendance = (attendance || []).filter(a => isWithinFilter(a.date));
+  const totalAttPresent = filteredAttendance.filter(a => a.status === 'Present').length;
+  const totalAttHalfDay = filteredAttendance.filter(a => a.status === 'Half Day').length;
+  const totalAttLate = filteredAttendance.filter(a => a.status === 'Late').length;
+  const totalAttAbsent = filteredAttendance.filter(a => a.status === 'Absent').length;
+  const totalAttLeave = filteredAttendance.filter(a => a.status === 'Leave').length;
+
+  const staffAttendanceSummary = (staff || []).map(s => {
+    const records = filteredAttendance.filter(a => a.staffId === s.id);
+    const present = records.filter(a => a.status === 'Present').length;
+    const halfDay = records.filter(a => a.status === 'Half Day').length;
+    const late = records.filter(a => a.status === 'Late').length;
+    const absent = records.filter(a => a.status === 'Absent').length;
+    const leave = records.filter(a => a.status === 'Leave').length;
+    const effectiveDays = present + (halfDay * 0.5);
+    return {
+      ...s,
+      present,
+      halfDay,
+      late,
+      absent,
+      leave,
+      effectiveDays,
+      records
+    };
+  });
+
   const TABS = [
     { id: 'Sales', label: t(language, 'Sales' || 'Sales'), icon: BarChart },
     { id: 'Purchases', label: t(language, 'Purchases' || 'Purchases'), icon: ShoppingCart },
@@ -145,12 +201,13 @@ const Reports = () => {
     { id: 'Due', label: t(language, 'Due Report'), icon: DollarSign },
     { id: 'Salesman', label: t(language, 'Salesman Report' || 'Salesman'), icon: Users },
     { id: 'Expense', label: t(language, 'Expense' || 'Expense'), icon: PieChart },
+    { id: 'Attendance', label: language === 'bn' ? 'হাজিরা রিপোর্ট' : 'Attendance', icon: Calendar },
     { id: 'HR', label: t(language, 'HR & Payroll' || 'HR & Payroll'), icon: Calendar },
     { id: 'Gifts', label: t(language, 'Gifts Report' || 'Gifts'), icon: Gift },
     { id: 'CustLedger', label: t(language, 'Cust. Ledger' || 'Cust. Ledger'), icon: Users },
     { id: 'SupLedger', label: t(language, 'Sup. Ledger' || 'Sup. Ledger'), icon: Users },
     { id: 'CashStatement', label: t(language, 'Cash Stmt' || 'Cash Stmt'), icon: DollarSign },
-    { id: 'BankStatement', label: t(language, 'Bank Stmt' || 'Bank Stmt'), icon: DollarSign },
+    { id: 'BankStatement', label: language === 'bn' ? 'বাসার স্টেটমেন্ট' : 'Home Stmt', icon: DollarSign },
   ];
 
   // 8. Gifts Data
@@ -172,6 +229,25 @@ const Reports = () => {
   });
   const totalGiftValue = giftItems.reduce((acc, g) => acc + g.value, 0);
 
+  const currentTabObj = TABS.find(t => t.id === activeTab);
+  const currentTabLabel = currentTabObj?.label || activeTab;
+  const targetStaff = selectedAttStaffId ? (staff || []).find(s => s.id === selectedAttStaffId) : null;
+  const periodLabel = dateFilter === 'Monthly' ? selectedMonth : dateFilter;
+  const reportFileName = activeTab === 'Attendance' && targetStaff
+    ? `Attendance-${targetStaff.name}-${periodLabel}-${todayStr}`
+    : `${activeTab}-Report-${periodLabel}-${todayStr}`;
+
+  const handleDownloadReportPDF = () => {
+    downloadElementAsPDF('printable-active-report', reportFileName);
+  };
+
+  const handlePrintReport = () => {
+    const printTitle = activeTab === 'Attendance' && targetStaff
+      ? `Attendance Report - ${targetStaff.name} (${periodLabel})`
+      : `${currentTabLabel} Report (${periodLabel})`;
+    printElement('printable-active-report', printTitle);
+  };
+
   return (
     <div className="reports-page animate-fade-in" id="reports-page-container">
       <div className="page-header">
@@ -179,14 +255,22 @@ const Reports = () => {
           <h1>{t(language, 'Reports & Analytics')}</h1>
           <p className="text-muted">{language === 'bn' ? 'সব ধরনের রিপোর্ট এবং অ্যানালিটিক্স।' : 'Comprehensive business intelligence and reporting.'}</p>
         </div>
-        <div className="flex-align-gap">
+        <div className="flex-align-gap" style={{ flexWrap: 'wrap' }}>
           <label className="text-muted text-sm">Timeframe:</label>
           <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main">
             <option value="Daily">Daily (Today)</option>
             <option value="Weekly">Weekly (Last 7 Days)</option>
-            <option value="Monthly">Monthly (Current Month)</option>
+            <option value="Monthly">{language === 'bn' ? 'মাসিক (Monthly)' : 'Monthly'}</option>
             <option value="Custom">Custom Range</option>
           </select>
+          {dateFilter === 'Monthly' && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value)}
+              className="p-2 bg-input border border-gray-700 rounded text-main"
+            />
+          )}
           {dateFilter === 'Custom' && (
             <div className="flex-align-gap">
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 bg-input border border-gray-700 rounded text-main" />
@@ -199,8 +283,15 @@ const Reports = () => {
               <Database size={18} /> {language === 'bn' ? 'ডাটা সিঙ্ক করুন' : 'Sync Report Data'}
             </button>
           )}
-          <button className="btn-primary flex-align-gap" onClick={() => window.print()}>
-            <Printer size={18} /> Print Report
+          <button
+            className="btn-outline flex-align-gap"
+            onClick={handleDownloadReportPDF}
+            title={language === 'bn' ? 'রিপোর্ট PDF ডাউনলোড করুন' : 'Download Report as PDF'}
+          >
+            <Download size={18} /> {language === 'bn' ? 'PDF ডাউনলোড' : 'Download PDF'}
+          </button>
+          <button className="btn-primary flex-align-gap" onClick={handlePrintReport}>
+            <Printer size={18} /> {language === 'bn' ? 'প্রিন্ট রিপোর্ট' : 'Print Report'}
           </button>
         </div>
       </div>
@@ -215,8 +306,24 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* 1. Sales Report */}
-      {activeTab === 'Sales' && (
+      {/* Printable Active Report Area */}
+      <div id="printable-active-report" className="printable-report-wrapper">
+        <div className="print-report-header" style={{ display: 'none' }}>
+          <div style={{ textAlign: 'center', marginBottom: '1.25rem', borderBottom: '2px solid #333', paddingBottom: '0.75rem' }}>
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 700, color: '#111' }}>Allahr dan gents point</h2>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 600, color: '#333' }}>
+              {currentTabLabel} {activeTab === 'Attendance' && targetStaff ? `- ${targetStaff.name} ` : ''}{language === 'bn' ? 'রিপোর্ট' : 'Report'} ({periodLabel})
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>
+              {activeTab === 'Attendance' && targetStaff ? `${language === 'bn' ? 'কর্মী' : 'Staff'}: ${targetStaff.name} (${targetStaff.role || 'Staff'}) | ` : ''}
+              {dateFilter === 'Custom' && startDate && endDate ? `${language === 'bn' ? 'সময়কাল' : 'Range'}: ${startDate} to ${endDate} | ` : ''}
+              {language === 'bn' ? 'তারিখ' : 'Date'}: {new Date().toLocaleDateString('bn-BD')} {new Date().toLocaleTimeString()}
+            </p>
+          </div>
+        </div>
+
+        {/* 1. Sales Report */}
+        {activeTab === 'Sales' && (
         <div className="card glass">
           <h3>{t(language, 'Sales Report' || 'Sales Report')} ({dateFilter})</h3>
           <div className="grid responsive-grid-2 mt-4 mb-4">
@@ -485,6 +592,442 @@ const Reports = () => {
         </div>
       )}
 
+      {/* 6.5 Staff Attendance Report */}
+      {activeTab === 'Attendance' && (
+        <div className="card glass">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>
+                {language === 'bn' ? 'স্টাফ হাজিরা রিপোর্ট' : 'Staff Attendance Report'} ({periodLabel})
+              </h3>
+              <p className="text-muted text-sm" style={{ margin: '0.25rem 0 0 0' }}>
+                {targetStaff
+                  ? (language === 'bn' ? `${targetStaff.name}-এর ১ মাসের / নির্ধারিত সময়কালের হাজিরা শিট।` : `Attendance records for ${targetStaff.name}.`)
+                  : (dateFilter === 'Daily' 
+                      ? (language === 'bn' ? 'আজকের স্টাফদের উপস্থিতির বিবরণ।' : "Today's staff attendance details.")
+                      : (language === 'bn' ? 'সকল কর্মীর উপস্থিতির মাসিক/সময়কালের সারসংক্ষেপ।' : 'Attendance summary for the selected period.'))}
+              </p>
+            </div>
+
+            {/* Staff Selector and Filter Controls */}
+            <div className="flex-align-gap" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span className="text-muted text-sm">{language === 'bn' ? 'কর্মী নির্বাচন:' : 'Select Staff:'}</span>
+                <select
+                  className="p-2 bg-input border border-gray-700 rounded text-main"
+                  value={selectedAttStaffId}
+                  onChange={e => setSelectedAttStaffId(e.target.value)}
+                  style={{ minWidth: '170px' }}
+                >
+                  <option value="">{language === 'bn' ? 'সকল কর্মী (All Staff)' : 'All Staff'}</option>
+                  {(staff || []).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role || 'Staff'})</option>
+                  ))}
+                </select>
+              </div>
+              {selectedAttStaffId && (
+                <button
+                  className="btn-outline btn-sm"
+                  onClick={() => setSelectedAttStaffId('')}
+                >
+                  ← {language === 'bn' ? 'সকল কর্মীর তালিকা' : 'Back to All Staff'}
+                </button>
+              )}
+              <div className="badge badge-secondary hide-on-print" style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}>
+                {language === 'bn' ? `মোট রেকর্ড: ${filteredAttendance.length} টি` : `Total Records: ${filteredAttendance.length}`}
+              </div>
+            </div>
+          </div>
+
+          {targetStaff ? (
+            /* Selected Individual Staff View */
+            (() => {
+              const staffRecords = filteredAttendance.filter(a => a.staffId === targetStaff.id);
+              const isMonthly = dateFilter === 'Monthly';
+              const monthDays = isMonthly ? getDaysInMonth(selectedMonth) : [];
+              const firstDayStr = isMonthly ? (monthDays[0]?.dateStr || `${selectedMonth}-01`) : (startDate || staffRecords[0]?.date || todayStr);
+              const lastDayStr = isMonthly ? (monthDays[monthDays.length - 1]?.dateStr || `${selectedMonth}-30`) : (endDate || staffRecords[staffRecords.length - 1]?.date || todayStr);
+              const periodText = `${formatStatementDate(firstDayStr)} - ${formatStatementDate(lastDayStr)}`;
+
+              return (
+                <div>
+                  {/* EXACT STATEMENT CONTAINER MATCHING USER PHOTO */}
+                  <div style={{ background: '#ffffff', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', color: '#111827' }}>
+                    {/* Mint Green Header Banner */}
+                    <div className="statement-header-banner" style={{
+                      background: '#ecf8f3',
+                      border: '1px solid #d0ebe1',
+                      borderRadius: '12px',
+                      padding: '1.25rem 1.6rem',
+                      marginBottom: '1.25rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '1rem'
+                    }}>
+                      <div>
+                        <h2 className="statement-title-name" style={{
+                          fontSize: '1.85rem',
+                          fontWeight: 800,
+                          color: '#134e4a',
+                          margin: 0,
+                          letterSpacing: '-0.5px'
+                        }}>
+                          {targetStaff.name.toLowerCase()}
+                        </h2>
+                        <p className="statement-subtitle" style={{
+                          fontSize: '0.88rem',
+                          color: '#3f6e65',
+                          margin: '4px 0 0 0',
+                          fontWeight: 600
+                        }}>
+                          ID: {targetStaff.id} &nbsp;&nbsp;|&nbsp;&nbsp; Role: {targetStaff.role || 'Admin'}
+                        </p>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <div className="statement-period-label" style={{
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          color: '#0f766e',
+                          marginBottom: '5px'
+                        }}>
+                          Statement Period
+                        </div>
+                        <div className="statement-period-badge" style={{
+                          background: '#ffffff',
+                          border: '1px solid #c7e6d6',
+                          borderRadius: '8px',
+                          padding: '6px 16px',
+                          fontSize: '0.92rem',
+                          fontWeight: 700,
+                          color: '#134e4a',
+                          display: 'inline-block',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                        }}>
+                          {periodText}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4-Column Clean White Table */}
+                    <div className="statement-table-card" style={{
+                      background: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '10px',
+                      overflowX: 'auto'
+                    }}>
+                      <table className="statement-table" style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        fontSize: '12px',
+                        margin: 0,
+                        textAlign: 'left'
+                      }}>
+                        <thead>
+                          <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
+                            <th style={{ padding: '12px 16px', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>DATE</th>
+                            <th style={{ padding: '12px 16px', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>DAY</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {isMonthly ? (
+                            monthDays.map(d => {
+                              const attRec = staffRecords.find(a => a.date === d.dateStr);
+                              const stat = attRec ? attRec.status : '';
+                              return (
+                                <tr key={d.dateStr} style={{ borderBottom: '1px solid #f3f4f6', background: d.isFriday ? '#fcfdfd' : '#ffffff' }}>
+                                  <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111827' }}>{d.dateStr}</td>
+                                  <td style={{ padding: '11px 16px', color: '#6b7280' }}>{d.dayName}</td>
+                                  <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                                    {stat === 'Present' ? (
+                                      <span className="statement-badge-present" style={{
+                                        background: '#ecfdf5',
+                                        border: '1px solid #a7f3d0',
+                                        color: '#047857',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Present
+                                      </span>
+                                    ) : stat === 'Absent' ? (
+                                      <span className="statement-badge-absent" style={{
+                                        background: '#fee2e2',
+                                        border: '1px solid #fecaca',
+                                        color: '#dc2626',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Absent
+                                      </span>
+                                    ) : stat === 'Half Day' ? (
+                                      <span className="statement-badge-halfday" style={{
+                                        background: '#fef3c7',
+                                        border: '1px solid #fde68a',
+                                        color: '#d97706',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Half Day
+                                      </span>
+                                    ) : stat === 'Late' ? (
+                                      <span className="statement-badge-late" style={{
+                                        background: '#dbeafe',
+                                        border: '1px solid #bfdbfe',
+                                        color: '#1d4ed8',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Late
+                                      </span>
+                                    ) : stat === 'Leave' ? (
+                                      <span className="statement-badge-leave" style={{
+                                        background: '#f3f4f6',
+                                        border: '1px solid #e5e7eb',
+                                        color: '#4b5563',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Leave
+                                      </span>
+                                    ) : stat ? (
+                                      <span style={{
+                                        background: '#f1f5f9',
+                                        border: '1px solid #cbd5e1',
+                                        color: '#334155',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        {stat}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#9ca3af', fontSize: '12px' }}>
+                                        {d.isFriday ? 'Weekend' : '-'}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            staffRecords.map((attRec, idx) => {
+                              const dateObj = new Date(attRec.date);
+                              const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+                              return (
+                                <tr key={attRec.id || idx} style={{ borderBottom: '1px solid #f3f4f6', background: '#ffffff' }}>
+                                  <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111827' }}>{attRec.date}</td>
+                                  <td style={{ padding: '11px 16px', color: '#6b7280' }}>{dayName}</td>
+                                  <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                                    {attRec.status === 'Present' ? (
+                                      <span className="statement-badge-present" style={{
+                                        background: '#ecfdf5',
+                                        border: '1px solid #a7f3d0',
+                                        color: '#047857',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Present
+                                      </span>
+                                    ) : attRec.status === 'Absent' ? (
+                                      <span className="statement-badge-absent" style={{
+                                        background: '#fee2e2',
+                                        border: '1px solid #fecaca',
+                                        color: '#dc2626',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Absent
+                                      </span>
+                                    ) : attRec.status === 'Half Day' ? (
+                                      <span className="statement-badge-halfday" style={{
+                                        background: '#fef3c7',
+                                        border: '1px solid #fde68a',
+                                        color: '#d97706',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Half Day
+                                      </span>
+                                    ) : attRec.status === 'Late' ? (
+                                      <span className="statement-badge-late" style={{
+                                        background: '#dbeafe',
+                                        border: '1px solid #bfdbfe',
+                                        color: '#1d4ed8',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Late
+                                      </span>
+                                    ) : attRec.status === 'Leave' ? (
+                                      <span className="statement-badge-leave" style={{
+                                        background: '#f3f4f6',
+                                        border: '1px solid #e5e7eb',
+                                        color: '#4b5563',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        Leave
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        background: '#f1f5f9',
+                                        border: '1px solid #cbd5e1',
+                                        color: '#334155',
+                                        borderRadius: '4px',
+                                        padding: '3px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
+                                        display: 'inline-block'
+                                      }}>
+                                        {attRec.status || '-'}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                          {(!isMonthly && staffRecords.length === 0) && (
+                            <tr><td colSpan="3" className="text-center text-muted" style={{ padding: '16px' }}>{language === 'bn' ? 'কোনো হাজিরার তথ্য পাওয়া যায়নি।' : 'No attendance records found.'}</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            /* All Staff Summary View */
+            <div>
+              {/* Shop Summary KPIs */}
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div className="card bg-input text-center" style={{ padding: '0.75rem', borderLeft: '3px solid #16a34a' }}>
+                  <h4 className="text-muted text-xs">{language === 'bn' ? 'মোট উপস্থিতি' : 'Total Present'}</h4>
+                  <p className="text-2xl text-success font-bold mt-1">{totalAttPresent} {language === 'bn' ? 'দিন' : 'days'}</p>
+                </div>
+                <div className="card bg-input text-center" style={{ padding: '0.75rem', borderLeft: '3px solid #d97706' }}>
+                  <h4 className="text-muted text-xs">{language === 'bn' ? 'হাফ ডে' : 'Half Day'}</h4>
+                  <p className="text-2xl text-warning font-bold mt-1">{totalAttHalfDay} {language === 'bn' ? 'টি' : ''}</p>
+                </div>
+                <div className="card bg-input text-center" style={{ padding: '0.75rem', borderLeft: '3px solid #0284c7' }}>
+                  <h4 className="text-muted text-xs">{language === 'bn' ? 'দেরিতে উপস্থিতি' : 'Late'}</h4>
+                  <p className="text-2xl text-info font-bold mt-1">{totalAttLate} {language === 'bn' ? 'দিন' : ''}</p>
+                </div>
+                <div className="card bg-input text-center" style={{ padding: '0.75rem', borderLeft: '3px solid #dc2626' }}>
+                  <h4 className="text-muted text-xs">{language === 'bn' ? 'অনুপস্থিত' : 'Absent'}</h4>
+                  <p className="text-2xl text-danger font-bold mt-1">{totalAttAbsent} {language === 'bn' ? 'দিন' : ''}</p>
+                </div>
+                <div className="card bg-input text-center" style={{ padding: '0.75rem', borderLeft: '3px solid #6b7280' }}>
+                  <h4 className="text-muted text-xs">{language === 'bn' ? 'ছুটি' : 'On Leave'}</h4>
+                  <p className="text-2xl text-muted font-bold mt-1">{totalAttLeave} {language === 'bn' ? 'দিন' : ''}</p>
+                </div>
+              </div>
+
+              {/* All Staff Summary Table */}
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{language === 'bn' ? 'আইডি' : 'Staff ID'}</th>
+                      <th>{language === 'bn' ? 'নাম' : 'Name'}</th>
+                      <th>{language === 'bn' ? 'পদবী' : 'Role'}</th>
+                      {dateFilter === 'Daily' && <th>{language === 'bn' ? 'আজকের অবস্থা' : 'Status'}</th>}
+                      <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'উপস্থিত' : 'Present'}</th>
+                      <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'হাফ ডে' : 'Half Day'}</th>
+                      <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'দেরি' : 'Late'}</th>
+                      <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'অনুপস্থিত' : 'Absent'}</th>
+                      <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'ছুটি' : 'Leave'}</th>
+                      <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'কার্যকর উপস্থিতি' : 'Effective Days'}</th>
+                      <th className="hide-on-print" style={{ textAlign: 'center' }}>{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffAttendanceSummary.map(s => {
+                      const todayRecord = s.records && s.records[0];
+                      const todayStatus = todayRecord ? todayRecord.status : '';
+                      return (
+                        <tr key={s.id}>
+                          <td><code>{s.id}</code></td>
+                          <td className="font-bold">{s.name}</td>
+                          <td>{s.role || 'Staff'}</td>
+                          {dateFilter === 'Daily' && (
+                            <td>
+                              {todayStatus === 'Present' && <span className="badge bg-success text-white px-2 py-1 rounded">✓ {language === 'bn' ? 'উপস্থিত' : 'Present'}</span>}
+                              {todayStatus === 'Half Day' && <span className="badge bg-warning text-white px-2 py-1 rounded">½ {language === 'bn' ? 'হাফ ডে' : 'Half Day'}</span>}
+                              {todayStatus === 'Late' && <span className="badge bg-info text-white px-2 py-1 rounded">⏰ {language === 'bn' ? 'দেরিতে' : 'Late'}</span>}
+                              {todayStatus === 'Absent' && <span className="badge bg-danger text-white px-2 py-1 rounded">✗ {language === 'bn' ? 'অনুপস্থিত' : 'Absent'}</span>}
+                              {todayStatus === 'Leave' && <span className="badge bg-muted text-white px-2 py-1 rounded">🏖️ {language === 'bn' ? 'ছুটি' : 'Leave'}</span>}
+                              {!todayStatus && <span className="text-muted text-xs">—</span>}
+                            </td>
+                          )}
+                          <td style={{ textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>{s.present}</td>
+                          <td style={{ textAlign: 'center', color: '#d97706', fontWeight: 'bold' }}>{s.halfDay}</td>
+                          <td style={{ textAlign: 'center', color: '#0284c7' }}>{s.late}</td>
+                          <td style={{ textAlign: 'center', color: '#dc2626' }}>{s.absent}</td>
+                          <td style={{ textAlign: 'center', color: '#6b7280' }}>{s.leave}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: '#2563eb' }}>
+                            {s.effectiveDays} {language === 'bn' ? 'দিন' : 'days'}
+                          </td>
+                          <td className="hide-on-print" style={{ textAlign: 'center' }}>
+                            <button
+                              className="btn-outline btn-sm flex-align-gap"
+                              style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', display: 'inline-flex' }}
+                              onClick={() => setSelectedAttStaffId(s.id)}
+                              title={language === 'bn' ? 'এই কর্মীর বিস্তারিত হাজিরা শিট দেখুন' : "View staff's attendance sheet"}
+                            >
+                              <Eye size={14} /> {language === 'bn' ? '১ মাসের শিট' : 'View Sheet'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {staffAttendanceSummary.length === 0 && (
+                      <tr><td colSpan={dateFilter === 'Daily' ? 11 : 10} className="text-center text-muted">{language === 'bn' ? 'কোনো হাজিরার তথ্য পাওয়া যায়নি।' : 'No attendance data found.'}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 7. HR & Payroll Report */}
       {activeTab === 'HR' && (
         <div className="card glass">
@@ -705,13 +1248,14 @@ const Reports = () => {
                       <td>{t.description}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', color: t.type === 'In' ? 'var(--success)' : 'var(--danger)' }}>{t.type === 'In' ? '+' : '-'}৳{t.amount}</td>
                     </tr>
-                  )) : <tr><td colSpan="5" className="text-center text-muted">No Bank transactions.</td></tr>;
+                  )) : <tr><td colSpan="5" className="text-center text-muted">{language === 'bn' ? 'কোনো লেনদেন পাওয়া যায়নি।' : 'No transactions found.'}</td></tr>;
                 })()}
               </tbody>
             </table>
           </div>
         </div>
       )}
+      </div>
 
       {/* Invoice Drawer for Print */}
       {selectedInvoice && createPortal(
@@ -835,11 +1379,20 @@ const Reports = () => {
               </div>
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
+            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn-outline flex-align-gap"
+                style={{ padding: '0.75rem 1.5rem', fontSize: '0.9rem', borderRadius: '99px' }}
+                onClick={() => {
+                  downloadElementAsPDF('printable-single-invoice', `${invoiceType}-Document-${selectedInvoice?.id || todayStr}`);
+                }}
+              >
+                <Download size={18} /> {language === 'bn' ? 'PDF ডাউনলোড' : 'Download PDF'}
+              </button>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
                 printElement('printable-single-invoice', 'Reports');
               }}>
-                <Printer size={20} /> Print Document
+                <Printer size={20} /> {language === 'bn' ? 'প্রিন্ট করুন' : 'Print Document'}
               </button>
             </div>
           </div>

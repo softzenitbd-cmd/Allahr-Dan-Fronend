@@ -49,34 +49,60 @@ const Suppliers = () => {
       date: p.date,
       type: 'Purchase',
       description: `Purchase (${p.paymentType})`,
-      amount: p.total,
+      amount: Number(p.dueRemaining !== undefined ? p.dueRemaining : (p.dueAmount !== undefined ? p.dueAmount : (Number(p.total) - Number(p.paidAmount || 0)))) || 0,
+      fullTotal: Number(p.total) || 0,
       isCredit: true
     }));
-
-    // Money handed over at the counter is a payment too. Counting only later
-    // settlements made a cash purchase look entirely unpaid, even though the
-    // Due column beside it correctly read zero.
-    const paidOnPurchase = (purchases || [])
-      .filter(p => (p.supplierId === supplierId || p.supplierId === selectedPerson?.supplier_code || String(p.supplierId) === String(supplierId)) && Number(p.paidAmount) > 0)
-      .map(p => ({
-        id: `${p.id}-paid`,
-        date: p.date,
-        type: 'Payment',
-        description: `Paid on purchase ${p.id} (${p.paymentType})`,
-        amount: Number(p.paidAmount),
-        isCredit: false
-      }));
 
     const supplierSettlements = (settlements || []).filter(s => (s.targetId === supplierId || s.targetId === selectedPerson?.supplier_code) && s.type === 'Supplier').map(s => ({
       id: s.id,
       date: s.date,
       type: 'Payment',
       description: 'Payment to Supplier',
-      amount: s.amount,
+      amount: Number(s.amount) || 0,
+      method: s.payment_method || s.method || 'Cash',
+      notes: s.notes || '',
       isCredit: false
     }));
 
-    return [...supplierPurchases, ...paidOnPurchase, ...supplierSettlements].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const allTx = [...supplierPurchases, ...supplierSettlements].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const totalCharges = allTx.filter(t => t.isCredit).reduce((sum, t) => sum + t.amount, 0);
+    const totalPayments = allTx.filter(t => !t.isCredit).reduce((sum, t) => sum + t.amount, 0);
+    const currentActualDue = Number(selectedPerson?.due) || 0;
+
+    let initialBalance = currentActualDue - totalCharges + totalPayments;
+    if (initialBalance < 0) initialBalance = 0;
+
+    const ledgerRows = [];
+    if (initialBalance > 0) {
+      ledgerRows.push({
+        id: 'OPENING_' + (selectedPerson?.id || supplierId),
+        date: selectedPerson?.created_at ? String(selectedPerson.created_at).slice(0, 10) : (allTx[0]?.date ? String(allTx[0]?.date).slice(0, 10) : new Date().toISOString().split('T')[0]),
+        description: language === 'bn' ? 'পূর্বের বাকি (Opening Balance)' : 'Previous / Opening Due',
+        amount: initialBalance,
+        isCredit: true,
+        type: 'Opening',
+      });
+    }
+
+    ledgerRows.push(...allTx);
+
+    let runningBal = 0;
+    const computedRows = ledgerRows.map(tx => {
+      const prev = runningBal;
+      if (tx.isCredit) runningBal += tx.amount;
+      else runningBal -= tx.amount;
+      const cur = Math.max(0, runningBal);
+      return {
+        ...tx,
+        balance: cur,
+        previousDue: prev,
+        remainingDue: cur,
+      };
+    });
+
+    return computedRows.reverse();
   };
 
   const selectedPersonTransactions = selectedPerson ? getSupplierTransactions(selectedPerson.id) : [];
@@ -86,7 +112,7 @@ const Suppliers = () => {
   // Add/Edit Supplier Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPerson, setEditingPerson] = useState(null);
-  const [newSupplier, setNewSupplier] = useState({ name: '', company: '', phone: '', email: '', location: '', due: '', notes: '' });
+  const [newSupplier, setNewSupplier] = useState({ name: '', company: '', phone: '', email: '', location: '', notes: '' });
 
   const currentList = activeTab === 'Active' ? (suppliers || []) : (deletedSuppliers || []);
 
@@ -104,14 +130,18 @@ const Suppliers = () => {
       return;
     }
     const supplierToSave = {
-      ...newSupplier,
       name: newSupplier.name.trim(),
       company: (newSupplier.company || '').trim(),
-      due: parseFloat(newSupplier.due) || 0,
+      phone: (newSupplier.phone || '').trim(),
+      email: (newSupplier.email || '').trim(),
+      location: (newSupplier.location || '').trim(),
+      notes: (newSupplier.notes || '').trim(),
+      due: 0,
+      opening_due: 0,
     };
     const res = await addSupplier(supplierToSave);
     if (res?.ok) {
-      setNewSupplier({ name: '', company: '', phone: '', email: '', location: '', due: '', notes: '' });
+      setNewSupplier({ name: '', company: '', phone: '', email: '', location: '', notes: '' });
       setShowAddModal(false);
       showSuccessAlert(language === 'bn' ? 'সাপ্লায়ার সফলভাবে যুক্ত হয়েছে!' : 'Supplier added successfully!');
     }
@@ -164,14 +194,13 @@ const Suppliers = () => {
       toast.error(language === 'bn' ? 'সাপ্লায়ারের নাম দেওয়া আবশ্যক!' : 'Supplier name is required');
       return;
     }
-    const due = parseFloat(editingPerson.due) || 0;
     const res = await updateSupplier(editingPerson.id, {
       ...editingPerson,
       name: editingPerson.name.trim(),
       company: (editingPerson.company || '').trim(),
       phone: (editingPerson.phone || '').trim(),
       location: (editingPerson.location || '').trim(),
-      due,
+      due: Number(editingPerson.due) || 0,
     });
     if (res?.ok) {
       setEditingPerson(null);
@@ -462,16 +491,6 @@ const Suppliers = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Opening Balance (Due)</label>
-                    <input
-                      type="number"
-                      value={newSupplier.due}
-                      onChange={e => setNewSupplier({ ...newSupplier, due: e.target.value })}
-                      placeholder="e.g. 5000"
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Notes / Remarks</label>
                     <textarea
                       value={newSupplier.notes}
@@ -554,14 +573,24 @@ const Suppliers = () => {
                   </div>
                   <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
-                      {language === 'bn' ? 'বর্তমান বাকি' : 'Total Due'} (BDT)
+                      {language === 'bn' ? 'বর্তমান মোট দেনা/বাকি (অপরিবর্তনযোগ্য)' : 'Total Due (Non-editable)'}
                     </label>
-                    <input
-                      type="number"
-                      value={editingPerson.due}
-                      onChange={e => setEditingPerson({ ...editingPerson, due: e.target.value })}
-                      style={{ width: '100%' }}
-                    />
+                    <div style={{
+                      padding: '0.55rem 0.85rem',
+                      background: 'var(--bg-subtle)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.05rem', color: Number(editingPerson.due) > 0 ? '#dc2626' : 'var(--success)' }}>
+                        ৳{Number(editingPerson.due || 0).toLocaleString()}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {language === 'bn' ? '(বকেয়া পরিবর্তনযোগ্য নয়)' : '(Updated via purchase/settlement only)'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -663,6 +692,10 @@ const Suppliers = () => {
                                           id: t.id,
                                           amount: t.amount,
                                           date: t.date,
+                                          remainingDue: t.remainingDue !== undefined ? t.remainingDue : Math.max(0, t.balance),
+                                          previousDue: t.previousDue !== undefined ? t.previousDue : (Math.max(0, t.balance) + t.amount),
+                                          method: t.method || 'Cash',
+                                          notes: t.notes || '',
                                           type: 'Supplier',
                                           targetId: selectedPerson.id,
                                           partyName: selectedPerson.name,

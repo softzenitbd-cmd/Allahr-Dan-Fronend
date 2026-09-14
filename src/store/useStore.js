@@ -154,6 +154,21 @@ const useStore = create(
 
       login: (userData) => set({ user: userData }),
 
+      changePassword: async (oldPassword, newPassword, confirmPassword) => {
+        try {
+          const res = await AuthService.changePassword({
+            oldPassword,
+            newPassword,
+            confirmPassword,
+            language: get().language,
+          });
+          return { ok: true, message: res?.message || 'Password changed successfully.' };
+        } catch (error) {
+          const errMsg = error?.response?.data?.error || error?.response?.data?.message || 'Failed to change password.';
+          return fail(error, errMsg);
+        }
+      },
+
       logout: () => {
         AuthService.logout();
         lastFetchedTimestamps.clear();
@@ -862,7 +877,7 @@ const useStore = create(
       addExpense: (expense) => enqueue(async () => {
         try {
           await ExpenseService.create(clean(expense, ['id']));
-          await get().refresh('expenses', 'treasury', 'dashboard');
+          await get().refresh('expenses', 'treasury', 'dashboard', 'staff');
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not save the expense.');
@@ -872,7 +887,7 @@ const useStore = create(
       updateExpense: (expenseId, updates) => enqueue(async () => {
         try {
           await ExpenseService.update(expenseId, clean(updates, ['id']));
-          await get().refresh('expenses', 'treasury', 'dashboard');
+          await get().refresh('expenses', 'treasury', 'dashboard', 'staff');
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not update the expense.');
@@ -882,7 +897,7 @@ const useStore = create(
       deleteExpense: (expenseId) => enqueue(async () => {
         try {
           await ExpenseService.remove(expenseId);
-          await get().refresh('expenses', 'treasury', 'dashboard');
+          await get().refresh('expenses', 'treasury', 'dashboard', 'staff');
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not delete the expense.');
@@ -974,11 +989,14 @@ const useStore = create(
             year: payrollData.year,
             presentDays: payrollData.presentDays,
             bonus: payrollData.bonus || 0,
+            amount: payrollData.amount !== undefined ? payrollData.amount : undefined,
+            paymentMethod: payrollData.paymentMethod || payrollData.method || 'Cash',
+            notes: payrollData.notes || '',
           });
-          await get().refresh('payrolls', 'expenses', 'treasury');
+          await get().refresh('payrolls', 'expenses', 'treasury', 'staff');
           return { ok: true };
         } catch (error) {
-          return fail(error, 'Could not generate the payslip.');
+          return fail(error, 'Could not process the payroll payment.');
         }
       }),
 

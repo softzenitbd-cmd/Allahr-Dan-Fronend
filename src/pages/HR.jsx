@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Edit, Trash2 } from 'lucide-react';
+import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Edit, Trash2, History, Download } from 'lucide-react';
 import useStore from '../store/useStore';
-import { printElement } from '../utils/pdfGenerator';
+import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 
 const HR = () => {
   const [activeTab, setActiveTab] = useState('Staff');
-  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, language } = useStore();
+  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, settleStaffDue, language } = useStore();
 
   // Modals state
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -20,13 +20,70 @@ const HR = () => {
 
   const [selectedStaff, setSelectedStaff] = useState(null);
 
-  // Bonus state for payroll
+  // Bonus and flexible payment inputs for payroll
   const [bonuses, setBonuses] = useState({});
+  const [payInputs, setPayInputs] = useState({});
+  const [viewPayrollDetails, setViewPayrollDetails] = useState(null);
+
+  // Settle Staff Due modal state
+  const [settleStaffModal, setSettleStaffModal] = useState(null);
+  const [settleAmount, setSettleAmount] = useState('');
+  const [settleDate, setSettleDate] = useState(new Date().toISOString().split('T')[0]);
+  const [settleMethod, setSettleMethod] = useState('Cash');
+  const [settleNotes, setSettleNotes] = useState('');
 
   // Dates
   const todayStr = new Date().toISOString().split('T')[0];
   const [attDate, setAttDate] = useState(todayStr);
   const [payrollMonth, setPayrollMonth] = useState(todayStr.substring(0, 7)); // YYYY-MM
+  const [attViewMode, setAttViewMode] = useState('monthly'); // 'monthly' | 'daily'
+  const [attReportMonth, setAttReportMonth] = useState(todayStr.substring(0, 7)); // YYYY-MM
+  const [attStaffFilter, setAttStaffFilter] = useState(''); // '' for all, or staff id
+  const [attCustomStart, setAttCustomStart] = useState('');
+  const [attCustomEnd, setAttCustomEnd] = useState('');
+
+  const formatStatementDate = (dStr) => {
+    if (!dStr) return '';
+    const [y, m, d] = dStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const day = String(d).padStart(2, '0');
+    const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+    const year = date.getFullYear();
+    return `${day} ${monthName} ${year}`;
+  };
+
+  // Helper to generate days of a given YYYY-MM month or custom range
+  const getDaysInMonth = (monthStr, customStart, customEnd) => {
+    if (customStart && customEnd) {
+      const days = [];
+      const cur = new Date(customStart);
+      const end = new Date(customEnd);
+      let dayNumber = 1;
+      while (cur <= end) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${d}`;
+        const dayName = cur.toLocaleDateString('en-US', { weekday: 'long' });
+        days.push({ dayNumber, dateStr, dayName, isFriday: cur.getDay() === 5 });
+        cur.setDate(cur.getDate() + 1);
+        dayNumber++;
+      }
+      return days;
+    }
+    if (!monthStr) return [];
+    const [year, month] = monthStr.split('-').map(Number);
+    const numDays = new Date(year, month, 0).getDate();
+    const days = [];
+    for (let d = 1; d <= numDays; d++) {
+      const dayStr = String(d).padStart(2, '0');
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${dayStr}`;
+      const dateObj = new Date(year, month - 1, d);
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      days.push({ dayNumber: d, dateStr, dayName, isFriday: dateObj.getDay() === 5 });
+    }
+    return days;
+  };
 
   // Handlers
   const handleAddStaff = async (e) => {
@@ -105,12 +162,27 @@ const HR = () => {
     }
   };
 
-  const handleGeneratePayslip = async (staffMember, presentDays, bonus) => {
-    const netPay = Math.round(Number(staffMember.baseSalary || 0) + bonus);
+  const handlePaySalaryInstallment = async (staffMember, presentDays, bonus, customAmount) => {
+    const baseSalary = Number(staffMember.baseSalary || 0);
+    const existingPayroll = (payrolls || []).find(p => (p.staffId === staffMember.id || p.staff_id === staffMember.id) && p.month === payrollMonth);
+    const totalNetPay = existingPayroll ? Number(existingPayroll.netPay || existingPayroll.net_pay || (baseSalary + bonus)) : Math.round(baseSalary + bonus);
+    const paidSoFar = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || (existingPayroll.is_paid ? totalNetPay : 0)) : 0;
+    const remainingDue = Math.max(0, Math.round(totalNetPay - paidSoFar));
 
-    // Check if already paid
-    const alreadyPaid = payrolls.some(p => p.staffId === staffMember.id && p.month === payrollMonth);
-    if (alreadyPaid) return toast.error('Payslip already generated for this month!');
+    let payAmount = customAmount !== undefined && customAmount !== '' ? parseFloat(customAmount) : remainingDue;
+    if (isNaN(payAmount) || payAmount <= 0) {
+      return toast.error(language === 'bn' ? 'সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)' : 'Please enter a valid amount greater than 0');
+    }
+
+    const excess = payAmount > remainingDue ? Math.round(payAmount - remainingDue) : 0;
+    if (excess > 0) {
+      const confirmed = window.confirm(
+        language === 'bn'
+          ? `অবশিষ্ট বেতন ৳${remainingDue}। আপনি পরিশোধ করছেন ৳${payAmount}। অতিরিক্ত ৳${excess} কর্মীর বকেয়া (Due)-তে জমা হবে। আপনি কি নিশ্চিত?`
+          : `Remaining salary is ৳${remainingDue}. You are paying ৳${payAmount}. Excess ৳${excess} will be added to the staff member's due balance. Continue?`
+      );
+      if (!confirmed) return;
+    }
 
     const res = await generatePayslip({
       month: payrollMonth,
@@ -120,10 +192,49 @@ const HR = () => {
       presentDays,
       baseSalary: staffMember.baseSalary,
       bonus,
-      netPay
+      amount: payAmount,
+      paymentMethod: 'Cash',
+      notes: excess > 0 ? `Salary: ৳${payAmount - excess}, Advance Due: ৳${excess}` : `Salary installment: ৳${payAmount}`,
     });
+
     if (res?.ok) {
-      toast.success(`Payslip generated for ${staffMember.name}. Amount: ৳${netPay}`);
+      setPayInputs(prev => ({ ...prev, [staffMember.id]: '' }));
+      toast.success(
+        language === 'bn'
+          ? `${staffMember.name}-কে ৳${payAmount.toLocaleString()} টাকা সফলভাবে পরিশোধ করা হয়েছে!`
+          : `Paid ৳${payAmount.toLocaleString()} to ${staffMember.name} successfully!`
+      );
+    }
+  };
+
+  const openSettleStaff = (s) => {
+    setSettleStaffModal(s);
+    setSettleAmount(String(s.due || ''));
+    setSettleDate(todayStr);
+    setSettleMethod('Cash');
+    setSettleNotes('');
+  };
+
+  const handleSettleStaffSubmit = async (e) => {
+    e.preventDefault();
+    if (!settleStaffModal) return;
+    const amountVal = parseFloat(settleAmount);
+    if (isNaN(amountVal) || amountVal <= 0) {
+      return toast.error(language === 'bn' ? 'সঠিক টাকার পরিমাণ দিন' : 'Please enter a valid amount');
+    }
+    const maxDue = parseFloat(settleStaffModal.due || 0);
+    if (amountVal > maxDue + 0.01) {
+      return toast.error(language === 'bn' ? `সর্বোচ্চ বকেয়া ৳${maxDue}` : `Amount exceeds outstanding due ৳${maxDue}`);
+    }
+
+    const res = await settleStaffDue(settleStaffModal.id, amountVal, settleDate, {
+      method: settleMethod,
+      notes: settleNotes || (language === 'bn' ? 'স্টাফের বকেয়া জমা' : 'Staff due recovery'),
+    });
+
+    if (res?.ok) {
+      setSettleStaffModal(null);
+      toast.success(language === 'bn' ? 'বকেয়া সফলভাবে জমা নেওয়া হয়েছে!' : 'Staff due settled successfully!');
     }
   };
 
@@ -179,6 +290,7 @@ const HR = () => {
                         <th>{t(language, 'Phone')}</th>
                         <th>{t(language, 'Bank Account' || 'Bank Account')}</th>
                         <th>{t(language, 'Base Salary' || 'Base Salary')} (BDT)</th>
+                        <th>{language === 'bn' ? 'বকেয়া (Due)' : 'Due'} (BDT)</th>
                         <th>{t(language, 'Join Date' || 'Join Date')}</th>
                         <th>{t(language, 'Actions')}</th>
                       </tr>
@@ -191,7 +303,25 @@ const HR = () => {
                           <td>{s.role}</td>
                           <td>{s.phone || 'N/A'}</td>
                           <td>{s.bankAccount || 'N/A'}</td>
-                          <td>৳{s.baseSalary}</td>
+                          <td>৳{Number(s.baseSalary || 0).toLocaleString()}</td>
+                          <td>
+                            <div className="flex-align-gap" style={{ alignItems: 'center' }}>
+                              <span className={Number(s.due || 0) > 0 ? "text-danger font-bold" : "text-muted"}>
+                                ৳{Number(s.due || 0).toLocaleString()}
+                              </span>
+                              {Number(s.due || 0) > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn-outline text-success"
+                                  style={{ padding: '0.2rem 0.45rem', fontSize: '0.75rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                                  title={language === 'bn' ? 'বকেয়া জমা নিন' : 'Settle Staff Due'}
+                                  onClick={() => openSettleStaff(s)}
+                                >
+                                  <DollarSign size={12} /> {language === 'bn' ? 'জমা' : 'Settle'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
                           <td>{s.joinDate}</td>
                           <td>
                             <div className="action-buttons flex-align-gap" style={{ flexWrap: 'nowrap' }}>
@@ -214,53 +344,587 @@ const HR = () => {
 
           {activeTab === 'Attendance' && (
             <div>
-              <div className="flex-align-gap mb-4" style={{ justifyContent: 'space-between' }}>
-                <h3>{t(language, 'Daily Attendance' || 'Daily Attendance')}</h3>
-                <input
-                  type="date"
-                  className="p-2 bg-input border border-gray-700 rounded text-main"
-                  value={attDate}
-                  onChange={(e) => setAttDate(e.target.value)}
-                />
+              {/* Top View Mode Switcher */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div className="card glass" style={{ padding: '0.35rem', display: 'inline-flex', gap: '0.4rem', margin: 0 }}>
+                  <button
+                    type="button"
+                    className={`type-btn ${attViewMode === 'monthly' ? 'active' : ''}`}
+                    onClick={() => setAttViewMode('monthly')}
+                    style={{ padding: '0.45rem 1rem', fontSize: '0.9rem' }}
+                  >
+                    <Calendar size={16} className="inline mr-1" /> {language === 'bn' ? 'মাসিক হাজিরা রিপোর্ট' : 'Monthly Report'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`type-btn ${attViewMode === 'daily' ? 'active' : ''}`}
+                    onClick={() => setAttViewMode('daily')}
+                    style={{ padding: '0.45rem 1rem', fontSize: '0.9rem' }}
+                  >
+                    <Check size={16} className="inline mr-1" /> {language === 'bn' ? 'দৈনিক হাজিরা এন্ট্রি' : 'Daily Entry'}
+                  </button>
+                </div>
+
+                {/* Mode specific action bar */}
+                {attViewMode === 'monthly' ? (
+                  <div className="flex-align-gap" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="text-muted text-sm">{language === 'bn' ? 'মাস:' : 'Month:'}</span>
+                      <input
+                        type="month"
+                        className="p-2 bg-input border border-gray-700 rounded text-main"
+                        value={attReportMonth}
+                        onChange={(e) => {
+                          setAttReportMonth(e.target.value);
+                          setAttCustomStart('');
+                          setAttCustomEnd('');
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="text-muted text-sm">{language === 'bn' ? 'তারিখ রেঞ্জ:' : 'Range:'}</span>
+                      <input
+                        type="date"
+                        className="p-2 bg-input border border-gray-700 rounded text-main text-xs"
+                        value={attCustomStart}
+                        placeholder="Start Date"
+                        onChange={(e) => setAttCustomStart(e.target.value)}
+                        title="Start Date"
+                      />
+                      <span className="text-muted text-xs">-</span>
+                      <input
+                        type="date"
+                        className="p-2 bg-input border border-gray-700 rounded text-main text-xs"
+                        value={attCustomEnd}
+                        placeholder="End Date"
+                        onChange={(e) => setAttCustomEnd(e.target.value)}
+                        title="End Date"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="text-muted text-sm">{language === 'bn' ? 'কর্মী:' : 'Staff:'}</span>
+                      <select
+                        className="p-2 bg-input border border-gray-700 rounded text-main"
+                        value={attStaffFilter}
+                        onChange={(e) => setAttStaffFilter(e.target.value)}
+                        style={{ minWidth: '160px' }}
+                      >
+                        <option value="">{language === 'bn' ? 'সকল কর্মী (All Staff)' : 'All Staff'}</option>
+                        {staff.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.role || 'Staff'})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      className="btn-outline flex-align-gap"
+                      onClick={() => {
+                        const targetStaff = staff.find(s => s.id === attStaffFilter);
+                        const fname = targetStaff 
+                          ? `Attendance-Statement-${targetStaff.name}-${attReportMonth}`
+                          : `Monthly-Attendance-AllStaff-${attReportMonth}`;
+                        downloadElementAsPDF('printable-monthly-attendance', fname);
+                      }}
+                      title={language === 'bn' ? '১ মাসের হাজিরা PDF ডাউনলোড করুন' : 'Download 1-Month Attendance as PDF'}
+                    >
+                      <Download size={16} /> {language === 'bn' ? '১ মাসের PDF ডাউনলোড' : 'Download Month PDF'}
+                    </button>
+                    <button
+                      className="btn-primary flex-align-gap"
+                      onClick={() => {
+                        const targetStaff = staff.find(s => s.id === attStaffFilter);
+                        const docTitle = targetStaff
+                          ? `Attendance Statement - ${targetStaff.name}`
+                          : `Monthly Attendance (${attReportMonth})`;
+                        printElement('printable-monthly-attendance', docTitle);
+                      }}
+                      title={language === 'bn' ? 'প্রিন্ট করুন' : 'Print'}
+                    >
+                      <Printer size={16} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex-align-gap" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="text-muted text-sm">{language === 'bn' ? 'তারিখ:' : 'Date:'}</span>
+                      <input
+                        type="date"
+                        className="p-2 bg-input border border-gray-700 rounded text-main"
+                        value={attDate}
+                        onChange={(e) => setAttDate(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="btn-outline flex-align-gap"
+                      onClick={() => downloadElementAsPDF('printable-daily-attendance', `Daily-Attendance-${attDate}`)}
+                      title={language === 'bn' ? 'এই দিনের হাজিরা PDF ডাউনলোড করুন' : 'Download Daily Attendance as PDF'}
+                    >
+                      <Download size={16} /> {language === 'bn' ? 'PDF ডাউনলোড' : 'Download PDF'}
+                    </button>
+                    <button
+                      className="btn-primary flex-align-gap"
+                      onClick={() => printElement('printable-daily-attendance', `Attendance-${attDate}`)}
+                    >
+                      <Printer size={16} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                    </button>
+                  </div>
+                )}
               </div>
-              {staff.length === 0 ? <p className="text-muted">No staff found. Please add staff first.</p> : (
-                <div className="table-responsive">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>{t(language, 'Name')}</th>
-                        <th>{t(language, 'Role' || 'Role')}</th>
-                        <th>{t(language, 'Status' || 'Status')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {staff.map(s => {
-                        const existingAtt = attendance.find(a => a.staffId === s.id && a.date === attDate);
-                        const status = existingAtt ? existingAtt.status : '';
-                        return (
-                          <tr key={s.id}>
-                            <td>{s.id}</td>
-                            <td>{s.name}</td>
-                            <td>{s.role}</td>
-                            <td>
-                              <select
-                                className="p-2 bg-input border border-gray-700 rounded"
-                                value={status}
-                                onChange={(e) => markAttendance(s.id, attDate, e.target.value)}
+
+              {/* View 1: Monthly Attendance Report */}
+              {attViewMode === 'monthly' && (
+                <div>
+                  {(() => {
+                    const daysInMonth = getDaysInMonth(attReportMonth, attCustomStart, attCustomEnd);
+                    const firstDayStr = daysInMonth[0]?.dateStr || `${attReportMonth}-01`;
+                    const lastDayStr = daysInMonth[daysInMonth.length - 1]?.dateStr || `${attReportMonth}-30`;
+                    const periodText = `${formatStatementDate(firstDayStr)} - ${formatStatementDate(lastDayStr)}`;
+
+                    const monthlyRecords = (attendance || []).filter(a => {
+                      if (attCustomStart && attCustomEnd) {
+                        return a.date >= attCustomStart && a.date <= attCustomEnd;
+                      }
+                      return a.date && a.date.startsWith(attReportMonth);
+                    });
+
+                    const selectedStaffMember = staff.find(s => s.id === attStaffFilter);
+
+                    if (selectedStaffMember) {
+                      // Individual Staff Monthly Report Matching Exact Photo Layout
+                      const staffRecs = monthlyRecords.filter(a => a.staffId === selectedStaffMember.id);
+
+                      return (
+                        <div>
+                          {/* Top Controls Bar (Hidden on Print) */}
+                          <div className="card glass mb-3 hide-on-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', padding: '0.65rem 1rem' }}>
+                            <button
+                              className="btn-outline btn-sm"
+                              onClick={() => setAttStaffFilter('')}
+                            >
+                              ← {language === 'bn' ? 'সকল কর্মীর তালিকায় ফিরে যান' : 'Back to All Staff'}
+                            </button>
+                            <div className="flex-align-gap">
+                              <button
+                                className="btn-outline btn-sm flex-align-gap"
+                                onClick={() => {
+                                  downloadElementAsPDF('printable-monthly-attendance', `Attendance-Statement-${selectedStaffMember.name}-${attReportMonth}`);
+                                }}
                               >
-                                <option value="" disabled>Mark Status</option>
-                                <option value="Present">Present</option>
-                                <option value="Absent">Absent</option>
-                                <option value="Late">Late</option>
-                                <option value="Leave">On Leave</option>
-                              </select>
-                            </td>
+                                <Download size={14} /> {language === 'bn' ? 'PDF ডাউনলোড' : 'Download PDF'}
+                              </button>
+                              <button
+                                className="btn-primary btn-sm flex-align-gap"
+                                onClick={() => {
+                                  printElement('printable-monthly-attendance', `Attendance Statement - ${selectedStaffMember.name}`);
+                                }}
+                              >
+                                <Printer size={14} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* EXACT STATEMENT DOCUMENT CONTAINER MATCHING USER PHOTO */}
+                          <div id="printable-monthly-attendance" style={{ background: '#ffffff', padding: '1.5rem', borderRadius: '16px', border: '1px solid #e5e7eb', boxShadow: '0 2px 6px rgba(0,0,0,0.06)', color: '#111827' }}>
+                            
+                            {/* Mint Green Header Banner */}
+                            <div className="statement-header-banner" style={{
+                              background: '#ecf8f3',
+                              border: '1px solid #d0ebe1',
+                              borderRadius: '12px',
+                              padding: '1.25rem 1.6rem',
+                              marginBottom: '1.25rem',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                              gap: '1rem'
+                            }}>
+                              <div>
+                                <h2 className="statement-title-name" style={{
+                                  fontSize: '1.85rem',
+                                  fontWeight: 800,
+                                  color: '#134e4a',
+                                  margin: 0,
+                                  letterSpacing: '-0.5px'
+                                }}>
+                                  {selectedStaffMember.name.toLowerCase()}
+                                </h2>
+                                <p className="statement-subtitle" style={{
+                                  fontSize: '0.88rem',
+                                  color: '#3f6e65',
+                                  margin: '4px 0 0 0',
+                                  fontWeight: 600
+                                }}>
+                                  ID: {selectedStaffMember.id} &nbsp;&nbsp;|&nbsp;&nbsp; Role: {selectedStaffMember.role || 'Admin'}
+                                </p>
+                              </div>
+
+                              <div style={{ textAlign: 'right' }}>
+                                <div className="statement-period-label" style={{
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  color: '#0f766e',
+                                  marginBottom: '5px'
+                                }}>
+                                  Statement Period
+                                </div>
+                                <div className="statement-period-badge" style={{
+                                  background: '#ffffff',
+                                  border: '1px solid #c7e6d6',
+                                  borderRadius: '8px',
+                                  padding: '6px 16px',
+                                  fontSize: '0.92rem',
+                                  fontWeight: 700,
+                                  color: '#134e4a',
+                                  display: 'inline-block',
+                                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                                }}>
+                                  {periodText}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 10-Column Clean White Table matching photo */}
+                            <div className="statement-table-card" style={{
+                              background: '#ffffff',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '10px',
+                              overflowX: 'auto'
+                            }}>
+                              <table className="statement-table" style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                fontSize: '13px',
+                                margin: 0,
+                                textAlign: 'left'
+                              }}>
+                                <thead>
+                                  <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>DATE</th>
+                                    <th style={{ padding: '12px 16px', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>DAY</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '11px', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.04em' }}>STATUS</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {daysInMonth.map(d => {
+                                    const attRecord = staffRecs.find(a => a.date === d.dateStr);
+                                    const stat = attRecord ? attRecord.status : '';
+                                    return (
+                                      <tr key={d.dateStr} style={{ borderBottom: '1px solid #f3f4f6', background: d.isFriday ? '#fcfdfd' : '#ffffff' }}>
+                                        <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111827' }}>{d.dateStr}</td>
+                                        <td style={{ padding: '11px 16px', color: '#6b7280' }}>{d.dayName}</td>
+                                        <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                                          {stat === 'Present' ? (
+                                            <span className="statement-badge-present" style={{
+                                              background: '#ecfdf5',
+                                              border: '1px solid #a7f3d0',
+                                              color: '#047857',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              Present
+                                            </span>
+                                          ) : stat === 'Absent' ? (
+                                            <span className="statement-badge-absent" style={{
+                                              background: '#fee2e2',
+                                              border: '1px solid #fecaca',
+                                              color: '#dc2626',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              Absent
+                                            </span>
+                                          ) : stat === 'Half Day' ? (
+                                            <span className="statement-badge-halfday" style={{
+                                              background: '#fef3c7',
+                                              border: '1px solid #fde68a',
+                                              color: '#d97706',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              Half Day
+                                            </span>
+                                          ) : stat === 'Late' ? (
+                                            <span className="statement-badge-late" style={{
+                                              background: '#dbeafe',
+                                              border: '1px solid #bfdbfe',
+                                              color: '#1d4ed8',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              Late
+                                            </span>
+                                          ) : stat === 'Leave' ? (
+                                            <span className="statement-badge-leave" style={{
+                                              background: '#f3f4f6',
+                                              border: '1px solid #e5e7eb',
+                                              color: '#4b5563',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              Leave
+                                            </span>
+                                          ) : stat ? (
+                                            <span style={{
+                                              background: '#f1f5f9',
+                                              border: '1px solid #cbd5e1',
+                                              color: '#334155',
+                                              borderRadius: '4px',
+                                              padding: '3px 12px',
+                                              fontSize: '11px',
+                                              fontWeight: 700,
+                                              display: 'inline-block'
+                                            }}>
+                                              {stat}
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: '#9ca3af', fontSize: '12px' }}>
+                                              {d.isFriday ? 'Weekend' : '-'}
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      // All Staff Monthly Summary
+                      const allStaffSummary = staff.map(s => {
+                        const sRecs = monthlyRecords.filter(a => a.staffId === s.id);
+                        const fullP = sRecs.filter(a => a.status === 'Present').length;
+                        const halfD = sRecs.filter(a => a.status === 'Half Day').length;
+                        const lateC = sRecs.filter(a => a.status === 'Late').length;
+                        const absC = sRecs.filter(a => a.status === 'Absent').length;
+                        const leaveC = sRecs.filter(a => a.status === 'Leave').length;
+                        const effDays = fullP + (halfD * 0.5);
+                        return { ...s, fullP, halfD, lateC, absC, leaveC, effDays, totalRecords: sRecs.length };
+                      });
+
+                      const totalPShop = allStaffSummary.reduce((sum, s) => sum + s.fullP, 0);
+                      const totalHShop = allStaffSummary.reduce((sum, s) => sum + s.halfD, 0);
+                      const totalLShop = allStaffSummary.reduce((sum, s) => sum + s.lateC, 0);
+                      const totalAShop = allStaffSummary.reduce((sum, s) => sum + s.absC, 0);
+                      const totalLeaveShop = allStaffSummary.reduce((sum, s) => sum + s.leaveC, 0);
+
+                      return (
+                        <div>
+                          {/* Shop Monthly KPIs */}
+                          <div className="grid mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.5rem' }}>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid var(--primary)' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'মোট স্টাফ' : 'Total Staff'}</span>
+                              <strong className="text-lg">{staff.length} {language === 'bn' ? 'জন' : ''}</strong>
+                            </div>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #16a34a' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'মোট পূর্ণ উপস্থিতি' : 'Total Present'}</span>
+                              <strong className="text-lg text-success">{totalPShop} {language === 'bn' ? 'দিন' : ''}</strong>
+                            </div>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #d97706' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'মোট হাফ ডে' : 'Total Half Day'}</span>
+                              <strong className="text-lg text-warning">{totalHShop} {language === 'bn' ? 'টি' : ''}</strong>
+                            </div>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #0284c7' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'দেরিতে উপস্থিতি' : 'Total Late'}</span>
+                              <strong className="text-lg text-info">{totalLShop} {language === 'bn' ? 'দিন' : ''}</strong>
+                            </div>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #dc2626' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'অনুপস্থিতি' : 'Total Absent'}</span>
+                              <strong className="text-lg text-danger">{totalAShop} {language === 'bn' ? 'দিন' : ''}</strong>
+                            </div>
+                            <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #6b7280' }}>
+                              <span className="text-muted text-xs block">{language === 'bn' ? 'ছুটি' : 'Total Leave'}</span>
+                              <strong className="text-lg text-muted">{totalLeaveShop} {language === 'bn' ? 'দিন' : ''}</strong>
+                            </div>
+                          </div>
+
+                          {/* All Staff Summary Table */}
+                          <div id="printable-monthly-attendance" className="table-responsive card glass" style={{ padding: '1rem' }}>
+                            <div className="print-report-header" style={{ display: 'none' }}>
+                              <div style={{ textAlign: 'center', marginBottom: '1.25rem', borderBottom: '2px solid #333', paddingBottom: '0.75rem' }}>
+                                <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 700, color: '#111' }}>Allahr dan gents point</h2>
+                                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 600, color: '#333' }}>
+                                  {language === 'bn' ? 'মাসিক সকল স্টাফ হাজিরা বিবরণী' : 'All Staff Monthly Attendance Report'} ({attReportMonth})
+                                </h3>
+                                <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>
+                                  {language === 'bn' ? 'মাস' : 'Month'}: {attReportMonth} | {language === 'bn' ? 'মোট স্টাফ' : 'Total Staff'}: {staff.length} জন | {language === 'bn' ? 'মাসের মোট দিন' : 'Total Days'}: {daysInMonth.length} দিন
+                                </p>
+                              </div>
+                              <table style={{ width: '100%', marginBottom: '1rem', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                <tbody>
+                                  <tr style={{ background: '#f8fafc' }}>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'মোট স্টাফ' : 'Staff'}:</strong> {staff.length} {language === 'bn' ? 'জন' : ''}</td>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'মোট পূর্ণ উপস্থিতি' : 'Present'}:</strong> {totalPShop} {language === 'bn' ? 'দিন' : ''}</td>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'মোট হাফ ডে' : 'Half Day'}:</strong> {totalHShop} {language === 'bn' ? 'টি' : ''}</td>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'দেরিতে উপস্থিতি' : 'Late'}:</strong> {totalLShop} {language === 'bn' ? 'দিন' : ''}</td>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'অনুপস্থিতি' : 'Absent'}:</strong> {totalAShop} {language === 'bn' ? 'দিন' : ''}</td>
+                                    <td style={{ textAlign: 'center', padding: '6px' }}><strong>{language === 'bn' ? 'ছুটি' : 'Leave'}:</strong> {totalLeaveShop} {language === 'bn' ? 'দিন' : ''}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>ID</th>
+                                  <th>{language === 'bn' ? 'নাম' : 'Name'}</th>
+                                  <th>{language === 'bn' ? 'পদবী' : 'Role'}</th>
+                                  <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'উপস্থিত' : 'Present'}</th>
+                                  <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'হাফ ডে' : 'Half Day'}</th>
+                                  <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'দেরি' : 'Late'}</th>
+                                  <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'অনুপস্থিত' : 'Absent'}</th>
+                                  <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'ছুটি' : 'Leave'}</th>
+                                  <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'কার্যকর দিন' : 'Effective Days'}</th>
+                                  <th className="hide-on-print" style={{ textAlign: 'center' }}>{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {allStaffSummary.map(s => (
+                                  <tr key={s.id}>
+                                    <td><code>{s.id}</code></td>
+                                    <td className="font-bold">{s.name}</td>
+                                    <td>{s.role || 'Staff'}</td>
+                                    <td style={{ textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>{s.fullP}</td>
+                                    <td style={{ textAlign: 'center', color: '#d97706', fontWeight: 'bold' }}>{s.halfD}</td>
+                                    <td style={{ textAlign: 'center', color: '#0284c7' }}>{s.lateC}</td>
+                                    <td style={{ textAlign: 'center', color: '#dc2626' }}>{s.absC}</td>
+                                    <td style={{ textAlign: 'center', color: '#6b7280' }}>{s.leaveC}</td>
+                                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: '#2563eb' }}>
+                                      {s.effDays} / {daysInMonth.length}
+                                    </td>
+                                    <td className="hide-on-print" style={{ textAlign: 'center' }}>
+                                      <button
+                                        className="btn-outline btn-sm flex-align-gap"
+                                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', display: 'inline-flex' }}
+                                        onClick={() => setAttStaffFilter(s.id)}
+                                        title={language === 'bn' ? 'এই কর্মীর ১ মাসের হাজিরা শিট দেখুন' : "View staff's monthly sheet"}
+                                      >
+                                        <Eye size={14} /> {language === 'bn' ? '১ মাসের শিট' : 'Month Sheet'}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {allStaffSummary.length === 0 && (
+                                  <tr><td colSpan="10" className="text-center text-muted">{language === 'bn' ? 'কোনো কর্মী পাওয়া যায়নি।' : 'No staff found.'}</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+              )}
+
+              {/* View 2: Daily Attendance Entry & Single Day Report */}
+              {attViewMode === 'daily' && (
+                <div>
+                  {/* Summary KPIs for selected date */}
+                  <div className="grid mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.5rem' }}>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid var(--primary)' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'মোট স্টাফ' : 'Total Staff'}</span>
+                      <strong className="text-lg">{staff.length}</strong>
+                    </div>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #16a34a' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'উপস্থিত' : 'Present'}</span>
+                      <strong className="text-lg text-success">{attendance.filter(a => a.date === attDate && a.status === 'Present').length}</strong>
+                    </div>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #d97706' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'হাফ ডে' : 'Half Day'}</span>
+                      <strong className="text-lg text-warning">{attendance.filter(a => a.date === attDate && a.status === 'Half Day').length}</strong>
+                    </div>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #0284c7' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'দেরিতে' : 'Late'}</span>
+                      <strong className="text-lg text-info">{attendance.filter(a => a.date === attDate && a.status === 'Late').length}</strong>
+                    </div>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #dc2626' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'অনুপস্থিত' : 'Absent'}</span>
+                      <strong className="text-lg text-danger">{attendance.filter(a => a.date === attDate && a.status === 'Absent').length}</strong>
+                    </div>
+                    <div className="card bg-input text-center" style={{ padding: '0.6rem', borderLeft: '3px solid #6b7280' }}>
+                      <span className="text-muted text-xs block">{language === 'bn' ? 'ছুটি' : 'On Leave'}</span>
+                      <strong className="text-lg text-muted">{attendance.filter(a => a.date === attDate && a.status === 'Leave').length}</strong>
+                    </div>
+                  </div>
+
+                  {staff.length === 0 ? <p className="text-muted">{language === 'bn' ? 'কোনো স্টাফ পাওয়া যায়নি।' : 'No staff found. Please add staff first.'}</p> : (
+                    <div id="printable-daily-attendance" className="table-responsive card glass" style={{ padding: '1rem' }}>
+                      <div className="print-report-header" style={{ display: 'none' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '1.25rem', borderBottom: '2px solid #333', paddingBottom: '0.75rem' }}>
+                          <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 700, color: '#111' }}>Allahr dan gents point</h2>
+                          <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 600, color: '#333' }}>
+                            {language === 'bn' ? 'দৈনিক স্টাফ হাজিরা বিবরণী' : 'Daily Staff Attendance Sheet'}
+                          </h3>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>
+                            {language === 'bn' ? 'তারিখ' : 'Date'}: {attDate} | {language === 'bn' ? 'মোট স্টাফ' : 'Total Staff'}: {staff.length} জন | {language === 'bn' ? 'কার্যকর উপস্থিত' : 'Effective Present'}: {attendance.filter(a => a.date === attDate && a.status === 'Present').length + (attendance.filter(a => a.date === attDate && a.status === 'Half Day').length * 0.5)} দিন
+                          </p>
+                        </div>
+                      </div>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>ID</th>
+                            <th>{t(language, 'Name')}</th>
+                            <th>{t(language, 'Role' || 'Role')}</th>
+                            <th>{t(language, 'Status' || 'Status')}</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {staff.map(s => {
+                            const existingAtt = attendance.find(a => a.staffId === s.id && a.date === attDate);
+                            const status = existingAtt ? existingAtt.status : '';
+                            return (
+                              <tr key={s.id}>
+                                <td><code>{s.id}</code></td>
+                                <td className="font-bold">{s.name}</td>
+                                <td>{s.role || 'Staff'}</td>
+                                <td>
+                                  <span className="print-only-status" style={{ display: 'none', fontWeight: 'bold' }}>
+                                    {status === 'Present' && '✓ উপস্থিত (Present)'}
+                                    {status === 'Half Day' && '½ হাফ ডে (Half Day)'}
+                                    {status === 'Late' && '⏰ দেরিতে (Late)'}
+                                    {status === 'Absent' && '✗ অনুপস্থিত (Absent)'}
+                                    {status === 'Leave' && '🏖️ ছুটি (On Leave)'}
+                                    {!status && '—'}
+                                  </span>
+                                  <select
+                                    className="p-2 bg-input border border-gray-700 rounded hide-on-print"
+                                    value={status}
+                                    onChange={(e) => markAttendance(s.id, attDate, e.target.value)}
+                                  >
+                                    <option value="" disabled>{language === 'bn' ? 'স্ট্যাটাস দিন' : 'Mark Status'}</option>
+                                    <option value="Present">{language === 'bn' ? 'উপস্থিত (Present)' : 'Present'}</option>
+                                    <option value="Half Day">{language === 'bn' ? 'হাফ ডে (Half Day)' : 'Half Day'}</option>
+                                    <option value="Late">{language === 'bn' ? 'দেরিতে (Late)' : 'Late'}</option>
+                                    <option value="Absent">{language === 'bn' ? 'অনুপস্থিত (Absent)' : 'Absent'}</option>
+                                    <option value="Leave">{language === 'bn' ? 'ছুটি (On Leave)' : 'On Leave'}</option>
+                                  </select>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -332,50 +996,118 @@ const HR = () => {
                       <tr>
                         <th>{t(language, 'Name' || 'Staff Name')}</th>
                         <th>{t(language, 'Days Present' || 'Days Present')}</th>
-                        <th>{t(language, 'Base Salary' || 'Base Salary')}</th>
+                        <th>{t(language, 'Base Salary' || 'Base Salary')} (BDT)</th>
                         <th>{t(language, 'Bonus' || 'Bonus')}</th>
-                        <th>{t(language, 'Net Pay' || 'Net Pay')}</th>
+                        <th>{language === 'bn' ? 'মোট প্রদেয়' : 'Total Net'} (BDT)</th>
+                        <th>{language === 'bn' ? 'পরিশোধিত' : 'Paid Amount'} (BDT)</th>
+                        <th>{language === 'bn' ? 'অবশিষ্ট পাওনা' : 'Remaining'} (BDT)</th>
                         <th>{t(language, 'Status' || 'Status')}</th>
-                        <th>{t(language, 'Actions')}</th>
+                        <th>{language === 'bn' ? 'কিস্তি পরিশোধ' : 'Pay Installment'}</th>
+                        <th>{language === 'bn' ? 'বিবরণ' : 'Details'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {staff.map(s => {
-                        const presentDays = attendance.filter(a => a.staffId === s.id && a.status === 'Present' && a.date.startsWith(payrollMonth)).length;
-                        const bonus = bonuses[s.id] || 0;
-                        const netPay = Math.round(Number(s.baseSalary || 0) + bonus);
+                        const fullDays = attendance.filter(a => a.staffId === s.id && a.status === 'Present' && a.date.startsWith(payrollMonth)).length;
+                        const halfDays = attendance.filter(a => a.staffId === s.id && a.status === 'Half Day' && a.date.startsWith(payrollMonth)).length;
+                        const presentDays = fullDays + (halfDays * 0.5);
+                        const existingPayroll = (payrolls || []).find(p => (p.staffId === s.id || p.staff_id === s.id) && p.month === payrollMonth);
+                        const bonus = bonuses[s.id] !== undefined ? bonuses[s.id] : (existingPayroll ? Number(existingPayroll.bonus || 0) : 0);
+                        const baseSalary = Number(s.baseSalary || 0);
+                        const totalNetPay = existingPayroll ? Number(existingPayroll.netPay || existingPayroll.net_pay || (baseSalary + bonus)) : Math.round(baseSalary + bonus);
+                        const paidAmount = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || (existingPayroll.is_paid ? totalNetPay : 0)) : 0;
+                        const remainingDue = Math.max(0, Math.round(totalNetPay - paidAmount));
+                        const isFullyPaid = existingPayroll ? (existingPayroll.is_paid || paidAmount >= totalNetPay) : false;
+                        const isPartial = paidAmount > 0 && !isFullyPaid;
 
-                        const isPaid = payrolls.some(p => p.staffId === s.id && p.month === payrollMonth);
+                        const currentPayInput = payInputs[s.id] !== undefined ? payInputs[s.id] : '';
+                        const numInput = parseFloat(currentPayInput);
+                        const hasExcess = !isNaN(numInput) && numInput > remainingDue;
+                        const excessAmount = hasExcess ? Math.round(numInput - remainingDue) : 0;
 
                         return (
                           <tr key={s.id}>
-                            <td>{s.name}</td>
-                            <td>{presentDays} / 30</td>
-                            <td>৳{s.baseSalary}</td>
                             <td>
-                              {isPaid ? (
-                                <span>৳{payrolls.find(p => p.staffId === s.id && p.month === payrollMonth).bonus}</span>
+                              <strong>{s.name}</strong>
+                              <div className="text-xs text-muted">{s.role || 'Staff'}</div>
+                            </td>
+                            <td>
+                              <strong>{presentDays}</strong> / 30
+                              {halfDays > 0 && <div className="text-xs text-muted">({halfDays} {language === 'bn' ? 'হাফ ডে' : 'Half Day'})</div>}
+                            </td>
+                            <td>৳{baseSalary.toLocaleString()}</td>
+                            <td>
+                              {isFullyPaid ? (
+                                <span>৳{bonus.toLocaleString()}</span>
                               ) : (
-                                <div className="flex-align-gap">
+                                <div className="flex-align-gap" style={{ alignItems: 'center' }}>
                                   <Award size={14} className="text-warning" />
                                   <input
                                     type="number"
                                     value={bonus}
                                     onChange={(e) => setBonuses({ ...bonuses, [s.id]: parseFloat(e.target.value) || 0 })}
-                                    style={{ width: '80px', padding: '0.25rem', backgroundColor: 'var(--bg-input)' }}
+                                    style={{ width: '65px', padding: '0.2rem 0.35rem', backgroundColor: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)' }}
                                   />
                                 </div>
                               )}
                             </td>
-                            <td className="text-primary font-bold">
-                              ৳{isPaid ? payrolls.find(p => p.staffId === s.id && p.month === payrollMonth).netPay : netPay}
+                            <td className="text-primary font-bold">৳{totalNetPay.toLocaleString()}</td>
+                            <td className="text-success font-bold">৳{paidAmount.toLocaleString()}</td>
+                            <td className={remainingDue > 0 ? "text-danger font-bold" : "text-muted"}>
+                              ৳{remainingDue.toLocaleString()}
                             </td>
                             <td>
-                              {isPaid ? <span className="text-success font-bold">Paid</span> : <span className="text-warning">Pending</span>}
+                              {isFullyPaid ? (
+                                <span className="badge" style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                                  ✓ {language === 'bn' ? 'পরিশোধিত' : 'Paid'}
+                                </span>
+                              ) : isPartial ? (
+                                <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                                  ⏳ {language === 'bn' ? 'আংশিক' : 'Partial'}
+                                </span>
+                              ) : (
+                                <span className="badge" style={{ backgroundColor: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                                  {language === 'bn' ? 'বাকি' : 'Pending'}
+                                </span>
+                              )}
                             </td>
                             <td>
-                              {!isPaid && (
-                                <button className="btn-primary" onClick={() => handleGeneratePayslip(s, presentDays, bonus)}>{t(language, 'Pay' || 'Pay')}</button>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                <div className="flex-align-gap" style={{ alignItems: 'center' }}>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder={remainingDue > 0 ? String(remainingDue) : (language === 'bn' ? 'পরিমাণ' : 'Amount')}
+                                    value={currentPayInput}
+                                    onChange={(e) => setPayInputs({ ...payInputs, [s.id]: e.target.value })}
+                                    style={{ width: '85px', padding: '0.25rem 0.4rem', backgroundColor: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.85rem' }}
+                                  />
+                                  <button
+                                    className="btn-primary"
+                                    style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                    onClick={() => handlePaySalaryInstallment(s, presentDays, bonus, currentPayInput)}
+                                  >
+                                    {language === 'bn' ? 'টাকা দিন' : 'Pay'}
+                                  </button>
+                                </div>
+                                {hasExcess && (
+                                  <small className="text-warning" style={{ fontSize: '0.72rem', lineHeight: '1.2' }}>
+                                    ⚠️ অতিরিক্ত ৳{excessAmount.toLocaleString()} Due-তে যাবে
+                                  </small>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              {existingPayroll ? (
+                                <button
+                                  className="btn-icon text-info"
+                                  title={language === 'bn' ? 'পরিশোধের ইতিহাস / রসিদ' : 'Payment History & Payslip'}
+                                  onClick={() => setViewPayrollDetails({ staff: s, payroll: existingPayroll })}
+                                >
+                                  <Eye size={16} />
+                                </button>
+                              ) : (
+                                <span className="text-muted" style={{ fontSize: '0.8rem' }}>—</span>
                               )}
                             </td>
                           </tr>
@@ -633,6 +1365,207 @@ const HR = () => {
                 printElement('printable-single-staff', 'HR');
               }}>
                 <Printer size={20} /> Print Document
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Settle Staff Due Modal */}
+      {settleStaffModal && createPortal(
+        <div className="drawer-overlay">
+          <div className="drawer-container" style={{ maxWidth: '480px', width: '100%' }}>
+            <div className="drawer-header">
+              <h2>💰 {language === 'bn' ? 'স্টাফের বকেয়া জমা নিন' : 'Settle Staff Due'}</h2>
+              <button className="drawer-close-btn" onClick={() => setSettleStaffModal(null)}>
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSettleStaffSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <div className="drawer-body">
+                <div className="card mb-4" style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1rem', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span className="text-muted">{language === 'bn' ? 'কর্মীর নাম:' : 'Staff Name:'}</span>
+                    <strong>{settleStaffModal.name} ({settleStaffModal.role || 'Staff'})</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="text-muted">{language === 'bn' ? 'মোট বকেয়া (Due):' : 'Total Due:'}</span>
+                    <strong className="text-danger font-bold" style={{ fontSize: '1.25rem' }}>৳{Number(settleStaffModal.due || 0).toLocaleString()}</strong>
+                  </div>
+                </div>
+
+                <div className="form-group mb-4">
+                  <label>{language === 'bn' ? 'জমার পরিমাণ (BDT)' : 'Settlement Amount (BDT)'}</label>
+                  <input
+                    type="number"
+                    className="w-full"
+                    required
+                    min="1"
+                    max={settleStaffModal.due}
+                    value={settleAmount}
+                    onChange={(e) => setSettleAmount(e.target.value)}
+                    placeholder="e.g. 1000"
+                  />
+                </div>
+
+                <div className="form-group mb-4">
+                  <label>{language === 'bn' ? 'তারিখ' : 'Date'}</label>
+                  <input
+                    type="date"
+                    className="w-full"
+                    required
+                    value={settleDate}
+                    onChange={(e) => setSettleDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group mb-4">
+                  <label>{language === 'bn' ? 'পদ্ধতি' : 'Payment Method'}</label>
+                  <select
+                    className="w-full"
+                    value={settleMethod}
+                    onChange={(e) => setSettleMethod(e.target.value)}
+                  >
+                    <option value="Cash">Cash (নগদ ক্যাশ)</option>
+                    <option value="Bank">Bank (ব্যাংক অ্যাকাউন্ট)</option>
+                  </select>
+                </div>
+
+                <div className="form-group mb-4">
+                  <label>{language === 'bn' ? 'মন্তব্য (ঐচ্ছিক)' : 'Notes (Optional)'}</label>
+                  <input
+                    type="text"
+                    className="w-full"
+                    value={settleNotes}
+                    onChange={(e) => setSettleNotes(e.target.value)}
+                    placeholder={language === 'bn' ? 'যেমন: অগ্রিম সমন্বয় / নগদ জমা' : 'e.g. Returned advance'}
+                  />
+                </div>
+              </div>
+              <div className="drawer-footer">
+                <button type="button" className="btn-outline" onClick={() => setSettleStaffModal(null)}>
+                  {language === 'bn' ? 'বাতিল' : 'Cancel'}
+                </button>
+                <button type="submit" className="btn-primary flex-align-gap">
+                  <Check size={16} /> {language === 'bn' ? 'জমা নিশ্চিত করুন' : 'Confirm Settlement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* View Payroll Details & Payslip Modal */}
+      {viewPayrollDetails && createPortal(
+        <div className="drawer-overlay">
+          <div className="drawer-container" style={{ maxWidth: '650px', width: '100%' }}>
+            <div className="drawer-header">
+              <h2>📄 {language === 'bn' ? 'বেতন পরিশোধের বিবরণী' : 'Payroll Statement & Payslip'}</h2>
+              <button className="drawer-close-btn" onClick={() => setViewPayrollDetails(null)}>
+                <X size={24} />
+              </button>
+            </div>
+            <div className="drawer-body">
+              <div id="printable-single-payroll" style={{ padding: '1rem', backgroundColor: '#fff', color: '#1e293b', borderRadius: '8px' }}>
+                <div style={{ textAlign: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 'bold', margin: '0 0 0.25rem', color: '#0f172a' }}>Allahr dan gents point</h2>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Monthly Salary Payslip ({viewPayrollDetails.payroll.month})</p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '8px' }}>
+                  <div>
+                    <span className="text-muted text-xs block">Staff Name</span>
+                    <strong style={{ fontSize: '1.1rem' }}>{viewPayrollDetails.staff.name}</strong>
+                    <div className="text-xs text-muted">{viewPayrollDetails.staff.role || 'Staff'} (ID: {viewPayrollDetails.staff.id})</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span className="text-muted text-xs block">Month</span>
+                    <strong style={{ fontSize: '1.1rem' }}>{viewPayrollDetails.payroll.month}</strong>
+                    {(() => {
+                      const sId = viewPayrollDetails.staff.id;
+                      const m = viewPayrollDetails.payroll.month;
+                      const fullD = attendance.filter(a => a.staffId === sId && a.status === 'Present' && a.date.startsWith(m)).length;
+                      const halfD = attendance.filter(a => a.staffId === sId && a.status === 'Half Day' && a.date.startsWith(m)).length;
+                      const totD = fullD + (halfD * 0.5);
+                      return (
+                        <div className="text-xs text-muted">
+                          Attendance: {totD} / 30 Days {halfD > 0 ? `(${halfD} Half-Day)` : ''}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem', textAlign: 'center' }}>
+                  <div style={{ background: '#f1f5f9', padding: '0.75rem', borderRadius: '6px' }}>
+                    <span className="text-muted text-xs block">Total Payable</span>
+                    <strong style={{ fontSize: '1.2rem', color: '#2563eb' }}>৳{Number(viewPayrollDetails.payroll.netPay || viewPayrollDetails.payroll.net_pay || 0).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: '6px' }}>
+                    <span className="text-muted text-xs block">Paid So Far</span>
+                    <strong style={{ fontSize: '1.2rem', color: '#16a34a' }}>৳{Number(viewPayrollDetails.payroll.paidAmount || viewPayrollDetails.payroll.paid_amount || 0).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ background: '#fef2f2', padding: '0.75rem', borderRadius: '6px' }}>
+                    <span className="text-muted text-xs block">Remaining</span>
+                    <strong style={{ fontSize: '1.2rem', color: '#dc2626' }}>৳{Math.max(0, Number(viewPayrollDetails.payroll.netPay || viewPayrollDetails.payroll.net_pay || 0) - Number(viewPayrollDetails.payroll.paidAmount || viewPayrollDetails.payroll.paid_amount || 0)).toLocaleString()}</strong>
+                  </div>
+                </div>
+
+                <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>{language === 'bn' ? 'পরিশোধিত কিস্তিসমূহের তালিকা' : 'Installment Payments History'}</h4>
+                <div className="table-responsive">
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                        <th style={{ padding: '0.5rem' }}>Date</th>
+                        <th style={{ padding: '0.5rem' }}>Code</th>
+                        <th style={{ padding: '0.5rem' }}>Method</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Paid</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Salary Portion</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Excess (Due)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(viewPayrollDetails.payroll.payments && viewPayrollDetails.payroll.payments.length > 0) ? (
+                        viewPayrollDetails.payroll.payments.map((pmt, idx) => (
+                          <tr key={pmt.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '0.5rem' }}>{pmt.date}</td>
+                            <td style={{ padding: '0.5rem' }}>{pmt.paymentCode || pmt.id}</td>
+                            <td style={{ padding: '0.5rem' }}>{pmt.paymentMethod || 'Cash'}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>৳{Number(pmt.amount || 0).toLocaleString()}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>৳{Number(pmt.salaryPortion || pmt.salary_portion || pmt.amount || 0).toLocaleString()}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(pmt.advanceDuePortion || pmt.advance_due_portion || 0) > 0 ? '#dc2626' : '#64748b' }}>
+                              ৳{Number(pmt.advanceDuePortion || pmt.advance_due_portion || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" style={{ padding: '1rem', textAlign: 'center', color: '#64748b' }}>
+                            {language === 'bn' ? 'কোনো কিস্তির রেকর্ড পাওয়া যায়নি।' : 'No individual installment records.'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ textAlign: 'center', marginTop: '2rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                  Printed on {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+            <div className="drawer-footer" style={{ justifyContent: 'space-between' }}>
+              <button type="button" className="btn-outline" onClick={() => setViewPayrollDetails(null)}>
+                {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
+              </button>
+              <button
+                type="button"
+                className="btn-primary flex-align-gap"
+                onClick={() => printElement('printable-single-payroll', 'Payroll')}
+              >
+                <Printer size={16} /> {language === 'bn' ? 'রসিদ প্রিন্ট করুন' : 'Print Payslip'}
               </button>
             </div>
           </div>

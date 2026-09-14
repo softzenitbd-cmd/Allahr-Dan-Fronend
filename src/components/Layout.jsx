@@ -28,12 +28,14 @@ import {
   ClipboardList,
   ReceiptText,
   Menu,
-  X
+  X,
+  KeyRound,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import './Layout.css';
 import logo from '../assets/allah_dan.jpeg';
 import { hasMenuAccess } from '../utils/navigationConfig';
+import ChangePasswordModal from './ChangePasswordModal';
 
 // Route-to-Data requirements mapping for lazy-loading
 const ROUTE_SLICES = {
@@ -66,6 +68,7 @@ const Layout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const isDashboard = location.pathname === '/';
@@ -253,11 +256,31 @@ const Layout = () => {
             </button>
 
             <div className="user-profile-topbar">
-              <div className="avatar">{user?.name?.charAt(0).toUpperCase()}</div>
-              <div className="user-meta hide-on-mobile">
+              <div
+                className="avatar"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setIsPasswordModalOpen(true)}
+                title={language === 'bn' ? 'পাসওয়ার্ড পরিবর্তন করুন' : 'Change Password'}
+              >
+                {user?.name?.charAt(0).toUpperCase()}
+              </div>
+              <div
+                className="user-meta hide-on-mobile"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setIsPasswordModalOpen(true)}
+                title={language === 'bn' ? 'পাসওয়ার্ড পরিবর্তন করুন' : 'Change Password'}
+              >
                 <span className="name">{user?.name}</span>
                 <span className="role-badge">{user?.role}</span>
               </div>
+              <button
+                onClick={() => setIsPasswordModalOpen(true)}
+                className="btn-icon"
+                style={{ marginLeft: '4px', color: 'var(--text-muted, #94a3b8)' }}
+                title={language === 'bn' ? 'পাসওয়ার্ড পরিবর্তন করুন' : 'Change Password'}
+              >
+                <KeyRound size={15} />
+              </button>
               <button onClick={handleLogout} className="logout-btn" title={language === 'bn' ? 'লগআউট' : 'Logout'}>
                 <LogOut size={16} />
               </button>
@@ -271,6 +294,12 @@ const Layout = () => {
           </div>
           <Outlet />
         </div>
+
+        {/* Change Password Modal */}
+        <ChangePasswordModal
+          isOpen={isPasswordModalOpen}
+          onClose={() => setIsPasswordModalOpen(false)}
+        />
       </main>
     </div>
   );
