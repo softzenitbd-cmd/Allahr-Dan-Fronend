@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History } from 'lucide-react';
+import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History, Receipt, X } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
+import PrintablePayment from '../components/PrintablePayment';
 
 const Customers = () => {
   const { 
@@ -30,13 +31,16 @@ const Customers = () => {
     restoreSupplier,
     permanentDeleteSupplier,
     refresh,
-    ensureLoaded 
+    ensureLoaded,
+    shopProfile,
+    user
   } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('Customer'); // Customer, Supplier, or Deleted
   const [deletedType, setDeletedType] = useState('Customer'); // Customer or Supplier in Deleted tab
   const [smsModal, setSmsModal] = useState({ show: false, target: null, message: '' });
-  const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '' });
+  const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
+  const [receiptModal, setReceiptModal] = useState({ show: false, settlement: null, party: null });
   const [selectedPerson, setSelectedPerson] = useState(null);
 
   // Add/Edit Customer Modal State
@@ -147,17 +151,44 @@ const Customers = () => {
     e.preventDefault();
     const amount = parseFloat(settleModal.amount);
     if (!amount || amount <= 0) {
-      toast.error('Please enter a valid amount to settle.');
+      toast.error(language === 'bn' ? 'অনুগ্রহ করে সঠিক পরিমাণ লিখুন।' : 'Please enter a valid amount to settle.');
       return;
     }
 
-    const res = activeTab === 'Customer'
-      ? await settleCustomerDue(settleModal.target.id, amount, settleModal.date)
-      : await settleSupplierDue(settleModal.target.id, amount, settleModal.date);
+    const previousDue = Number(settleModal.target?.due || 0);
+    const targetObj = { ...settleModal.target };
+    const dateToUse = settleModal.date || new Date().toISOString().split('T')[0];
+    const methodToUse = settleModal.method || 'Cash';
+    const notesToUse = settleModal.notes || '';
+
+    const isCustomer = activeTab === 'Customer' || (!activeTab.includes('Supplier') && !targetObj.supplier_code);
+
+    const res = isCustomer
+      ? await settleCustomerDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse })
+      : await settleSupplierDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse });
 
     if (res?.ok) {
-      toast.success(`Successfully settled ৳${amount} for ${settleModal.target.name}`);
-      setSettleModal({ show: false, target: null, amount: '', date: '' });
+      toast.success(
+        language === 'bn'
+          ? `${targetObj.name}-এর ৳${amount.toLocaleString()} সফলভাবে সমন্বয় করা হয়েছে!`
+          : `Successfully settled ৳${amount.toLocaleString()} for ${targetObj.name}`
+      );
+
+      const settlementObj = {
+        id: res.data?.id || res.data?.settlement_code || 'REC-' + Date.now().toString().slice(-6),
+        amount,
+        previousDue,
+        remainingDue: Math.max(0, previousDue - amount),
+        date: dateToUse,
+        method: methodToUse,
+        notes: notesToUse,
+        type: isCustomer ? 'Customer' : 'Supplier',
+        targetId: targetObj.id,
+        partyName: targetObj.name,
+      };
+
+      setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
+      setReceiptModal({ show: true, settlement: settlementObj, party: targetObj });
     }
   };
 
@@ -407,11 +438,12 @@ const Customers = () => {
                       <td>
                         <div className="action-buttons flex-align-gap" style={{flexWrap:'nowrap'}}>
                           <button 
-                            className="btn-icon" 
-                            title={activeTab === 'Deleted' ? (language === 'bn' ? 'লেজার ও হিস্ট্রি দেখুন' : 'View Ledger History') : 'View & Print'} 
+                            className="btn-outline flex-align-gap" 
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.8rem', color: 'var(--primary)', borderColor: 'rgba(59,130,246,0.35)', fontWeight: 600 }}
+                            title={language === 'bn' ? 'কাস্টমারের হিস্ট্রি ও লেজার দেখুন (Details)' : 'View Details & Ledger'} 
                             onClick={() => setSelectedPerson(person)}
                           >
-                            <Printer size={16} />
+                            <Eye size={14} /> Details
                           </button>
                           {activeTab !== 'Deleted' && (
                             <>
@@ -508,11 +540,11 @@ const Customers = () => {
       {/* Settle Due Drawer */}
       {settleModal.show && createPortal(
         <div className="drawer-overlay">
-          <div className="drawer-container" style={{ maxWidth: '400px' }}>
+          <div className="drawer-container" style={{ maxWidth: '420px' }}>
             <div className="drawer-header">
               <h2>{t(language, 'Settle Due')}</h2>
-              <button className="drawer-close-btn" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '' })}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <button className="drawer-close-btn" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' })}>
+                <X size={20} />
               </button>
             </div>
             <form id="settle-form" onSubmit={handleSettle} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -532,6 +564,7 @@ const Customers = () => {
                       min="1"
                       max={settleModal.target?.due}
                       step="any"
+                      placeholder="e.g. 1000"
                     />
                     <small className="text-muted">{language === 'bn' ? 'বকেয়া পরিশোধের পরিমাণ লিখুন।' : 'Enter the amount they are paying to clear the due.'}</small>
                   </div>
@@ -545,13 +578,119 @@ const Customers = () => {
                       required 
                     />
                   </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'পেমেন্ট মাধ্যম' : 'Payment Method'}</label>
+                    <select
+                      className="w-full"
+                      value={settleModal.method || 'Cash'}
+                      onChange={e => setSettleModal({...settleModal, method: e.target.value})}
+                    >
+                      <option value="Cash">{language === 'bn' ? 'ক্যাশ (নগদ)' : 'Cash'}</option>
+                      <option value="Bank">{language === 'bn' ? 'ব্যাংক ট্রান্সফার' : 'Bank Transfer'}</option>
+                      <option value="bKash">bKash (বিকাশ)</option>
+                      <option value="Nagad">Nagad (নগদ)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'মন্তব্য (ঐচ্ছিক)' : 'Notes / Reference'}</label>
+                    <input
+                      type="text"
+                      className="w-full"
+                      placeholder={language === 'bn' ? 'যেমন: চেক নং বা লেনদেন রেফারেন্স' : 'e.g. Check / Txn reference'}
+                      value={settleModal.notes || ''}
+                      onChange={e => setSettleModal({...settleModal, notes: e.target.value})}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '' })}>{t(language, 'Cancel')}</button>
-                <button type="submit" className="btn-primary">{t(language, 'Save')}</button>
+                <button type="button" className="btn-outline" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' })}>{t(language, 'Cancel')}</button>
+                <button type="submit" className="btn-primary">{language === 'bn' ? 'পরিশোধ ও রসিদ তৈরি' : 'Confirm & Generate Receipt'}</button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Settle Due Money Receipt / Payment Voucher Modal */}
+      {receiptModal.show && createPortal(
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-container card animate-scale-up" style={{ maxWidth: '750px', width: '95%', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
+            <div className="modal-header" style={{ padding: '0.9rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.15rem' }}>
+                <Printer size={18} className="text-primary" />
+                {receiptModal.settlement?.type === 'Supplier'
+                  ? (language === 'bn' ? 'পেমেন্ট ভাউচার (Payment Voucher)' : 'Payment Voucher')
+                  : (language === 'bn' ? 'টাকা জমার রসিদ (Money Receipt)' : 'Money Receipt')}
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn-primary flex-align-gap"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                  onClick={() => printElement('printable-payment-receipt', `Receipt-${receiptModal.settlement?.id}`, { isThermal: false })}
+                >
+                  <Printer size={14} /> {language === 'bn' ? 'A4 প্রিন্ট' : 'Print A4'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline flex-align-gap"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                  onClick={() => printElement('printable-payment-receipt-thermal', `Receipt-${receiptModal.settlement?.id}`, { isThermal: true })}
+                >
+                  <Receipt size={14} /> {language === 'bn' ? 'থার্মাল প্রিন্ট' : 'Thermal (80mm)'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => setReceiptModal({ show: false, settlement: null, party: null })}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-body" style={{ overflowY: 'auto', padding: '1.25rem', background: 'var(--bg-subtle)' }}>
+              {/* On-screen Standard Preview */}
+              <div style={{ background: '#fff', borderRadius: '8px', boxShadow: '0 4px 18px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                <PrintablePayment
+                  settlement={receiptModal.settlement}
+                  party={receiptModal.party}
+                  shopProfile={shopProfile}
+                  operatorName={user?.name || user?.username || 'Admin'}
+                  domId="printable-payment-receipt"
+                  isThermal={false}
+                  language={language}
+                />
+              </div>
+
+              {/* Hidden Thermal Element for printElement */}
+              <div style={{ display: 'none' }}>
+                <PrintablePayment
+                  settlement={receiptModal.settlement}
+                  party={receiptModal.party}
+                  shopProfile={shopProfile}
+                  operatorName={user?.name || user?.username || 'Admin'}
+                  domId="printable-payment-receipt-thermal"
+                  isThermal={true}
+                  language={language}
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ padding: '0.75rem 1.25rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="text-muted" style={{ fontSize: '0.82rem' }}>
+                {language === 'bn' ? 'রসিদটি প্রিন্ট করে কাস্টমার বা সাপ্লায়ারকে প্রদান করুন।' : 'Print this receipt for customer or supplier records.'}
+              </span>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setReceiptModal({ show: false, settlement: null, party: null })}
+              >
+                {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
+              </button>
+            </div>
           </div>
         </div>,
         document.body
@@ -814,7 +953,33 @@ const Customers = () => {
                                 {tx.type === 'charge' ? `৳${tx.amount.toLocaleString()}` : '-'}
                               </td>
                               <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'payment' ? 'green' : 'inherit' }}>
-                                {tx.type === 'payment' ? `৳${tx.amount.toLocaleString()}` : '-'}
+                                {tx.type === 'payment' ? (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
+                                    <span>৳{tx.amount.toLocaleString()}</span>
+                                    <button
+                                      type="button"
+                                      className="btn-icon"
+                                      title={language === 'bn' ? 'রসিদ প্রিন্ট করুন' : 'Print Payment Receipt'}
+                                      style={{ width: '22px', height: '22px', padding: 0, color: 'var(--primary)' }}
+                                      onClick={() => setReceiptModal({
+                                        show: true,
+                                        settlement: {
+                                          id: tx.id,
+                                          amount: tx.amount,
+                                          date: tx.date,
+                                          remainingDue: Math.max(0, tx.balance),
+                                          previousDue: Math.max(0, tx.balance) + tx.amount,
+                                          type: isSelectedSupplier ? 'Supplier' : 'Customer',
+                                          targetId: selectedPerson.id,
+                                          partyName: selectedPerson.name,
+                                        },
+                                        party: selectedPerson,
+                                      })}
+                                    >
+                                      <Printer size={13} />
+                                    </button>
+                                  </div>
+                                ) : '-'}
                               </td>
                               <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 'bold' }}>
                                 ৳{Math.max(0, tx.balance).toLocaleString()}

@@ -679,14 +679,14 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       settleCustomerDue: (customerId, amount, dateStr, opts = {}) => enqueue(async () => {
         try {
-          await LedgerService.settleDue({
+          const res = await LedgerService.settleDue({
             targetId: customerId, type: 'Customer', amount,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
             method: opts.method || undefined,
             notes: opts.notes || undefined,
           });
           await get().refresh('customers', 'sales', 'settlements', 'treasury');
-          return { ok: true };
+          return { ok: true, data: res };
         } catch (error) {
           return fail(error, 'The payment could not be recorded.');
         }
@@ -694,14 +694,14 @@ const useStore = create(
 
       settleSupplierDue: (supplierId, amount, dateStr, opts = {}) => enqueue(async () => {
         try {
-          await LedgerService.settleDue({
+          const res = await LedgerService.settleDue({
             targetId: supplierId, type: 'Supplier', amount,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
             method: opts.method || undefined,
             notes: opts.notes || undefined,
           });
           await get().refresh('suppliers', 'purchases', 'settlements', 'treasury');
-          return { ok: true };
+          return { ok: true, data: res };
         } catch (error) {
           return fail(error, 'The payment could not be recorded.');
         }
