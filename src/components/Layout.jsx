@@ -30,6 +30,7 @@ import {
   Menu,
   X,
   KeyRound,
+  Activity,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import './Layout.css';
@@ -59,6 +60,7 @@ const ROUTE_SLICES = {
   '/reports': ['dashboard', 'sales', 'inventory', 'purchases', 'expenses', 'customers', 'suppliers', 'staff', 'payrolls', 'returns', 'attendance', 'leaves', 'treasury', 'settlements'],
   '/hr': ['staff', 'attendance', 'leaves', 'payrolls'],
   '/sms': ['sms', 'customers'],
+  '/activity-log': [],
   '/settings': [],
 };
 
@@ -160,6 +162,7 @@ const Layout = () => {
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
     { name: language === 'bn' ? 'এসএমএস' : 'SMS', icon: MessageSquare, path: '/sms' },
+    { name: language === 'bn' ? 'অ্যাক্টিভিটি লগ' : 'Activity Log', icon: Activity, path: '/activity-log' },
     { name: language === 'bn' ? 'সেটিংস' : 'Settings', icon: Settings, path: '/settings' },
   ].filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 

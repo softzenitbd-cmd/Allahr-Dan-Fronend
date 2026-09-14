@@ -88,8 +88,10 @@ const PrintablePayment = ({
             src={shopProfile?.logo || defaultLogo}
             alt="Logo"
             style={{
-              maxHeight: '70px',
-              maxWidth: '135px',
+              maxHeight: '120px',
+              maxWidth: '220px',
+              width: 'auto',
+              height: 'auto',
               objectFit: 'contain',
               margin: '0 auto 6px auto',
               display: 'block',
@@ -160,6 +162,9 @@ const PrintablePayment = ({
         <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '12px', borderTop: '1px dotted #000', paddingTop: '6px' }}>
           <div>Served by: {operatorName}</div>
           <div style={{ fontWeight: 'bold', marginTop: '2px' }}>Thank you!</div>
+          <div style={{ marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000', fontSize: '12px', fontWeight: 900, letterSpacing: '0.02em' }}>
+            01811648721, 01688448383
+          </div>
         </div>
       </div>
     );

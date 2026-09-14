@@ -170,3 +170,9 @@ export const CoreService = {
   userSettings: () => apiClient.get(ENDPOINTS.USER_SETTINGS),
   saveUserSettings: (payload) => apiClient.post(ENDPOINTS.USER_SETTINGS, payload),
 };
+
+export const ActivityLogService = {
+  list: (params) => apiClient.get(ENDPOINTS.ACTIVITY_LOGS, { params }),
+  logCustom: (payload) => apiClient.post(ENDPOINTS.LOG_CUSTOM_ACTIVITY, payload),
+};
+

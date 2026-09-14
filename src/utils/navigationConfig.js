@@ -16,6 +16,7 @@ import {
   Calendar,
   MessageSquare,
   Settings,
+  Activity,
 } from 'lucide-react';
 
 export const SYSTEM_MENUS = [
@@ -165,6 +166,14 @@ export const SYSTEM_MENUS = [
     nameBn: 'এসএমএস',
     group: 'admin',
     icon: MessageSquare,
+  },
+  {
+    id: 'activity-log',
+    path: '/activity-log',
+    nameEn: 'Activity Log',
+    nameBn: 'অ্যাক্টিভিটি লগ',
+    group: 'admin',
+    icon: Activity,
   },
   {
     id: 'settings',

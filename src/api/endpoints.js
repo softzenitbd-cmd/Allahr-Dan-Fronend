@@ -99,6 +99,8 @@ export const ENDPOINTS = {
   // Core
   SHOP_PROFILE: '/core/shop-profile/',
   USER_SETTINGS: '/core/user-settings/',
+  ACTIVITY_LOGS: '/core/activity-logs/',
+  LOG_CUSTOM_ACTIVITY: '/core/activity-logs/log-custom/',
 };
 
 export default ENDPOINTS;

@@ -30,6 +30,7 @@ const Ledger = lazy(() => import('./pages/Ledger'));
 const DayBook = lazy(() => import('./pages/DayBook'));
 const SR = lazy(() => import('./pages/SR'));
 const StockLog = lazy(() => import('./pages/StockLog'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 
 // Placeholder Pages (will be extracted to separate files in later phases)
 
@@ -141,6 +142,7 @@ function App() {
             <Route path="ledger" element={<ProtectedRoute path="/ledger"><Ledger /></ProtectedRoute>} />
             <Route path="hr" element={<ProtectedRoute path="/hr"><HR /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute path="/reports"><Reports /></ProtectedRoute>} />
+            <Route path="activity-log" element={<ProtectedRoute path="/activity-log" requiredRole="Admin"><ActivityLog /></ProtectedRoute>} />
             <Route path="settings" element={<ProtectedRoute path="/settings" requiredRole="Admin"><Settings /></ProtectedRoute>} />
           </Route>
         </Routes>

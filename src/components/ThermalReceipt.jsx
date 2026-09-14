@@ -60,8 +60,10 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             src={shopProfile?.logo || defaultLogo}
             alt="Logo"
             style={{
-              maxHeight: '75px',
-              maxWidth: '140px',
+              maxHeight: '125px',
+              maxWidth: '240px',
+              width: 'auto',
+              height: 'auto',
               objectFit: 'contain',
               margin: '0 auto 6px auto',
               display: 'block',
@@ -340,6 +342,13 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
               {shopProfile.footer_disclaimer_1}
             </div>
           )}
+
+          {/* Numbers at the very bottom requested by user */}
+          <div style={{ marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000000', textAlign: 'center' }}>
+            <div style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '0.03em', color: '#000000', margin: '2px 0' }}>
+              01811648721, 01688448383
+            </div>
+          </div>
         </div>
 
       </div>
