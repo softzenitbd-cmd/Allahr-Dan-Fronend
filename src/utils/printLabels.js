@@ -37,7 +37,7 @@ export const generateBarcodeSvg = (value) => {
 };
 
 /** The heading on every sticker. */
-export const LABEL_SHOP_NAME = 'Allahr Dan Gents Point';
+export const LABEL_SHOP_NAME = 'Allahr dan gents point';
 
 /** The sticker size to print on, from the shop profile with safe defaults. */
 export const labelSpecFrom = (shopProfile) => ({
@@ -221,17 +221,17 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
     }
     .price-row {
       font-weight: 900;
-      font-size: ${pt(9.5)};
+      font-size: ${pt(9)};
       line-height: 1.1;
       display: flex;
       align-items: baseline;
       justify-content: center;
-      gap: ${(1 * k).toFixed(2)}mm;
+      gap: ${(1.2 * k).toFixed(2)}mm;
       width: 100%;
       white-space: nowrap;
     }
-    .mrp { font-size: ${pt(6)}; font-weight: normal; text-decoration: line-through; color: #555; }
-    .sale-price { font-weight: 900; }
+    .mrp { font-size: ${pt(9)}; font-weight: 800; text-decoration: line-through; color: #222; }
+    .sale-price { font-size: ${pt(9)}; font-weight: 900; color: #000; }
   </style>
 </head>
 <body>

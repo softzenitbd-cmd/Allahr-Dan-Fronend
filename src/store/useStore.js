@@ -23,6 +23,7 @@ import {
   TreasuryService,
 } from '../api/services';
 import { DEFAULT_ROLE_PERMISSIONS, ALL_MENU_PATHS } from '../utils/navigationConfig';
+import { DEFAULT_SHOP_NAME, DEFAULT_SHOP_NAME_BN, DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 
 /**
  * The single bridge between the pages and the API.
@@ -85,7 +86,11 @@ const useStore = create(
       themeGradient: 'theme-sky',
       language: 'en',
       isLoading: false,
-      shopProfile: null,
+      shopProfile: {
+        shop_name: DEFAULT_SHOP_NAME,
+        shop_name_bn: DEFAULT_SHOP_NAME_BN,
+        address: DEFAULT_SHOP_ADDRESS,
+      },
       accentColor: '',
       // Per-card colour overrides for the dashboard summary, keyed by card id.
       dashboardCardColors: {},
@@ -362,7 +367,10 @@ const useStore = create(
           try {
             const profile = await CoreService.shopProfile();
             set((state) => ({
-              shopProfile: profile,
+              shopProfile: {
+                ...profile,
+                address: profile?.address || DEFAULT_SHOP_ADDRESS,
+              },
               _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
             }));
           } catch {}

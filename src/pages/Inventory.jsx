@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Plus, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
+  Plus, PlusCircle, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
   Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
   AlertTriangle,
@@ -13,6 +13,7 @@ import { printBarcodeLabels, labelSpecFrom, LABEL_SHOP_NAME } from '../utils/pri
 import { ProductService } from '../api/services';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 
@@ -66,6 +67,9 @@ const Inventory = () => {
   const [newProductImagePreview, setNewProductImagePreview] = useState(null);
   const [editProductImage, setEditProductImage] = useState(null);
   const [editProductImagePreview, setEditProductImagePreview] = useState(null);
+  const [quickStockItem, setQuickStockItem] = useState(null);
+  const [quickAddQty, setQuickAddQty] = useState('');
+  const [isSavingQuickStock, setIsSavingQuickStock] = useState(false);
 
   // The category tree as the server keeps it: top-level ones, and under each
   // the sub-categories that point at it. Names not yet registered as a
@@ -228,8 +232,12 @@ const Inventory = () => {
     const salePrice = item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price);
     const mrpPrice = item.mrp && Number(item.mrp) > 0 ? Number(item.mrp) : salePrice;
     const alertLimit = item.min_stock !== undefined && item.min_stock !== null && item.min_stock !== '' ? item.min_stock : (item.minStock ?? 5);
+    const curStock = parseInt(item.stock, 10) || 0;
     setEditingItem({
       ...item,
+      initialStock: curStock,
+      stockToAdd: '',
+      stock: curStock,
       min_stock: alertLimit,
       minStock: alertLimit,
       cost_price: item.cost_price ?? item.costPrice ?? '',
@@ -239,6 +247,44 @@ const Inventory = () => {
     });
     setEditProductImage(null);
     setEditProductImagePreview(getProductImageUrl(item.image) || null);
+  };
+
+  const handleOpenQuickStock = (item) => {
+    setQuickStockItem(item);
+    setQuickAddQty('');
+  };
+
+  const handleQuickStockSubmit = async (e) => {
+    e.preventDefault();
+    if (!quickStockItem) return;
+    const addQty = parseInt(quickAddQty, 10);
+    if (!addQty || addQty <= 0) {
+      toast.warning(language === 'bn' ? 'দয়া করে যোগ করার সঠিক সংখ্যা দিন।' : 'Please enter a valid quantity to add.');
+      return;
+    }
+    const currentStock = parseInt(quickStockItem.stock, 10) || 0;
+    const newTotalStock = currentStock + addQty;
+
+    setIsSavingQuickStock(true);
+    const res = await updateInventoryItem(quickStockItem.id, {
+      ...quickStockItem,
+      stock: newTotalStock,
+    });
+    setIsSavingQuickStock(false);
+
+    if (res?.ok) {
+      showSuccessAlert(
+        language === 'bn'
+          ? `'${quickStockItem.name}' পণ্যে ${addQty} টি নতুন স্টক যোগ করা হয়েছে! মোট স্টক: ${newTotalStock} টি`
+          : `Added ${addQty} stock to '${quickStockItem.name}'! Total stock: ${newTotalStock}`
+      );
+      setQuickStockItem(null);
+      setQuickAddQty('');
+      await refresh('inventory');
+      fetchPaginatedProducts(currentPage);
+    } else {
+      toast.error(res?.message || (language === 'bn' ? 'স্টক আপডেট ব্যর্থ হয়েছে।' : 'Failed to update stock.'));
+    }
   };
 
   const handleImageSelect = (file, isEdit = false) => {
@@ -285,7 +331,7 @@ const Inventory = () => {
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
-      const { minStock, ...restEditingItem } = editingItem;
+      const { minStock, initialStock, stockToAdd, ...restEditingItem } = editingItem;
       const payload = {
         ...restEditingItem,
         mrp: mrpVal || saleVal,
@@ -300,10 +346,16 @@ const Inventory = () => {
     }
 
     if (res?.ok) {
+      const addedCount = parseInt(editingItem.stockToAdd, 10);
+      const msg = (addedCount && addedCount > 0)
+        ? (language === 'bn'
+            ? `'${editingItem.name}' পণ্য আপডেট হয়েছে! আগের ${editingItem.initialStock ?? 0} টির সাথে ${addedCount} টি যোগ হয়ে মোট স্টক: ${editingItem.stock} টি`
+            : `Updated '${editingItem.name}'! Added ${addedCount} to previous ${editingItem.initialStock ?? 0}, total: ${editingItem.stock}`)
+        : (language === 'bn' ? 'পণ্য সফলভাবে আপডেট হয়েছে!' : 'Product updated successfully!');
       setEditingItem(null);
       setEditProductImage(null);
       setEditProductImagePreview(null);
-      showSuccessAlert(language === 'bn' ? 'পণ্য সফলভাবে আপডেট হয়েছে!' : 'Product updated successfully!');
+      showSuccessAlert(msg);
       await refresh('inventory');
       fetchPaginatedProducts(currentPage);
     }
@@ -341,6 +393,69 @@ const Inventory = () => {
     const discVal = parseFloat(newProduct.discount_price) || 0;
     const saleVal = discVal > 0 ? discVal : (parseFloat(newProduct.price) || mrpVal);
     const minVal = parseInt(newProduct.min_stock !== undefined && newProduct.min_stock !== '' ? newProduct.min_stock : 5);
+
+    // Check if a product with this ID or Barcode already exists in inventory
+    const existingProduct = (inventory || []).find(
+      (p) => String(p.id).trim().toLowerCase() === finalId.toLowerCase() ||
+             String(p.product_code).trim().toLowerCase() === finalId.toLowerCase()
+    );
+
+    if (existingProduct) {
+      const addedQty = parseInt(newProduct.stock, 10) || 0;
+      const prevStock = parseInt(existingProduct.stock, 10) || 0;
+      const newTotalStock = prevStock + addedQty;
+
+      let updateRes;
+      if (newProductImage) {
+        const formData = new FormData();
+        formData.append('name', finalName || existingProduct.name);
+        formData.append('category', newProduct.category || existingProduct.category || 'Panjabi');
+        formData.append('unit', newProduct.unit || existingProduct.unit || 'Pcs');
+        if (newProduct.variant || existingProduct.variant) formData.append('variant', newProduct.variant || existingProduct.variant || '');
+        formData.append('stock', newTotalStock);
+        formData.append('min_stock', minVal);
+        formData.append('minStock', minVal);
+        formData.append('mrp', mrpVal || existingProduct.mrp || saleVal);
+        formData.append('discount_price', discVal || existingProduct.discount_price || saleVal);
+        formData.append('price', saleVal || existingProduct.price);
+        if (isAdmin && newProduct.cost_price) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
+        formData.append('image', newProductImage);
+        updateRes = await updateInventoryItem(existingProduct.id, formData);
+      } else {
+        const payload = {
+          name: finalName || existingProduct.name,
+          category: newProduct.category || existingProduct.category,
+          unit: newProduct.unit || existingProduct.unit || 'Pcs',
+          variant: newProduct.variant || existingProduct.variant,
+          mrp: mrpVal || existingProduct.mrp || saleVal,
+          discount_price: discVal || existingProduct.discount_price || saleVal,
+          price: saleVal || existingProduct.price,
+          stock: newTotalStock,
+          min_stock: minVal,
+          minStock: minVal,
+          ...(isAdmin && newProduct.cost_price ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+        };
+        updateRes = await updateInventoryItem(existingProduct.id, payload);
+      }
+
+      if (updateRes?.ok) {
+        setShowAddModal(false);
+        setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, min_stock: 5, mrp: 0, discount_price: 0, price: 0, cost_price: '' });
+        setNewProductImage(null);
+        setNewProductImagePreview(null);
+        showSuccessAlert(
+          language === 'bn'
+            ? `'${existingProduct.name}' পণ্যে আগের ${prevStock} টির সাথে নতুন ${addedQty} টি যোগ করা হয়েছে! মোট স্টক: ${newTotalStock} টি`
+            : `Added ${addedQty} stock to '${existingProduct.name}' (Previously: ${prevStock})! Total stock: ${newTotalStock}`
+        );
+        await refresh('inventory');
+        fetchPaginatedProducts(1);
+        return;
+      } else {
+        toast.error(updateRes?.message || (language === 'bn' ? 'স্টক যোগ করা ব্যর্থ হয়েছে।' : 'Failed to update stock.'));
+        return;
+      }
+    }
 
     if (newProductImage) {
       const formData = new FormData();
@@ -794,10 +909,13 @@ const Inventory = () => {
                                   ? 'badge-warning'
                                   : 'badge-success'
                               }`}
-                              style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                              title={language === 'bn' ? 'ক্লিক করে দ্রুত স্টক যোগ করুন (+)' : 'Click to quickly add stock (+)'}
+                              onClick={() => handleOpenQuickStock(item)}
                             >
                               {isLowStock && <AlertTriangle size={12} />}
                               {stockQty}
+                              <PlusCircle size={11} style={{ marginLeft: '2px', opacity: 0.8 }} />
                             </span>
                             <span style={{ fontSize: '0.72rem', color: isLowStock ? '#d97706' : 'var(--text-muted)' }}>
                               {language === 'bn' ? `এলার্ট: ≤${alertLimit}` : `Alert: ≤${alertLimit}`}
@@ -833,6 +951,14 @@ const Inventory = () => {
                     )}
                     <td>
                       <div className="table-actions">
+                        <button
+                          className="btn-icon text-success"
+                          style={{ color: '#059669', background: '#ecfdf5' }}
+                          title={language === 'bn' ? 'স্টক যোগ করুন (+)' : 'Add Stock (+)'}
+                          onClick={() => handleOpenQuickStock(item)}
+                        >
+                          <PlusCircle size={16} />
+                        </button>
                         <button
                           className="btn-icon text-secondary"
                           title="Print Barcode"
@@ -953,7 +1079,7 @@ const Inventory = () => {
           <div id="printable-valuation" style={{ padding: '1.25rem', background: '#fff', color: '#111827', fontSize: '12px' }}>
             <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
               <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopProfile?.shop_name || 'Allahr dan gents point'}</div>
-              {shopProfile?.address && <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile.address}</div>}
+              <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
               <div style={{ marginTop: '6px', fontWeight: 700, letterSpacing: '0.1em', fontSize: '13px' }}>INVENTORY VALUATION SUMMARY</div>
               <div style={{ fontSize: '11px', color: '#4b5563' }}>
                 As on {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · Confidential — cost prices
@@ -1156,8 +1282,71 @@ const Inventory = () => {
                       required
                       placeholder="e.g. 8941170000013"
                       value={newProduct.id}
-                      onChange={(e) => setNewProduct({ ...newProduct, id: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const match = (inventory || []).find(
+                          (p) => val.trim() && (
+                            String(p.id).trim().toLowerCase() === val.trim().toLowerCase() ||
+                            String(p.product_code).trim().toLowerCase() === val.trim().toLowerCase()
+                          )
+                        );
+                        if (match) {
+                          setNewProduct((prev) => ({
+                            ...prev,
+                            id: val,
+                            name: match.name || prev.name,
+                            category: match.category || prev.category,
+                            unit: match.unit || prev.unit,
+                            variant: match.variant || prev.variant,
+                            mrp: match.mrp || prev.mrp,
+                            discount_price: match.discount_price || prev.discount_price,
+                            price: match.price || prev.price,
+                            cost_price: match.cost_price ?? prev.cost_price,
+                            min_stock: match.min_stock ?? prev.min_stock,
+                          }));
+                        } else {
+                          setNewProduct((prev) => ({ ...prev, id: val }));
+                        }
+                      }}
                     />
+                    {(() => {
+                      const match = (inventory || []).find(
+                        (p) => newProduct.id && (
+                          String(p.id).trim().toLowerCase() === String(newProduct.id).trim().toLowerCase() ||
+                          String(p.product_code).trim().toLowerCase() === String(newProduct.id).trim().toLowerCase()
+                        )
+                      );
+                      if (!match) return null;
+                      const addedNum = parseInt(newProduct.stock, 10) || 0;
+                      const curNum = Number(match.stock) || 0;
+                      return (
+                        <div style={{
+                          background: '#eff6ff',
+                          border: '1px solid #93c5fd',
+                          borderRadius: '6px',
+                          padding: '8px 12px',
+                          marginTop: '6px',
+                          fontSize: '0.84rem',
+                          color: '#1e40af',
+                        }}>
+                          <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span>📦</span>
+                            <span>{language === 'bn' ? 'বিদ্যমান পণ্য পাওয়া গেছে!' : 'Existing Product Found!'}</span>
+                          </div>
+                          <div style={{ marginTop: '3px' }}>
+                            <strong>{match.name}</strong> · {language === 'bn' ? 'বর্তমান স্টক:' : 'Current Stock:'}{' '}
+                            <span style={{ color: '#059669', fontWeight: 800, fontSize: '0.95rem' }}>
+                              {curNum} {match.unit || 'Pcs'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#2563eb', marginTop: '2px' }}>
+                            {language === 'bn'
+                              ? `নিচে স্টক দিলে তা আগের ${curNum} টির সাথে প্লাস হয়ে মোট হবে: ${curNum + addedNum} টি`
+                              : `New stock will be added to ${curNum}. Total: ${curNum + addedNum}`}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
@@ -1203,15 +1392,41 @@ const Inventory = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
-                    <input
-                      type="number"
-                      className="w-full"
-                      required
-                      min="0"
-                      value={newProduct.stock}
-                      onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
-                    />
+                    {(() => {
+                      const match = (inventory || []).find(
+                        (p) => newProduct.id && (
+                          String(p.id).trim().toLowerCase() === String(newProduct.id).trim().toLowerCase() ||
+                          String(p.product_code).trim().toLowerCase() === String(newProduct.id).trim().toLowerCase()
+                        )
+                      );
+                      const addedNum = parseInt(newProduct.stock, 10) || 0;
+                      const curNum = match ? (Number(match.stock) || 0) : 0;
+                      return (
+                        <>
+                          <label className="text-muted text-sm block mb-1">
+                            {match
+                              ? (language === 'bn' ? 'নতুন যোগ করার স্টক (+)' : 'Quantity to Add (+)')
+                              : t(language, 'Stock Quantity')} *
+                          </label>
+                          <input
+                            type="number"
+                            className="w-full"
+                            required
+                            min="0"
+                            placeholder={match ? (language === 'bn' ? 'যেমন: ২০' : 'e.g. 20') : '0'}
+                            value={newProduct.stock}
+                            onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                          />
+                          {match && (
+                            <div style={{ fontSize: '0.82rem', color: '#059669', fontWeight: 600, marginTop: '4px' }}>
+                              {language === 'bn'
+                                ? `➔ মোট স্টক হবে: ${curNum} + ${addedNum} = ${curNum + addedNum} টি`
+                                : `➔ New Total: ${curNum} + ${addedNum} = ${curNum + addedNum}`}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
@@ -1395,16 +1610,98 @@ const Inventory = () => {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Stock Quantity')} *</label>
+                  <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span className="text-sm text-muted font-medium">{language === 'bn' ? 'বর্তমান স্টক:' : 'Current Stock:'}</span>
+                      <span className="badge badge-primary" style={{ fontWeight: 800, fontSize: '0.95rem', padding: '4px 10px' }}>
+                        {editingItem.initialStock ?? editingItem.stock} {editingItem.unit || 'Pcs'}
+                      </span>
+                    </div>
+
+                    <label className="text-muted text-sm block mb-1 font-semibold" style={{ color: '#0f172a' }}>
+                      {language === 'bn' ? '➕ নতুন স্টক যোগ করুন (Add Quantity +):' : '➕ Add More Stock (+):'}
+                    </label>
                     <input
                       type="number"
                       className="w-full"
-                      required
                       min="0"
-                      value={editingItem.stock}
-                      onChange={(e) => setEditingItem({ ...editingItem, stock: e.target.value })}
+                      placeholder={language === 'bn' ? 'যেমন: ২০' : 'e.g. 20'}
+                      value={editingItem.stockToAdd ?? ''}
+                      onChange={(e) => {
+                        const addVal = e.target.value;
+                        const addNum = parseInt(addVal, 10) || 0;
+                        const base = Number(editingItem.initialStock ?? 0);
+                        setEditingItem({
+                          ...editingItem,
+                          stockToAdd: addVal,
+                          stock: base + addNum,
+                        });
+                      }}
+                      style={{ marginBottom: '6px' }}
                     />
+
+                    {/* Quick Preset Buttons */}
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                      {[5, 10, 20, 50, 100].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          className="btn-outline"
+                          style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px', fontWeight: 600 }}
+                          onClick={() => {
+                            const curAdd = parseInt(editingItem.stockToAdd, 10) || 0;
+                            const newAdd = curAdd + num;
+                            const base = Number(editingItem.initialStock ?? 0);
+                            setEditingItem({
+                              ...editingItem,
+                              stockToAdd: String(newAdd),
+                              stock: base + newAdd,
+                            });
+                          }}
+                        >
+                          +{num}
+                        </button>
+                      ))}
+                      {editingItem.stockToAdd && (
+                        <button
+                          type="button"
+                          className="btn-outline text-muted"
+                          style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px' }}
+                          onClick={() => {
+                            const base = Number(editingItem.initialStock ?? 0);
+                            setEditingItem({
+                              ...editingItem,
+                              stockToAdd: '',
+                              stock: base,
+                            });
+                          }}
+                        >
+                          {language === 'bn' ? 'রিসেট' : 'Reset'}
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label className="text-sm font-semibold" style={{ color: '#0f172a' }}>
+                          {language === 'bn' ? 'মোট চূড়ান্ত স্টক:' : 'Total Final Stock:'} *
+                        </label>
+                        {editingItem.stockToAdd && parseInt(editingItem.stockToAdd, 10) > 0 && (
+                          <span style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 700 }}>
+                            {editingItem.initialStock} + {editingItem.stockToAdd} = {editingItem.stock}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        className="w-full"
+                        required
+                        min="0"
+                        style={{ fontWeight: 'bold' }}
+                        value={editingItem.stock}
+                        onChange={(e) => setEditingItem({ ...editingItem, stock: e.target.value })}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
@@ -1476,6 +1773,135 @@ const Inventory = () => {
                 </button>
                 <button type="submit" className="btn-primary flex-1">
                   {t(language, 'Save Changes')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Quick Add Stock Modal */}
+      {quickStockItem && createPortal(
+        <div className="drawer-overlay" style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="drawer-container" style={{ width: '100%', maxWidth: '440px', height: 'auto', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }}>
+            <div className="drawer-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#ecfdf5', color: '#059669', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PlusCircle size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700 }}>{language === 'bn' ? 'স্টক যোগ করুন' : 'Add Stock'}</h2>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: {quickStockItem.id}</span>
+                </div>
+              </div>
+              <button className="drawer-close-btn" onClick={() => setQuickStockItem(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickStockSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="drawer-body" style={{ padding: '16px 20px', maxHeight: 'calc(90vh - 140px)', overflowY: 'auto' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>{quickStockItem.name}</div>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '2px' }}>
+                    {quickStockItem.category} {quickStockItem.variant ? `· ${quickStockItem.variant}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1' }}>
+                    <span style={{ fontSize: '0.88rem', color: '#475563', fontWeight: 500 }}>{language === 'bn' ? 'বর্তমান স্টক:' : 'Current Stock:'}</span>
+                    <span className="badge badge-primary" style={{ fontSize: '1rem', fontWeight: 800, padding: '4px 12px' }}>
+                      {Number(quickStockItem.stock) || 0} {quickStockItem.unit || 'Pcs'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label className="text-sm font-semibold block mb-1.5" style={{ color: '#0f172a' }}>
+                    {language === 'bn' ? 'নতুন কতটি স্টক যোগ করতে চান? (+)' : 'Quantity to Add (+)'} *
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full"
+                    autoFocus
+                    required
+                    min="1"
+                    placeholder={language === 'bn' ? 'যেমন: ২০' : 'e.g. 20'}
+                    value={quickAddQty}
+                    onChange={(e) => setQuickAddQty(e.target.value)}
+                    style={{ fontSize: '1.2rem', padding: '10px 14px', fontWeight: 700, borderRadius: '8px' }}
+                  />
+
+                  {/* Quick Preset Buttons */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    {[5, 10, 20, 50, 100].map((qty) => (
+                      <button
+                        key={qty}
+                        type="button"
+                        className="btn-outline"
+                        style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', fontWeight: 600 }}
+                        onClick={() => {
+                          const current = parseInt(quickAddQty, 10) || 0;
+                          setQuickAddQty(String(current + qty));
+                        }}
+                      >
+                        +{qty}
+                      </button>
+                    ))}
+                    {quickAddQty && (
+                      <button
+                        type="button"
+                        className="btn-outline text-muted"
+                        style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '6px' }}
+                        onClick={() => setQuickAddQty('')}
+                      >
+                        {language === 'bn' ? 'রিসেট' : 'Reset'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Calculation preview */}
+                <div style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>
+                      {language === 'bn' ? 'হিসাব (যোগফল):' : 'Calculation:'}
+                    </div>
+                    <div style={{ fontSize: '0.88rem', color: '#15803d', fontWeight: 500, marginTop: '2px' }}>
+                      {Number(quickStockItem.stock) || 0} + {parseInt(quickAddQty, 10) || 0}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#166534', fontWeight: 500 }}>
+                      {language === 'bn' ? 'মোট নতুন স্টক হবে' : 'New Total Stock'}
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#15803d' }}>
+                      {(Number(quickStockItem.stock) || 0) + (parseInt(quickAddQty, 10) || 0)} {quickStockItem.unit || 'Pcs'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="drawer-footer" style={{ padding: '12px 20px', gap: '10px', borderTop: '1px solid #e2e8f0' }}>
+                <button type="button" className="btn-outline flex-1" onClick={() => setQuickStockItem(null)}>
+                  {t(language, 'Cancel')}
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary flex-1"
+                  disabled={isSavingQuickStock || !quickAddQty || parseInt(quickAddQty, 10) <= 0}
+                  style={{ background: '#059669', borderColor: '#059669', fontWeight: 700 }}
+                >
+                  {isSavingQuickStock
+                    ? (language === 'bn' ? 'সংরক্ষণ হচ্ছে...' : 'Saving...')
+                    : (language === 'bn' ? '💾 স্টক যোগ করুন' : '💾 Add Stock')}
                 </button>
               </div>
             </form>

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './BalanceSheet.css';
 
 /**
@@ -570,7 +571,7 @@ const PrintableStatement = ({ data, shopName, shopProfile }) => {
     <div id="printable-balance-sheet" style={{ padding: '1.25rem', background: '#fff', color: '#000' }}>
       <div style={{ textAlign: 'center', marginBottom: '0.9rem' }}>
         <h2 style={{ margin: 0, fontSize: '1.4rem' }}>{shopName}</h2>
-        {shopProfile?.address && <div style={{ fontSize: '0.78rem', color: '#555' }}>{shopProfile.address}</div>}
+        <div style={{ fontSize: '0.78rem', color: '#555' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
         {shopProfile?.phone && <div style={{ fontSize: '0.78rem', color: '#555' }}>Mobile: {shopProfile.phone}</div>}
         <div style={{ marginTop: '0.5rem', fontWeight: 700, letterSpacing: '0.06em' }}>BALANCE SHEET</div>
         <div style={{ fontSize: '0.8rem' }}>Period: {period.startDate} to {period.endDate} ({period.days} days)</div>

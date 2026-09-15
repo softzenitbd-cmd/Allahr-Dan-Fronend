@@ -8,6 +8,7 @@ import {
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './Ledger.css';
 
 /**
@@ -768,7 +769,7 @@ const Ledger = () => {
             <div id="printable-ledger" style={{ padding: '22px 26px', background: '#fff', color: '#111827', fontSize: '12px' }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopName}</div>
-                {shopProfile?.address && <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile.address}</div>}
+                <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
                 <div style={{ marginTop: 6, fontWeight: 700, letterSpacing: '0.1em' }}>
                   {kind === 'customer' ? 'CUSTOMER STATEMENT' : kind === 'supplier' ? 'SUPPLIER STATEMENT' : 'SALESMAN STATEMENT'}
                 </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 
 const money = (value) => {
   const n = Number(value) || 0;
@@ -40,7 +41,7 @@ const PrintablePayment = ({
     ? shopProfile.shop_name_bn
     : (shopProfile?.shop_name || "Allah'r Dan Gents Point");
 
-  const address = shopProfile?.address || 'Dhaka, Bangladesh';
+  const address = shopProfile?.address || DEFAULT_SHOP_ADDRESS;
   const phone = shopProfile?.phone || shopProfile?.whatsapp || '';
 
   const amount = Number(settlement.amount || 0);

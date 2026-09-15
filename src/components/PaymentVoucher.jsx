@@ -1,4 +1,5 @@
 import React from 'react';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { takaInWords } from './InvoiceDocument';
 
 /**
@@ -59,7 +60,7 @@ const PaymentVoucher = ({ sale, shopProfile, domId = 'printable-voucher', langua
         <div style={{ fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
           {shopName}
         </div>
-        {shopProfile?.address && <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile.address}</div>}
+        <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
         {(shopProfile?.phone || shopProfile?.whatsapp) && (
           <div style={{ color: '#4b5563', fontSize: '11px' }}>
             {shopProfile.phone ? `Mobile: ${shopProfile.phone}` : ''}

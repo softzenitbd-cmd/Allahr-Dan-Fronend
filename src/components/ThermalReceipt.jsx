@@ -1,6 +1,7 @@
 import React from 'react';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
+import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 
 const money = (value) => {
   const n = Number(value) || 0;
@@ -31,6 +32,13 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
   }, 0);
 
   const invDiscount = Number(sale.invoiceDiscount || sale.invoice_discount || 0);
+
+  const totalMrp = (sale.items || []).reduce((sum, it) => {
+    const m = Number(it.mrp || it.price || 0);
+    const q = Number(it.quantity) || 1;
+    return sum + (m * q);
+  }, 0);
+  const totalSavings = Math.max(0, totalMrp - Number(sale.total || 0));
 
   return (
     <div
@@ -70,7 +78,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
               filter: 'grayscale(100%) contrast(160%)',
             }}
           />
-          <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.02em', lineHeight: 1.2, textTransform: 'uppercase', color: '#000000' }}>
+          <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.01em', lineHeight: 1.2, color: '#000000' }}>
             {shopName}
           </div>
           {shopProfile?.tagline && (
@@ -78,17 +86,13 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
               {shopProfile.tagline}
             </div>
           )}
-          {shopProfile?.address && (
-            <div style={{ fontSize: '9.5px', fontWeight: 600, marginTop: '2px', color: '#000000' }}>
-              {shopProfile.address}
-            </div>
-          )}
-          {(shopProfile?.phone || shopProfile?.whatsapp) && (
-            <div style={{ fontSize: '9.5px', fontWeight: 700, marginTop: '1px', color: '#000000' }}>
-              {shopProfile.phone ? `Mob: ${shopProfile.phone}` : ''}
-              {shopProfile.whatsapp ? ` | WA: ${shopProfile.whatsapp}` : ''}
-            </div>
-          )}
+          <div style={{ fontSize: '9.5px', fontWeight: 600, marginTop: '2px', color: '#000000' }}>
+            {shopProfile?.address || DEFAULT_SHOP_ADDRESS}
+          </div>
+          <div style={{ fontSize: '10px', fontWeight: 800, marginTop: '2px', color: '#000000' }}>
+            {shopProfile?.phone || DEFAULT_SHOP_PHONE}
+            {shopProfile?.whatsapp && !shopProfile?.phone?.includes(shopProfile.whatsapp) ? ` | WA: ${shopProfile.whatsapp}` : ''}
+          </div>
         </div>
 
         {/* Dashed divider */}
@@ -343,12 +347,6 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             </div>
           )}
 
-          {/* Numbers at the very bottom requested by user */}
-          <div style={{ marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000000', textAlign: 'center' }}>
-            <div style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '0.03em', color: '#000000', margin: '2px 0' }}>
-              01811648721, 01688448383
-            </div>
-          </div>
         </div>
 
       </div>

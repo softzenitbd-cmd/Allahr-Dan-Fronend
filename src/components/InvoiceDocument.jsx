@@ -1,4 +1,5 @@
 import React from 'react';
+import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 
 /**
  * The shop's invoice, as it goes on paper.
@@ -99,6 +100,7 @@ export const fromApiInvoice = (inv, customers = []) => {
       const rate = Number(item.price) || 0;
       const discount = Number(item.itemDiscount ?? item.item_discount) || 0;
       const isGift = Boolean(item.isGift ?? item.is_gift);
+      const mrp = Number(item.mrp ?? item.product?.mrp ?? 0);
       return {
         name: item.name,
         variant: item.variant || '',
@@ -106,6 +108,7 @@ export const fromApiInvoice = (inv, customers = []) => {
         unit: item.unit || '',
         quantity: qty,
         price: rate,
+        mrp: mrp > 0 ? mrp : rate,
         discount,
         isGift,
         total: isGift ? 0 : (Number(item.total_price ?? (rate - discount) * qty) || 0),
@@ -152,6 +155,7 @@ export const fromCompletedSale = (sale) => {
       const qty = Number(item.quantity) || 0;
       const rate = Number(item.price) || 0;
       const discount = Number(item.itemDiscount) || 0;
+      const mrp = Number(item.mrp ?? item.mrp_price ?? 0);
       return {
         name: item.name,
         variant: item.variant || '',
@@ -159,6 +163,7 @@ export const fromCompletedSale = (sale) => {
         unit: item.unit || '',
         quantity: qty,
         price: rate,
+        mrp: mrp > 0 ? mrp : rate,
         discount,
         isGift: Boolean(item.isGift),
         total: item.isGift ? 0 : (rate - discount) * qty,
@@ -200,10 +205,16 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
 
   const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allahr dan gents point');
+    : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
 
   const settled = sale.due <= 0;
   const totalUnits = sale.items.reduce((n, i) => n + i.quantity, 0);
+  const totalMrp = sale.items.reduce((sum, it) => {
+    const m = Number(it.mrp || it.price || 0);
+    const q = Number(it.quantity) || 1;
+    return sum + (m * q);
+  }, 0);
+  const totalSavings = Math.max(0, totalMrp - Number(sale.total || 0));
 
   const totalLine = (label, value, opts = {}) => (
     <div style={{
@@ -230,9 +241,9 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
             {shopName}
           </div>
           {shopProfile?.tagline && <div style={{ color: '#4b5563', marginTop: '2px' }}>{shopProfile.tagline}</div>}
-          {shopProfile?.address && <div style={{ color: '#4b5563' }}>{shopProfile.address}</div>}
+          <div style={{ color: '#4b5563' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
           <div style={{ color: '#4b5563' }}>
-            {shopProfile?.phone ? `Mobile: ${shopProfile.phone}` : ''}
+            Mobile: {shopProfile?.phone || DEFAULT_SHOP_PHONE}
             {shopProfile?.whatsapp ? `   WhatsApp: ${shopProfile.whatsapp}` : ''}
             {shopProfile?.email ? `   ${shopProfile.email}` : ''}
           </div>
@@ -288,44 +299,55 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
           <tr>
             <th style={{ ...S.th, width: '28px', textAlign: 'center' }}>#</th>
             <th style={{ ...S.th, textAlign: 'left' }}>Description</th>
-            <th style={{ ...S.th, textAlign: 'center', width: '62px' }}>Qty</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '78px' }}>Rate</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '72px' }}>Discount</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '88px' }}>Amount</th>
+            <th style={{ ...S.th, textAlign: 'center', width: '56px' }}>Qty</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>MRP</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>Rate</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '68px' }}>Discount</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '82px' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {sale.items.map((item, idx) => (
-            <tr key={idx}>
-              <td style={{ ...S.cell, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
-              <td style={S.cell}>
-                <span style={{ fontWeight: 600 }}>{item.name}</span>
-                {item.variant ? <span style={{ color: '#4b5563' }}> — {item.variant}</span> : null}
-                {item.isGift ? (
-                  <span style={{
-                    marginLeft: '6px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em',
-                    border: '1px solid #047857', color: '#047857', borderRadius: '3px', padding: '0 4px',
-                  }}>
-                    GIFT
-                  </span>
-                ) : null}
-                {item.code ? <div style={{ color: '#9ca3af', fontSize: '10px' }}>Code: {item.code}</div> : null}
-              </td>
-              <td style={{ ...S.cell, textAlign: 'center' }}>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</td>
-              <td style={{ ...S.cell, textAlign: 'right' }}>{money(item.price)}</td>
-              <td style={{ ...S.cell, textAlign: 'right', color: item.discount ? '#b91c1c' : '#9ca3af' }}>
-                {item.discount ? money(item.discount) : '—'}
-              </td>
-              <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.total)}</td>
-            </tr>
-          ))}
+          {sale.items.map((item, idx) => {
+            const itemMrp = Number(item.mrp || item.price || 0);
+            return (
+              <tr key={idx}>
+                <td style={{ ...S.cell, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
+                <td style={S.cell}>
+                  <span style={{ fontWeight: 600 }}>{item.name}</span>
+                  {item.variant ? <span style={{ color: '#4b5563' }}> — {item.variant}</span> : null}
+                  {item.isGift ? (
+                    <span style={{
+                      marginLeft: '6px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em',
+                      border: '1px solid #047857', color: '#047857', borderRadius: '3px', padding: '0 4px',
+                    }}>
+                      GIFT
+                    </span>
+                  ) : null}
+                  {item.code ? <div style={{ color: '#9ca3af', fontSize: '10px' }}>Code: {item.code}</div> : null}
+                </td>
+                <td style={{ ...S.cell, textAlign: 'center' }}>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</td>
+                <td style={{ ...S.cell, textAlign: 'right', color: itemMrp > item.price ? '#4b5563' : '#111827' }}>
+                  {itemMrp > item.price ? (
+                    <span style={{ textDecoration: 'line-through' }}>{money(itemMrp)}</span>
+                  ) : (
+                    money(itemMrp)
+                  )}
+                </td>
+                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.price)}</td>
+                <td style={{ ...S.cell, textAlign: 'right', color: item.discount ? '#b91c1c' : '#9ca3af' }}>
+                  {item.discount ? money(item.discount) : '—'}
+                </td>
+                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.total)}</td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr>
             <td colSpan={2} style={{ ...S.cell, background: '#f9fafb', fontSize: '11px', color: '#4b5563' }}>
               {sale.items.length} item{sale.items.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}
             </td>
-            <td colSpan={4} style={{ ...S.cell, background: '#f9fafb' }} />
+            <td colSpan={5} style={{ ...S.cell, background: '#f9fafb' }} />
           </tr>
         </tfoot>
       </table>
@@ -372,6 +394,8 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
         </div>
 
         <div style={{ flex: '0 0 42%' }}>
+          {totalMrp > Number(sale.total) && totalLine('Total MRP', `৳ ${money(totalMrp)}`)}
+          {totalSavings > 0 && totalLine('Total Savings from MRP', `− ৳ ${money(totalSavings)}`, { tone: 'paid', bold: true })}
           {totalLine('Subtotal', `৳ ${money(sale.subtotal)}`)}
           {sale.invoiceDiscount > 0 && totalLine('Invoice Discount', `− ৳ ${money(sale.invoiceDiscount)}`)}
           {sale.carrying > 0 && totalLine('Carrying / Loading', `৳ ${money(sale.carrying)}`)}

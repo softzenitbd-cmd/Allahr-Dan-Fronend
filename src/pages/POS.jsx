@@ -12,6 +12,7 @@ import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
 import PaymentVoucher from '../components/PaymentVoucher';
 import ThermalReceipt from '../components/ThermalReceipt';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { openCashDrawer } from '../utils/cashDrawer';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
@@ -2184,7 +2185,8 @@ const POS = () => {
 
           <div style={{ display: 'none' }}>
             <div id="printable-all-sales-details" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
-              <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+              <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+              <div style={{ textAlign: 'center', fontSize: '0.85rem', color: '#555', marginBottom: '0.75rem' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
               <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>Detailed Sales History</h3>
               {(startDate || endDate) && <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.9rem' }}>Date Filter: {startDate || 'Any'} to {endDate || 'Any'}</p>}
 

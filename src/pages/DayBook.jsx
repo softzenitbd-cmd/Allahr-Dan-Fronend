@@ -12,6 +12,7 @@ import useStore from '../store/useStore';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
+import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './DayBook.css';
 
 /**
@@ -737,8 +738,9 @@ const DayBook = () => {
               <div id="printable-daybook" style={{ display: 'none' }}>
                 <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '12px' }}>
                   <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || 'Allahr dan gents point'}</div>
-                    <div style={{ fontSize: 13 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || shopProfile?.shop_name || 'Allahr dan gents point'}</div>
+                    <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
+                    <div style={{ fontSize: 13, marginTop: 4 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
                     <thead>
