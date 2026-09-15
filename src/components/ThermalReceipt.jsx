@@ -171,12 +171,18 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
               const effectiveRate = Math.max(0, unitPrice - itemDisc);
               const itemQty = Number(item.quantity) || 1;
               const itemTotal = Number(item.total ?? item.total_price ?? (effectiveRate * itemQty)) || 0;
+              const itemMrp = Number(item.mrp || 0);
 
               return (
                 <tr key={idx} style={{ borderBottom: '1px dashed #cccccc' }}>
                   <td style={{ padding: '3px 0', verticalAlign: 'top', color: '#000000' }}>
                     <div style={{ fontWeight: 800, color: '#000000' }}>{item.name}</div>
                     {item.variant && <div style={{ fontSize: '9px', fontWeight: 600, color: '#000000' }}>{item.variant}</div>}
+                    {itemMrp > 0 && (
+                      <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000', marginTop: '1px' }}>
+                        MRP: ৳{money(itemMrp)}
+                      </div>
+                    )}
                     {item.isGift && (
                       <span style={{ fontSize: '8.5px', fontWeight: 900, border: '1px solid #000000', padding: '0 2px', color: '#000000' }}>
                         GIFT
@@ -192,9 +198,14 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
                     {item.quantity}{item.unit ? ` ${item.unit}` : ''}
                   </td>
                   <td style={{ textAlign: 'right', padding: '3px 2px', verticalAlign: 'top', color: '#000000' }}>
-                    {itemDisc > 0 ? (
+                    {itemMrp > effectiveRate ? (
                       <>
-                        <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#000000', fontWeight: 600 }}>{money(unitPrice)}</div>
+                        <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(itemMrp)}</div>
+                        <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
+                      </>
+                    ) : itemDisc > 0 ? (
+                      <>
+                        <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(unitPrice)}</div>
                         <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
                       </>
                     ) : (
@@ -219,6 +230,20 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'মোট পণ্য:' : 'Total Items:'}</span>
             <span style={{ fontWeight: 800, color: '#000000' }}>{(sale.items || []).length} items ({totalUnits} pcs)</span>
           </div>
+
+          {totalMrp > Number(sale.total) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
+              <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'মোট এমআরপি:' : 'Total MRP:'}</span>
+              <span style={{ fontWeight: 800, color: '#000000' }}>৳{money(totalMrp)}</span>
+            </div>
+          )}
+
+          {totalSavings > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
+              <span style={{ fontWeight: 700, color: '#000000' }}>{language === 'bn' ? 'মোট সাশ্রয় (Savings):' : 'Total Savings:'}</span>
+              <span style={{ fontWeight: 800, color: '#000000' }}>৳{money(totalSavings)}</span>
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'সাবটোটাল:' : 'Subtotal:'}</span>
