@@ -126,7 +126,7 @@ export const dict = {
   'Accounts & Finance': 'হিসাব এবং অর্থ (Accounts)',
   'Cash Balance': 'ক্যাশ ব্যালেন্স',
   'Home Balance': 'বাসার ব্যালেন্স',
-  'Bank Transfer': 'বাসায় ফান্ড স্থানান্তর (Home Transfer)',
+  'Bank Transfer': 'বাসায় ফান্ড স্থানান্তর (Home Transaction)',
   'Internal Bank Transfer': 'বাসায় ফান্ড স্থানান্তর',
   'Internal Fund Transfer': 'ক্যাশ ⇄ বাসা ফান্ড স্থানান্তর',
   'Transaction History': 'লেনদেনের ইতিহাস',

@@ -77,7 +77,7 @@ const Accounts = () => {
             <Wallet size={16} className="inline mr-2" /> {language === 'bn' ? 'ব্যালেন্স ও সমন্বয়' : 'Balances'}
           </button>
           <button className={`type-btn ${activeTab === 'Transfer' ? 'active' : ''}`} onClick={() => setActiveTab('Transfer')}>
-            <ArrowRightLeft size={16} className="inline mr-2" /> {language === 'bn' ? 'বাসায় ক্যাশ স্থানান্তর' : 'Home Transfer'}
+            <ArrowRightLeft size={16} className="inline mr-2" /> {language === 'bn' ? 'বাসায় ক্যাশ স্থানান্তর' : 'Home Transaction'}
           </button>
           <button className={`type-btn ${activeTab === 'History' ? 'active' : ''}`} onClick={() => setActiveTab('History')}>
             <History size={16} className="inline mr-2" /> {language === 'bn' ? 'লেনদেনের বিবরণী' : 'Transactions'}
