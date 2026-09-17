@@ -4,7 +4,7 @@ import {
   Plus, PlusCircle, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
   Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
-  AlertTriangle,
+  AlertTriangle, History, Clock, PackagePlus, ArrowUpCircle, ArrowDownCircle,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
@@ -28,7 +28,7 @@ const getProductImageUrl = (img) => {
 const Inventory = () => {
   const {
     inventory, categories, units, addInventoryItem, updateInventoryItem,
-    deleteInventoryItem, language, shopProfile, refresh, user,
+    deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user,
   } = useStore();
   // The original/buying price is confidential to the business owner/admin.
   // The server only returns cost_price for authenticated admins;
@@ -70,6 +70,27 @@ const Inventory = () => {
   const [quickStockItem, setQuickStockItem] = useState(null);
   const [quickAddQty, setQuickAddQty] = useState('');
   const [isSavingQuickStock, setIsSavingQuickStock] = useState(false);
+
+  // Quick Damage State
+  const [showDamageModal, setShowDamageModal] = useState(false);
+  const [selectedDamageProduct, setSelectedDamageProduct] = useState(null);
+  const [damageQty, setDamageQty] = useState('');
+  const [damageReason, setDamageReason] = useState('নষ্ট / ক্ষতিগ্রস্ত পণ্য');
+  const [damageCustomReason, setDamageCustomReason] = useState('');
+  const [damageSearchTerm, setDamageSearchTerm] = useState('');
+  const [isSavingDamage, setIsSavingDamage] = useState(false);
+
+  // History Modals State
+  const [showDamageHistoryModal, setShowDamageHistoryModal] = useState(false);
+  const [showStockInHistoryModal, setShowStockInHistoryModal] = useState(false);
+  const [showProductHistoryModal, setShowProductHistoryModal] = useState(false);
+  const [historyProduct, setHistoryProduct] = useState(null);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historySummary, setHistorySummary] = useState(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyDateFilter, setHistoryDateFilter] = useState('all');
+  const [historySubFilter, setHistorySubFilter] = useState('ALL');
 
   // The category tree as the server keeps it: top-level ones, and under each
   // the sub-categories that point at it. Names not yet registered as a
@@ -285,6 +306,182 @@ const Inventory = () => {
     } else {
       toast.error(res?.message || (language === 'bn' ? 'স্টক আপডেট ব্যর্থ হয়েছে।' : 'Failed to update stock.'));
     }
+  };
+
+  const handleOpenDamageModal = (item = null) => {
+    setSelectedDamageProduct(item);
+    setDamageQty('');
+    setDamageReason('নষ্ট / ক্ষতিগ্রস্ত পণ্য');
+    setDamageCustomReason('');
+    setDamageSearchTerm('');
+    setShowDamageModal(true);
+  };
+
+  const handleDamageSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedDamageProduct) {
+      toast.error(language === 'bn' ? 'অনুগ্রহ করে একটি পণ্য নির্বাচন করুন।' : 'Please select a product.');
+      return;
+    }
+    const qty = parseInt(damageQty, 10);
+    const currentStock = parseInt(selectedDamageProduct.stock, 10) || 0;
+    if (!qty || qty <= 0) {
+      toast.warning(language === 'bn' ? 'দয়া করে বাদ দেওয়ার সঠিক সংখ্যা দিন।' : 'Please enter a valid quantity.');
+      return;
+    }
+    if (qty > currentStock) {
+      toast.error(
+        language === 'bn'
+          ? `স্টকে পর্যাপ্ত পরিমাণ নেই! বর্তমান স্টক: ${currentStock} ${selectedDamageProduct.unit || 'Pcs'}`
+          : `Not enough stock! Current stock: ${currentStock} ${selectedDamageProduct.unit || 'Pcs'}`
+      );
+      return;
+    }
+
+    const finalReason = (damageReason === 'অন্যান্য' || damageReason === 'Other')
+      ? (damageCustomReason.trim() || (language === 'bn' ? 'নষ্ট / ক্ষতিগ্রস্ত পণ্য' : 'Damaged / Waste'))
+      : damageReason;
+
+    setIsSavingDamage(true);
+    const res = await recordProductDamage({
+      product_code: selectedDamageProduct.product_code || selectedDamageProduct.id,
+      quantity: qty,
+      reason: finalReason,
+    });
+    setIsSavingDamage(false);
+
+    if (res?.ok) {
+      const newBal = currentStock - qty;
+      showSuccessAlert(
+        language === 'bn'
+          ? `'${selectedDamageProduct.name}' পণ্য থেকে ${qty} ${selectedDamageProduct.unit || 'টি'} ড্যামেজ হিসেবে বাদ দেওয়া হয়েছে! বর্তমান স্টক: ${newBal} টি`
+          : `Deducted ${qty} damaged units from '${selectedDamageProduct.name}'! Current stock: ${newBal}`
+      );
+      setShowDamageModal(false);
+      setSelectedDamageProduct(null);
+      setDamageQty('');
+      await refresh('inventory');
+      fetchPaginatedProducts(currentPage);
+    } else {
+      toast.error(res?.message || (language === 'bn' ? 'ড্যামেজ রেকর্ড সম্পন্ন করা যায়নি।' : 'Failed to record damage.'));
+    }
+  };
+
+  const formatTimeAgo = (iso) => {
+    if (!iso) return '';
+    const then = new Date(iso);
+    const mins = Math.round((Date.now() - then.getTime()) / 60000);
+    if (mins < 1) return language === 'bn' ? 'এইমাত্র' : 'just now';
+    if (mins < 60) return language === 'bn' ? `${mins} মি. আগে` : `${mins} min ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return language === 'bn' ? `${hours} ঘণ্টা আগে` : `${hours} hr ago`;
+    const days = Math.round(hours / 24);
+    return days === 1 ? (language === 'bn' ? 'গতকাল' : 'yesterday') : (language === 'bn' ? `${days} দিন আগে` : `${days} days ago`);
+  };
+
+  const getDateRangeForFilter = (filter) => {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    if (filter === 'today') {
+      return { start_date: todayStr, end_date: todayStr };
+    }
+    if (filter === '7days') {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 7);
+      return { start_date: past.toISOString().split('T')[0], end_date: todayStr };
+    }
+    if (filter === '30days') {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 30);
+      return { start_date: past.toISOString().split('T')[0], end_date: todayStr };
+    }
+    return {};
+  };
+
+  const loadDamageHistory = useCallback(async (dateFilter = historyDateFilter, search = historySearch) => {
+    setIsHistoryLoading(true);
+    const dateParams = getDateRangeForFilter(dateFilter);
+    const params = {
+      movement_type: 'DAMAGE',
+      limit: 500,
+      ...dateParams,
+    };
+    if (search && search.trim()) params.search = search.trim();
+    const res = await fetchStockLogs(params);
+    if (res?.ok) {
+      setHistoryLogs(res.rows || []);
+      setHistorySummary(res.summary || null);
+    }
+    setIsHistoryLoading(false);
+  }, [fetchStockLogs, historyDateFilter, historySearch]);
+
+  const loadStockInHistory = useCallback(async (dateFilter = historyDateFilter, search = historySearch, subFilter = historySubFilter) => {
+    setIsHistoryLoading(true);
+    const dateParams = getDateRangeForFilter(dateFilter);
+    const params = {
+      direction: 'in',
+      limit: 500,
+      ...dateParams,
+    };
+    if (subFilter && subFilter !== 'ALL') {
+      params.movement_type = subFilter;
+    }
+    if (search && search.trim()) params.search = search.trim();
+    const res = await fetchStockLogs(params);
+    if (res?.ok) {
+      setHistoryLogs(res.rows || []);
+      setHistorySummary(res.summary || null);
+    }
+    setIsHistoryLoading(false);
+  }, [fetchStockLogs, historyDateFilter, historySearch, historySubFilter]);
+
+  const loadProductHistory = useCallback(async (prod, subFilter = historySubFilter) => {
+    if (!prod) return;
+    setIsHistoryLoading(true);
+    const params = {
+      product: prod.product_code || prod.id,
+      limit: 500,
+    };
+    if (subFilter === 'DAMAGE') {
+      params.movement_type = 'DAMAGE';
+    } else {
+      // In inventory, sale history is not shown; only stock additions
+      params.direction = 'in';
+      if (subFilter && subFilter !== 'IN' && subFilter !== 'ALL') {
+        params.movement_type = subFilter;
+      }
+    }
+
+    const res = await fetchStockLogs(params);
+    if (res?.ok) {
+      // Guarantee sales never appear in inventory history
+      const rows = (res.rows || []).filter(r => r.movement_type !== 'SALE');
+      setHistoryLogs(rows);
+      setHistorySummary(res.summary || null);
+    }
+    setIsHistoryLoading(false);
+  }, [fetchStockLogs, historySubFilter]);
+
+  const handleOpenDamageHistory = () => {
+    setHistorySearch('');
+    setHistoryDateFilter('all');
+    setShowDamageHistoryModal(true);
+    loadDamageHistory('all', '');
+  };
+
+  const handleOpenStockInHistory = () => {
+    setHistorySearch('');
+    setHistoryDateFilter('all');
+    setHistorySubFilter('ALL');
+    setShowStockInHistoryModal(true);
+    loadStockInHistory('all', '', 'ALL');
+  };
+
+  const handleOpenProductHistory = (item) => {
+    setHistoryProduct(item);
+    setHistorySubFilter('IN');
+    setShowProductHistoryModal(true);
+    loadProductHistory(item, 'IN');
   };
 
   const handleImageSelect = (file, isEdit = false) => {
@@ -560,6 +757,30 @@ const Inventory = () => {
               <FileDown size={18} /> {language === 'bn' ? 'ভ্যালুয়েশন PDF' : 'Valuation PDF'}
             </button>
           )}
+          <button
+            className="btn-outline flex-align-gap"
+            style={{ color: '#059669', borderColor: '#a7f3d0', background: '#ecfdf5', fontWeight: 600 }}
+            onClick={handleOpenStockInHistory}
+            title={language === 'bn' ? 'কবে কত পিস পণ্য যোগ করেছেন তার ইতিহাস দেখুন' : 'View Stock In / Product Addition History'}
+          >
+            <PackagePlus size={17} /> {language === 'bn' ? 'স্টক অ্যাড হিস্ট্রি' : 'Stock In History'}
+          </button>
+          <button
+            className="btn-outline flex-align-gap"
+            style={{ color: '#dc2626', borderColor: '#fca5a5', background: '#fef2f2', fontWeight: 600 }}
+            onClick={() => handleOpenDamageModal(null)}
+            title={language === 'bn' ? 'ক্ষতিগ্রস্ত / নষ্ট পণ্য স্টক থেকে বাদ দিন' : 'Deduct damaged products from stock'}
+          >
+            <AlertTriangle size={17} /> {language === 'bn' ? 'ড্যামেজ এন্ট্রি' : 'Damage Entry'}
+          </button>
+          <button
+            className="btn-outline flex-align-gap"
+            style={{ color: '#b91c1c', borderColor: '#fecaca', background: '#fff1f2', fontWeight: 600 }}
+            onClick={handleOpenDamageHistory}
+            title={language === 'bn' ? 'সকল ড্যামেজ পণ্যের ইতিহাস ও রিপোর্ট দেখুন' : 'View Damaged Products History'}
+          >
+            <History size={17} /> {language === 'bn' ? 'ড্যামেজ হিস্ট্রি' : 'Damage History'}
+          </button>
           <button className="btn-primary flex-align-gap" style={{ width: 'fit-content', whiteSpace: 'nowrap' }} onClick={handleOpenAddModal}>
             <Plus size={18} /> {t(language, 'Add New Item')}
           </button>
@@ -634,15 +855,15 @@ const Inventory = () => {
           </div>
         </div>
 
-        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
-          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', color: '#d97706' }}>
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0, borderLeft: '4px solid #0891b2' }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(8, 145, 178, 0.12)', color: '#0891b2' }}>
             <BadgeDollarSign size={24} />
           </div>
           <div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-              {language === 'bn' ? 'খুচরা স্টক মূল্য' : 'Retail Stock Value'}
+              {language === 'bn' ? 'স্টক ভ্যালু (Inventory Value)' : 'Inventory Value'}
             </div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0891b2' }}>
               ৳{(valuation.retailValue || totalValue).toLocaleString()}
             </div>
           </div>
@@ -958,6 +1179,22 @@ const Inventory = () => {
                           onClick={() => handleOpenQuickStock(item)}
                         >
                           <PlusCircle size={16} />
+                        </button>
+                        <button
+                          className="btn-icon text-danger"
+                          style={{ color: '#dc2626', background: '#fef2f2' }}
+                          title={language === 'bn' ? 'ড্যামেজ পণ্য বাদ দিন (-)' : 'Record Damaged Stock (-)'}
+                          onClick={() => handleOpenDamageModal(item)}
+                        >
+                          <AlertTriangle size={15} />
+                        </button>
+                        <button
+                          className="btn-icon"
+                          style={{ color: '#059669', background: '#ecfdf5' }}
+                          title={language === 'bn' ? 'পণ্য যোগের ইতিহাস দেখুন (+)' : 'View Product Addition History (+)'}
+                          onClick={() => handleOpenProductHistory(item)}
+                        >
+                          <PackagePlus size={15} />
                         </button>
                         <button
                           className="btn-icon text-secondary"
@@ -1909,6 +2146,906 @@ const Inventory = () => {
         </div>,
         document.body
       )}
+
+      {/* Damage Product Modal */}
+      {showDamageModal && createPortal(
+        <div className="drawer-overlay" style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="drawer-container" style={{ width: '100%', maxWidth: '460px', height: 'auto', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)' }}>
+            <div className="drawer-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '14px 18px', background: '#fef2f2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700, color: '#991b1b' }}>
+                    {language === 'bn' ? 'ক্ষতিগ্রস্ত / ড্যামেজ পণ্য বাদ দিন' : 'Record Damaged Stock'}
+                  </h2>
+                  <span style={{ fontSize: '0.8rem', color: '#b91c1c' }}>
+                    {language === 'bn' ? 'ইনভেন্টরি স্টক থেকে বাদ যাবে (-)' : 'Will deduct from available inventory'}
+                  </span>
+                </div>
+              </div>
+              <button className="drawer-close-btn" onClick={() => { setShowDamageModal(false); setSelectedDamageProduct(null); }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleDamageSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="drawer-body" style={{ padding: '16px 20px', maxHeight: 'calc(90vh - 140px)', overflowY: 'auto' }}>
+                {/* Product selector if not already selected */}
+                {!selectedDamageProduct ? (
+                  <div style={{ marginBottom: '16px' }}>
+                    <label className="text-sm font-semibold block mb-1.5" style={{ color: '#0f172a' }}>
+                      {language === 'bn' ? 'কোন পণ্যটি ড্যামেজ হয়েছে? (পণ্য নির্বাচন করুন)' : 'Select Damaged Product'} *
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full mb-2"
+                      placeholder={language === 'bn' ? 'নাম বা বারকোড দিয়ে খুঁজুন...' : 'Search by name or barcode...'}
+                      value={damageSearchTerm}
+                      onChange={(e) => setDamageSearchTerm(e.target.value)}
+                      style={{ padding: '8px 12px', fontSize: '0.9rem', borderRadius: '6px' }}
+                    />
+                    <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                      {(inventory || [])
+                        .filter((p) => {
+                          if (!damageSearchTerm.trim()) return true;
+                          const term = damageSearchTerm.toLowerCase();
+                          return (p.name || '').toLowerCase().includes(term) ||
+                                 String(p.id || '').toLowerCase().includes(term) ||
+                                 String(p.product_code || '').toLowerCase().includes(term);
+                        })
+                        .slice(0, 30)
+                        .map((p) => (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedDamageProduct(p)}
+                            style={{
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f1f5f9',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              transition: 'background 0.15s',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = '#fff'}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{p.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {p.product_code || p.id} {p.category ? `· ${p.category}` : ''}
+                              </div>
+                            </div>
+                            <span className="badge" style={{ fontSize: '0.8rem', background: '#eff6ff', color: '#1d4ed8' }}>
+                              স্টক: {p.stock} {p.unit || 'Pcs'}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>{selectedDamageProduct.name}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '2px' }}>
+                          ID/কোড: {selectedDamageProduct.product_code || selectedDamageProduct.id} {selectedDamageProduct.variant ? `· ${selectedDamageProduct.variant}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDamageProduct(null)}
+                        style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        {language === 'bn' ? 'বদলান' : 'Change'}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1' }}>
+                      <span style={{ fontSize: '0.88rem', color: '#475563', fontWeight: 500 }}>{language === 'bn' ? 'বর্তমান স্টক:' : 'Current Stock:'}</span>
+                      <span className="badge badge-primary" style={{ fontSize: '1rem', fontWeight: 800, padding: '4px 12px' }}>
+                        {Number(selectedDamageProduct.stock) || 0} {selectedDamageProduct.unit || 'Pcs'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDamageProduct && (
+                  <>
+                    {/* Quantity input */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label className="text-sm font-semibold block mb-1.5" style={{ color: '#0f172a' }}>
+                        {language === 'bn' ? 'কত পিস ড্যামেজ হয়েছে? (-)' : 'Damage Quantity (-)'} *
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full"
+                        autoFocus
+                        required
+                        min="1"
+                        max={Number(selectedDamageProduct.stock) || 0}
+                        placeholder={language === 'bn' ? 'যেমন: ২' : 'e.g. 2'}
+                        value={damageQty}
+                        onChange={(e) => setDamageQty(e.target.value)}
+                        style={{ fontSize: '1.2rem', padding: '10px 14px', fontWeight: 700, borderRadius: '8px', borderColor: '#fca5a5' }}
+                      />
+
+                      {/* Quick Preset Buttons */}
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        {[1, 2, 5, 10].map((qty) => (
+                          <button
+                            key={qty}
+                            type="button"
+                            className="btn-outline"
+                            style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', fontWeight: 600, color: '#dc2626', borderColor: '#fecaca' }}
+                            onClick={() => {
+                              const current = parseInt(damageQty, 10) || 0;
+                              const nextVal = Math.min(current + qty, Number(selectedDamageProduct.stock) || 0);
+                              setDamageQty(String(nextVal));
+                            }}
+                          >
+                            +{qty}
+                          </button>
+                        ))}
+                        {damageQty && (
+                          <button
+                            type="button"
+                            className="btn-outline text-muted"
+                            style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '6px' }}
+                            onClick={() => setDamageQty('')}
+                          >
+                            {language === 'bn' ? 'রিসেট' : 'Reset'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Reason Selector */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label className="text-sm font-semibold block mb-1.5" style={{ color: '#0f172a' }}>
+                        {language === 'bn' ? 'ড্যামেজের কারণ' : 'Reason for Damage'}
+                      </label>
+                      <select
+                        className="w-full"
+                        value={damageReason}
+                        onChange={(e) => setDamageReason(e.target.value)}
+                        style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}
+                      >
+                        <option value="নষ্ট / ক্ষতিগ্রস্ত পণ্য">নষ্ট / ক্ষতিগ্রস্ত পণ্য (Damaged)</option>
+                        <option value="ভাঙা / ফেটে গেছে">ভাঙা / ফেটে গেছে (Broken / Cracked)</option>
+                        <option value="মেয়াদোত্তীর্ণ">মেয়াদোত্তীর্ণ (Expired)</option>
+                        <option value="দাগ বা ফেব্রিক ত্রুটি">দাগ বা ফেব্রিক ত্রুটি (Fabric Defect / Stain)</option>
+                        <option value="প্যাকিং নষ্ট / ডিসপ্লে ড্যামেজ">প্যাকিং নষ্ট / ডিসপ্লে ড্যামেজ (Packaging / Display Damaged)</option>
+                        <option value="হারিয়ে গেছে / ঘাটতি">হারিয়ে গেছে / ঘাটতি (Lost / Missing)</option>
+                        <option value="অন্যান্য">অন্যান্য কারণ (Other Reason)</option>
+                      </select>
+
+                      {damageReason === 'অন্যান্য' && (
+                        <input
+                          type="text"
+                          className="w-full mt-2"
+                          placeholder={language === 'bn' ? 'কারণ বিস্তারিত লিখুন...' : 'Specify the reason...'}
+                          value={damageCustomReason}
+                          onChange={(e) => setDamageCustomReason(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '0.88rem' }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Calculation preview */}
+                    <div style={{
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '8px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
+                          {language === 'bn' ? 'হিসাব (বিয়োগফল):' : 'Calculation:'}
+                        </div>
+                        <div style={{ fontSize: '0.88rem', color: '#b91c1c', fontWeight: 500, marginTop: '2px' }}>
+                          {Number(selectedDamageProduct.stock) || 0} - {parseInt(damageQty, 10) || 0}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#991b1b', fontWeight: 500 }}>
+                          {language === 'bn' ? 'বাদ দেওয়ার পর নতুন স্টক' : 'Balance After Damage'}
+                        </div>
+                        <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#dc2626' }}>
+                          {Math.max(0, (Number(selectedDamageProduct.stock) || 0) - (parseInt(damageQty, 10) || 0))} {selectedDamageProduct.unit || 'Pcs'}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="drawer-footer" style={{ padding: '12px 20px', gap: '10px', borderTop: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  className="btn-outline flex-1"
+                  onClick={() => { setShowDamageModal(false); setSelectedDamageProduct(null); }}
+                >
+                  {t(language, 'Cancel')}
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary flex-1"
+                  disabled={isSavingDamage || !selectedDamageProduct || !damageQty || parseInt(damageQty, 10) <= 0 || parseInt(damageQty, 10) > (Number(selectedDamageProduct?.stock) || 0)}
+                  style={{ background: '#dc2626', borderColor: '#dc2626', fontWeight: 700 }}
+                >
+                  {isSavingDamage
+                    ? (language === 'bn' ? 'প্রসেসিং হচ্ছে...' : 'Processing...')
+                    : (language === 'bn' ? '⚠️ ড্যামেজ হিসেবে বাদ দিন' : '⚠️ Deduct Damaged Stock')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 1. Damage History Modal */}
+      {showDamageHistoryModal && createPortal(
+        <div className="drawer-overlay" style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="drawer-container" style={{ width: '100%', maxWidth: '940px', height: 'auto', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)', display: 'flex', flexDirection: 'column' }}>
+            <div className="drawer-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#fef2f2', color: '#dc2626', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700, color: '#991b1b' }}>
+                    {language === 'bn' ? 'ক্ষতিগ্রস্ত / ড্যামেজ পণ্যের ইতিহাস' : 'Damaged Products History'}
+                  </h2>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn' ? 'কবে কোন পণ্য কত পিস নষ্ট বা ড্যামেজ হিসেবে বাদ দেওয়া হয়েছে' : 'Audit of all damaged and wasted stock deductions'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn-outline flex-align-gap"
+                  onClick={() => printElement('printable-damage-history', 'DamageHistory')}
+                  style={{ fontSize: '0.82rem', padding: '6px 12px' }}
+                >
+                  <Printer size={15} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                </button>
+                <button className="drawer-close-btn" onClick={() => setShowDamageHistoryModal(false)}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px' }}>
+                <div className="search-bar" style={{ margin: 0, width: '100%' }}>
+                  <Search size={16} className="text-muted" />
+                  <input
+                    type="text"
+                    placeholder={language === 'bn' ? 'পণ্য বা বারকোড দিয়ে খুঁজুন...' : 'Search by product or barcode...'}
+                    value={historySearch}
+                    onChange={(e) => {
+                      setHistorySearch(e.target.value);
+                      loadDamageHistory(historyDateFilter, e.target.value);
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {[
+                  { id: 'all', bn: 'সব সময়', en: 'All Time' },
+                  { id: 'today', bn: 'আজকে', en: 'Today' },
+                  { id: '7days', bn: 'বিগত ৭ দিন', en: 'Last 7 Days' },
+                  { id: '30days', bn: 'বিগত ৩০ দিন', en: 'Last 30 Days' },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: '20px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      border: '1px solid',
+                      borderColor: historyDateFilter === f.id ? '#dc2626' : '#cbd5e1',
+                      background: historyDateFilter === f.id ? '#fef2f2' : '#ffffff',
+                      color: historyDateFilter === f.id ? '#dc2626' : '#475563',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      setHistoryDateFilter(f.id);
+                      loadDamageHistory(f.id, historySearch);
+                    }}
+                  >
+                    {language === 'bn' ? f.bn : f.en}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', padding: '12px 18px', background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {language === 'bn' ? 'মোট ড্যামেজ এন্ট্রি' : 'Damage Incidents'}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+                  {historyLogs.length}
+                </div>
+              </div>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                <div style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {language === 'bn' ? 'মোট ক্ষতি / নষ্ট পিস' : 'Total Units Lost'}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#dc2626' }}>
+                  -{historyLogs.reduce((sum, r) => sum + Math.abs(r.quantity_changed || 0), 0)} Pcs
+                </div>
+              </div>
+            </div>
+
+            <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
+              {isHistoryLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                  <Loader2 size={24} className="spin" style={{ margin: '0 auto 8px' }} />
+                  <div>{language === 'bn' ? 'ড্যামেজ হিস্ট্রি লোড হচ্ছে...' : 'Loading damage history...'}</div>
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
+                  <AlertTriangle size={36} style={{ color: '#cbd5e1', margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>
+                    {language === 'bn' ? 'কোনো ড্যামেজ রেকর্ড পাওয়া যায়নি' : 'No damage records found'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+                    {language === 'bn' ? 'পণ্য ড্যামেজ এন্ট্রি করলে তার সকল ইতিহাস এখানে সংরক্ষিত থাকবে।' : 'Recorded damage entries will appear here.'}
+                  </div>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table" style={{ width: '100%', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr>
+                        <th>{language === 'bn' ? 'তারিখ ও সময়' : 'Date & Time'}</th>
+                        <th>{language === 'bn' ? 'পণ্যের নাম ও কোড' : 'Product'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'ড্যামেজ পরিমাণ' : 'Damaged Qty'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'অবশিষ্ট স্টক' : 'Balance After'}</th>
+                        <th>{language === 'bn' ? 'কারণ' : 'Reason'}</th>
+                        <th>{language === 'bn' ? 'রেফারেন্স আইডি' : 'Ref Code'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyLogs.map(r => {
+                        const when = new Date(r.created_at);
+                        const unit = r.unit || 'pcs';
+                        return (
+                          <tr key={r.id}>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#0f172a' }}>{r.product_name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{r.product_code}</div>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '12px', background: '#fee2e2', color: '#dc2626', fontWeight: 800, fontSize: '0.86rem' }}>
+                                -{Math.abs(r.quantity_changed)} {unit}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+                              {r.balance_after} {unit}
+                            </td>
+                            <td>
+                              <span style={{ color: '#475563', fontSize: '0.85rem' }}>{r.reason || '—'}</span>
+                            </td>
+                            <td>
+                              <code style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                {r.reference_id || '—'}
+                              </code>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 2. Stock In / Product Add History Modal */}
+      {showStockInHistoryModal && createPortal(
+        <div className="drawer-overlay" style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="drawer-container" style={{ width: '100%', maxWidth: '960px', height: 'auto', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)', display: 'flex', flexDirection: 'column' }}>
+            <div className="drawer-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#ecfdf5', color: '#059669', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PackagePlus size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700, color: '#065f46' }}>
+                    {language === 'bn' ? 'পণ্য যোগের ইতিহাস (Stock In History)' : 'Product Addition History'}
+                  </h2>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn' ? 'কবে কোন পণ্য কত পিস যোগ করেছেন তার বিস্তারিত হিসাব' : 'Track when and how many units of each product were added into stock'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn-outline flex-align-gap"
+                  onClick={() => printElement('printable-stockin-history', 'StockInHistory')}
+                  style={{ fontSize: '0.82rem', padding: '6px 12px' }}
+                >
+                  <Printer size={15} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                </button>
+                <button className="drawer-close-btn" onClick={() => setShowStockInHistoryModal(false)}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px' }}>
+                <div className="search-bar" style={{ margin: 0, width: '100%' }}>
+                  <Search size={16} className="text-muted" />
+                  <input
+                    type="text"
+                    placeholder={language === 'bn' ? 'পণ্য বা বারকোড দিয়ে খুঁজুন...' : 'Search by product or barcode...'}
+                    value={historySearch}
+                    onChange={(e) => {
+                      setHistorySearch(e.target.value);
+                      loadStockInHistory(historyDateFilter, e.target.value, historySubFilter);
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={historySubFilter}
+                  onChange={(e) => {
+                    setHistorySubFilter(e.target.value);
+                    loadStockInHistory(historyDateFilter, historySearch, e.target.value);
+                  }}
+                  style={{ fontSize: '0.8rem', padding: '5px 8px', borderRadius: '6px' }}
+                >
+                  <option value="ALL">{language === 'bn' ? 'সব ধরণের যোগ (All In)' : 'All Additions'}</option>
+                  <option value="PURCHASE">{language === 'bn' ? 'ক্রয় / প্রারম্ভিক স্টক (Purchases)' : 'Purchases'}</option>
+                  <option value="ADJUSTMENT">{language === 'bn' ? 'ম্যানুয়াল / কুইক যোগ (Adjustments)' : 'Adjustments'}</option>
+                  <option value="CUSTOMER_RETURN">{language === 'bn' ? 'কাস্টমার ফেরত (Returns)' : 'Customer Returns'}</option>
+                </select>
+                {[
+                  { id: 'all', bn: 'সব সময়', en: 'All Time' },
+                  { id: 'today', bn: 'আজকে', en: 'Today' },
+                  { id: '7days', bn: '৭ দিন', en: '7 Days' },
+                  { id: '30days', bn: '৩০ দিন', en: '30 Days' },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: '20px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      border: '1px solid',
+                      borderColor: historyDateFilter === f.id ? '#059669' : '#cbd5e1',
+                      background: historyDateFilter === f.id ? '#ecfdf5' : '#ffffff',
+                      color: historyDateFilter === f.id ? '#059669' : '#475563',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      setHistoryDateFilter(f.id);
+                      loadStockInHistory(f.id, historySearch, historySubFilter);
+                    }}
+                  >
+                    {language === 'bn' ? f.bn : f.en}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', padding: '12px 18px', background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {language === 'bn' ? 'মোট যোগ এন্ট্রি' : 'Total Add Entries'}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+                  {historyLogs.length}
+                </div>
+              </div>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#047857', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {language === 'bn' ? 'মোট যোগকৃত পিস (Total Pieces Added)' : 'Total Pieces Added'}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#059669' }}>
+                  +{historyLogs.reduce((sum, r) => sum + (r.quantity_changed > 0 ? r.quantity_changed : 0), 0)} Pcs
+                </div>
+              </div>
+            </div>
+
+            <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
+              {isHistoryLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                  <Loader2 size={24} className="spin" style={{ margin: '0 auto 8px' }} />
+                  <div>{language === 'bn' ? 'পণ্য যোগের ইতিহাস লোড হচ্ছে...' : 'Loading addition history...'}</div>
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
+                  <PackagePlus size={36} style={{ color: '#cbd5e1', margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>
+                    {language === 'bn' ? 'কোনো পণ্য যোগের রেকর্ড পাওয়া যায়নি' : 'No addition records found'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+                    {language === 'bn' ? 'নতুন পণ্য এন্ট্রি বা স্টক যোগ করলে তার সকল হিসাব এখানে থাকবে।' : 'Purchases and stock adjustments will appear here.'}
+                  </div>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table" style={{ width: '100%', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr>
+                        <th>{language === 'bn' ? 'তারিখ ও সময়' : 'Date & Time'}</th>
+                        <th>{language === 'bn' ? 'পণ্যের নাম ও কোড' : 'Product'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'যোগকৃত পরিমাণ' : 'Added Qty'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'যোগের পর স্টক' : 'Balance After'}</th>
+                        <th>{language === 'bn' ? 'যোগের ধরন' : 'Source / Type'}</th>
+                        <th>{language === 'bn' ? 'চালান / রেফারেন্স' : 'Ref Code'}</th>
+                        <th>{language === 'bn' ? 'বিবরণ / নোট' : 'Note'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyLogs.map(r => {
+                        const when = new Date(r.created_at);
+                        const unit = r.unit || 'pcs';
+                        let typeLabel = r.movement_type;
+                        if (r.movement_type === 'PURCHASE') {
+                          typeLabel = r.reference_id?.startsWith('INIT')
+                            ? (language === 'bn' ? 'নতুন পণ্য অন্তর্ভুক্তি' : 'Initial Stock')
+                            : (language === 'bn' ? 'ক্রয় চালান' : 'Purchase');
+                        } else if (r.movement_type === 'ADJUSTMENT') {
+                          typeLabel = language === 'bn' ? 'ম্যানুয়াল / কুইক যোগ' : 'Quick Add';
+                        } else if (r.movement_type === 'CUSTOMER_RETURN') {
+                          typeLabel = language === 'bn' ? 'কাস্টমার ফেরত' : 'Customer Return';
+                        } else if (r.movement_type === 'SR_RETURN') {
+                          typeLabel = language === 'bn' ? 'এসআর ফেরত' : 'SR Return';
+                        }
+
+                        return (
+                          <tr key={r.id}>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#0f172a' }}>{r.product_name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{r.product_code}</div>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '12px', background: '#d1fae5', color: '#047857', fontWeight: 800, fontSize: '0.86rem' }}>
+                                +{r.quantity_changed} {unit}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+                              {r.balance_after} {unit}
+                            </td>
+                            <td>
+                              <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', background: '#f1f5f9', color: '#334155', fontSize: '0.78rem', fontWeight: 600 }}>
+                                {typeLabel}
+                              </span>
+                            </td>
+                            <td>
+                              <code style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                {r.reference_id || '—'}
+                              </code>
+                            </td>
+                            <td>
+                              <span style={{ color: '#475563', fontSize: '0.82rem' }}>{r.reason || '—'}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 3. Single Product Add History Modal */}
+      {showProductHistoryModal && historyProduct && createPortal(
+        <div className="drawer-overlay" style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="drawer-container" style={{ width: '100%', maxWidth: '900px', height: 'auto', maxHeight: '90vh', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)', display: 'flex', flexDirection: 'column' }}>
+            <div className="drawer-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#ecfdf5', color: '#059669', padding: '8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PackagePlus size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700, color: '#065f46' }}>
+                    {historyProduct.name} - {language === 'bn' ? 'পণ্য যোগের ইতিহাস' : 'Product Addition History'}
+                  </h2>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {language === 'bn'
+                      ? `কোড: ${historyProduct.product_code || historyProduct.id} · ${historyProduct.category || ''} · কবে কত পিস পণ্য যোগ হয়েছে তার হিসাব`
+                      : `Code: ${historyProduct.product_code || historyProduct.id} · ${historyProduct.category || ''} · All addition and stock in history`}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn-outline flex-align-gap"
+                  onClick={() => printElement('printable-product-history', 'ProductAddHistory')}
+                  style={{ fontSize: '0.82rem', padding: '6px 12px' }}
+                >
+                  <Printer size={15} /> {language === 'bn' ? 'প্রিন্ট' : 'Print'}
+                </button>
+                <button className="drawer-close-btn" onClick={() => { setShowProductHistoryModal(false); setHistoryProduct(null); }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Product Quick Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#ffffff', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>{language === 'bn' ? 'বর্তমান স্টক' : 'Current Stock'}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+                  {Number(historyProduct.stock) || 0} {historyProduct.unit || 'Pcs'}
+                </div>
+              </div>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#047857', fontWeight: 600 }}>{language === 'bn' ? 'মোট যোগকৃত মাল (+)' : 'Total Pieces Added (+)'}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#059669' }}>
+                  +{historyLogs.filter(r => r.quantity_changed > 0).reduce((sum, r) => sum + r.quantity_changed, 0)} {historyProduct.unit || 'Pcs'}
+                </div>
+              </div>
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>{language === 'bn' ? 'মোট যোগ এন্ট্রি' : 'Total Add Entries'}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#334155' }}>
+                  {historyLogs.length}
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div style={{ padding: '10px 18px', background: '#ffffff', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {[
+                { id: 'IN', labelBn: '📦 সকল পণ্য যোগ (+)', labelEn: 'All Additions (+)' },
+                { id: 'PURCHASE', labelBn: 'ক্রয় / প্রারম্ভিক স্টক', labelEn: 'Purchases / Initial' },
+                { id: 'ADJUSTMENT', labelBn: 'ম্যানুয়াল / কুইক যোগ', labelEn: 'Quick / Manual Add' },
+                { id: 'CUSTOMER_RETURN', labelBn: 'কাস্টমার ফেরত', labelEn: 'Returns' },
+                { id: 'DAMAGE', labelBn: '⚠️ ড্যামেজ হিস্ট্রি (-)', labelEn: 'Damage History (-)' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '20px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    border: '1px solid',
+                    borderColor: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#cbd5e1',
+                    background: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#fef2f2' : '#ecfdf5') : '#ffffff',
+                    color: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#475563',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    setHistorySubFilter(tab.id);
+                    loadProductHistory(historyProduct, tab.id);
+                  }}
+                >
+                  {language === 'bn' ? tab.labelBn : tab.labelEn}
+                </button>
+              ))}
+            </div>
+
+            <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
+              {isHistoryLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                  <Loader2 size={24} className="spin" style={{ margin: '0 auto 8px' }} />
+                  <div>{language === 'bn' ? 'ইতিহাস লোড হচ্ছে...' : 'Loading history...'}</div>
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
+                  <PackagePlus size={36} style={{ color: '#cbd5e1', margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>
+                    {language === 'bn' ? 'কোনো পণ্য যোগের ইতিহাস পাওয়া যায়নি' : 'No addition history found for this product'}
+                  </div>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table" style={{ width: '100%', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr>
+                        <th>{language === 'bn' ? 'তারিখ ও সময়' : 'Date & Time'}</th>
+                        <th>{language === 'bn' ? 'যোগের ধরন' : 'Source / Type'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'যোগকৃত পরিমাণ' : 'Added Qty'}</th>
+                        <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'যোগের পর স্টক' : 'Balance After'}</th>
+                        <th>{language === 'bn' ? 'চালান / রেফারেন্স' : 'Ref Code'}</th>
+                        <th>{language === 'bn' ? 'বিবরণ / নোট' : 'Note / Reason'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyLogs.map(r => {
+                        const when = new Date(r.created_at);
+                        const isIn = r.quantity_changed > 0;
+                        const isDamage = r.movement_type === 'DAMAGE';
+                        const colour = isDamage ? '#dc2626' : '#059669';
+                        const unit = r.unit || historyProduct.unit || 'pcs';
+
+                        let label = r.movement_type;
+                        if (isDamage) label = language === 'bn' ? '⚠️ ড্যামেজ / নষ্ট' : '⚠️ Damaged';
+                        else if (r.movement_type === 'PURCHASE' && r.reference_id?.startsWith('INIT')) label = language === 'bn' ? 'নতুন পণ্য (প্রারম্ভিক স্টক)' : 'Initial Stock';
+                        else if (r.movement_type === 'PURCHASE') label = language === 'bn' ? 'ক্রয় চালান' : 'Purchase Bill';
+                        else if (r.movement_type === 'ADJUSTMENT' && isIn) label = language === 'bn' ? 'কুইক / ম্যানুয়াল যোগ' : 'Quick Stock Add';
+                        else if (r.movement_type === 'CUSTOMER_RETURN') label = language === 'bn' ? 'কাস্টমার ফেরত' : 'Customer Return';
+                        else if (r.movement_type === 'SR_RETURN') label = language === 'bn' ? 'এসআর ফেরত' : 'SR Return';
+
+                        return (
+                          <tr key={r.id}>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', background: `${colour}18`, color: colour, fontSize: '0.8rem', fontWeight: 600 }}>
+                                {isDamage ? <AlertTriangle size={12} /> : <PackagePlus size={12} />}
+                                {label}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ fontWeight: 800, color: colour }}>
+                                {isIn ? `+${r.quantity_changed}` : r.quantity_changed} {unit}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+                              {r.balance_after} {unit}
+                            </td>
+                            <td>
+                              <code style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                {r.reference_id || '—'}
+                              </code>
+                            </td>
+                            <td>
+                              <span style={{ color: '#475563', fontSize: '0.82rem' }}>{r.reason || '—'}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Hidden Printable Elements */}
+      <div style={{ display: 'none' }}>
+        <div id="printable-damage-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+          <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ক্ষতিগ্রস্ত / ড্যামেজ পণ্য রিপোর্ট (Damage Report)</h3>
+          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>তারিখ: {new Date().toLocaleDateString()}</p>
+          <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>তারিখ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>পণ্যের নাম ও কোড</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>ড্যামেজ পরিমাণ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>অবশিষ্ট স্টক</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>কারণ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>রেফারেন্স</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyLogs.map(r => (
+                <tr key={r.id}>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{new Date(r.created_at).toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.product_name} ({r.product_code})</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center', color: 'red', fontWeight: 'bold' }}>-{Math.abs(r.quantity_changed)} {r.unit || 'pcs'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>{r.balance_after} {r.unit || 'pcs'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reason || '-'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reference_id || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="printable-stockin-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+          <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>পণ্য যোগের ইতিহাস রিপোর্ট (Stock In History Report)</h3>
+          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>তারিখ: {new Date().toLocaleDateString()}</p>
+          <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>তারিখ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>পণ্যের নাম ও কোড</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>যোগকৃত পরিমাণ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>যোগের পর স্টক</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>ধরন</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>চালান / রেফারেন্স</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>বিবরণ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyLogs.map(r => (
+                <tr key={r.id}>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{new Date(r.created_at).toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.product_name} ({r.product_code})</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center', color: 'green', fontWeight: 'bold' }}>+{r.quantity_changed} {r.unit || 'pcs'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>{r.balance_after} {r.unit || 'pcs'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.movement_type}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reference_id || '-'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reason || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="printable-product-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
+          <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
+          <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+            পণ্য যোগের ইতিহাস রিপোর্ট (Product Add History): {historyProduct?.name} ({historyProduct?.product_code || historyProduct?.id})
+          </h3>
+          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
+            বর্তমান স্টক: {historyProduct?.stock} {historyProduct?.unit || 'Pcs'} · প্রিন্টের তারিখ: {new Date().toLocaleDateString()}
+          </p>
+          <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>তারিখ ও সময়</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>যোগের ধরন</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>যোগকৃত পরিমাণ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>যোগের পর স্টক</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>চালান / রেফারেন্স</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px' }}>বিবরণ / নোট</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyLogs.map(r => (
+                <tr key={r.id}>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{new Date(r.created_at).toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>
+                    {r.movement_type === 'PURCHASE' && r.reference_id?.startsWith('INIT') ? 'নতুন পণ্য (প্রারম্ভিক)' : r.movement_type === 'PURCHASE' ? 'ক্রয় চালান' : r.movement_type === 'ADJUSTMENT' ? 'কুইক যোগ' : r.movement_type === 'DAMAGE' ? 'ড্যামেজ' : r.movement_type}
+                  </td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center', fontWeight: 'bold', color: r.quantity_changed > 0 ? 'green' : 'red' }}>
+                    {r.quantity_changed > 0 ? `+${r.quantity_changed}` : r.quantity_changed} {r.unit || 'pcs'}
+                  </td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px', textAlign: 'center' }}>{r.balance_after} {r.unit || 'pcs'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reference_id || '-'}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '6px' }}>{r.reason || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Reference Data Drawer */}
       {showReferenceDrawer && (

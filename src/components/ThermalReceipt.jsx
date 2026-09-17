@@ -24,21 +24,32 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
   const due = Number(sale.due ?? sale.due_amount ?? sale.dueRemaining) || 0;
   const totalUnits = (sale.items || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0);
 
-  // Calculate total item discount if any
-  const totalItemDiscount = (sale.items || []).reduce((sum, it) => {
-    const d = Number(it.itemDiscount || it.item_discount || it.discount || 0);
-    const q = Number(it.quantity) || 1;
-    return sum + (d * q);
-  }, 0);
-
-  const invDiscount = Number(sale.invoiceDiscount || sale.invoice_discount || 0);
-
   const totalMrp = (sale.items || []).reduce((sum, it) => {
     const m = Number(it.mrp || it.price || 0);
     const q = Number(it.quantity) || 1;
     return sum + (m * q);
   }, 0);
-  const totalSavings = Math.max(0, totalMrp - Number(sale.total || 0));
+
+  // Calculate total item discount across all items based on MRP - effectiveRate
+  const totalItemDiscount = (sale.items || []).reduce((sum, it) => {
+    const unitPrice = Number(it.price) || 0;
+    const manualDisc = Number(it.itemDiscount || it.item_discount || it.discount || 0);
+    const effRate = it.isGift ? 0 : Math.max(0, unitPrice - manualDisc);
+    const m = Number(it.mrp || it.price || 0);
+    let uDisc = 0;
+    if (it.isGift) {
+      uDisc = m > 0 ? m : unitPrice;
+    } else if (m > effRate) {
+      uDisc = m - effRate;
+    } else if (manualDisc > 0) {
+      uDisc = manualDisc;
+    }
+    const q = Number(it.quantity) || 1;
+    return sum + (uDisc * q);
+  }, 0);
+
+  const invDiscount = Number(sale.invoiceDiscount || sale.invoice_discount || 0);
+  const totalOverallDiscount = totalItemDiscount + invDiscount;
 
   return (
     <div
@@ -166,19 +177,30 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
           </thead>
           <tbody>
             {(sale.items || []).map((item, idx) => {
-              const itemDisc = Number(item.itemDiscount || item.item_discount || item.discount || 0);
               const unitPrice = Number(item.price) || 0;
-              const effectiveRate = Math.max(0, unitPrice - itemDisc);
+              const manualDisc = Number(item.itemDiscount || item.item_discount || item.discount || 0);
+              const effectiveRate = item.isGift ? 0 : Math.max(0, unitPrice - manualDisc);
               const itemQty = Number(item.quantity) || 1;
               const itemTotal = Number(item.total ?? item.total_price ?? (effectiveRate * itemQty)) || 0;
-              const itemMrp = Number(item.mrp || 0);
+              const itemMrp = Number(item.mrp || item.price || 0);
+
+              let perUnitDisc = 0;
+              if (item.isGift) {
+                perUnitDisc = itemMrp > 0 ? itemMrp : unitPrice;
+              } else if (itemMrp > effectiveRate) {
+                perUnitDisc = itemMrp - effectiveRate;
+              } else if (manualDisc > 0) {
+                perUnitDisc = manualDisc;
+              }
+
+              const lineTotalDisc = perUnitDisc * itemQty;
 
               return (
                 <tr key={idx} style={{ borderBottom: '1px dashed #cccccc' }}>
                   <td style={{ padding: '3px 0', verticalAlign: 'top', color: '#000000' }}>
                     <div style={{ fontWeight: 800, color: '#000000' }}>{item.name}</div>
                     {item.variant && <div style={{ fontSize: '9px', fontWeight: 600, color: '#000000' }}>{item.variant}</div>}
-                    {itemMrp > 0 && (
+                    {itemMrp > 0 && itemMrp > effectiveRate && (
                       <div style={{ fontSize: '9px', fontWeight: 700, color: '#000000', marginTop: '1px' }}>
                         MRP: ৳{money(itemMrp)}
                       </div>
@@ -188,9 +210,10 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
                         GIFT
                       </span>
                     )}
-                    {itemDisc > 0 && (
-                      <div style={{ fontSize: '8.5px', fontWeight: 700, color: '#000000' }}>
-                        {language === 'bn' ? 'ছাড়:' : 'Disc:'} -৳{money(itemDisc)}
+                    {perUnitDisc > 0 && (
+                      <div style={{ fontSize: '9px', fontWeight: 800, color: '#000000' }}>
+                        {language === 'bn' ? 'ছাড়:' : 'Disc:'} -৳{money(lineTotalDisc)}
+                        {itemQty > 1 && <span style={{ fontWeight: 600, fontSize: '8px' }}> (-৳{money(perUnitDisc)}/{item.unit || (language === 'bn' ? 'টি' : 'pc')})</span>}
                       </div>
                     )}
                   </td>
@@ -203,7 +226,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
                         <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(itemMrp)}</div>
                         <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
                       </>
-                    ) : itemDisc > 0 ? (
+                    ) : manualDisc > 0 ? (
                       <>
                         <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(unitPrice)}</div>
                         <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
@@ -231,17 +254,17 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             <span style={{ fontWeight: 800, color: '#000000' }}>{(sale.items || []).length} items ({totalUnits} pcs)</span>
           </div>
 
-          {totalMrp > Number(sale.total) && (
+          {totalMrp > Number(sale.subtotal) && (
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
               <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'মোট এমআরপি:' : 'Total MRP:'}</span>
               <span style={{ fontWeight: 800, color: '#000000' }}>৳{money(totalMrp)}</span>
             </div>
           )}
 
-          {totalSavings > 0 && (
+          {totalOverallDiscount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-              <span style={{ fontWeight: 700, color: '#000000' }}>{language === 'bn' ? 'মোট সাশ্রয় (Savings):' : 'Total Savings:'}</span>
-              <span style={{ fontWeight: 800, color: '#000000' }}>৳{money(totalSavings)}</span>
+              <span style={{ fontWeight: 700, color: '#000000' }}>{language === 'bn' ? 'মোট ছাড় (Discount):' : 'Total Discount:'}</span>
+              <span style={{ fontWeight: 900, color: '#000000' }}>-৳{money(totalOverallDiscount)}</span>
             </div>
           )}
 
@@ -250,17 +273,10 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
             <span style={{ fontWeight: 800, color: '#000000' }}>৳{money(sale.subtotal)}</span>
           </div>
 
-          {totalItemDiscount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-              <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'পণ্য ছাড় (Item Disc):' : 'Item Discount:'}</span>
-              <span style={{ fontWeight: 800, color: '#000000' }}>-৳{money(totalItemDiscount)}</span>
-            </div>
-          )}
-
           {invDiscount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-              <span style={{ fontWeight: 700, color: '#000000' }}>{language === 'bn' ? 'ইনভয়েস ছাড়:' : 'Invoice Discount:'}</span>
-              <span style={{ fontWeight: 900, color: '#000000' }}>-৳{money(invDiscount)}</span>
+              <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'ইনভয়েস ছাড়:' : 'Invoice Discount:'}</span>
+              <span style={{ fontWeight: 800, color: '#000000' }}>-৳{money(invDiscount)}</span>
             </div>
           )}
 

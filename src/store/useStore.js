@@ -565,6 +565,17 @@ const useStore = create(
         }
       }),
 
+      recordProductDamage: ({ product_code, quantity, reason }) => enqueue(async () => {
+        try {
+          const res = await ProductService.recordDamage({ product_code, quantity, reason });
+          await get().refresh('inventory');
+          return { ok: true, data: res };
+        } catch (error) {
+          const errMsg = error?.response?.data?.error || error?.message || 'Could not record damaged product.';
+          return fail(error, errMsg);
+        }
+      }),
+
       // ---------------------------------------------------------------- //
       // Sales
       // ---------------------------------------------------------------- //

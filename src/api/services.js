@@ -20,6 +20,7 @@ export const ProductService = {
   create: (payload) => apiClient.post(ENDPOINTS.PRODUCTS, payload),
   update: (code, payload) => apiClient.patch(ENDPOINTS.PRODUCT(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.PRODUCT(code)),
+  recordDamage: (payload) => apiClient.post(ENDPOINTS.PRODUCT_RECORD_DAMAGE, payload),
   byBarcode: (barcode) => apiClient.get(ENDPOINTS.BARCODE_SEARCH, { params: { barcode } }),
   categories: () => apiClient.get(ENDPOINTS.CATEGORIES),
   units: () => apiClient.get(ENDPOINTS.UNITS),

@@ -230,7 +230,7 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
       width: 100%;
       white-space: nowrap;
     }
-    .mrp { font-size: ${pt(9)}; font-weight: 800; text-decoration: line-through; color: #222; }
+    .mrp { font-size: ${pt(9)}; font-weight: normal; text-decoration: line-through; color: #333; }
     .sale-price { font-size: ${pt(9)}; font-weight: 900; color: #000; }
   </style>
 </head>

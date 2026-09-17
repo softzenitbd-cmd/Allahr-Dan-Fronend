@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowDownCircle, ArrowUpCircle, Layers, Printer,
   RefreshCcw, Scale, Search, TrendingDown, TrendingUp, X,
+  AlertTriangle, PackagePlus,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
@@ -11,26 +13,36 @@ import './StockLog.css';
 /**
  * The stock audit trail.
  *
- * Every sale, purchase, return, SR issue and reversal already writes a row
- * here; until now nothing read them back, so "why is this product down to
- * four?" had no answer. The table only grows, so it is always queried with
- * filters and the server caps what comes back.
+ * Every sale, purchase, return, SR issue, damage and reversal writes a row
+ * here. The table only grows, so it is queried with filters and the server
+ * caps what comes back.
  */
 
 // The server's movement types, with the words a shopkeeper would use and the
 // direction each one moves stock.
 const TYPES = [
-  { id: 'All', label: 'All Movements' },
-  { id: 'SALE', label: 'Sale', dir: 'out' },
-  { id: 'PURCHASE', label: 'Purchase', dir: 'in' },
-  { id: 'CUSTOMER_RETURN', label: 'Customer Return', dir: 'in' },
-  { id: 'SUPPLIER_REJECT', label: 'Supplier Reject', dir: 'out' },
-  { id: 'SR_ISSUE', label: 'Issued to SR', dir: 'out' },
-  { id: 'SR_RETURN', label: 'Returned by SR', dir: 'in' },
-  { id: 'ADJUSTMENT', label: 'Adjustment', dir: 'both' },
+  { id: 'All', label: 'All Movements', labelBn: 'সকল নড়াচড়া' },
+  { id: 'ADDITIONS', label: 'All Stock In (Added)', labelBn: 'সকল পণ্য যোগ (স্টক ইন)', dir: 'in' },
+  { id: 'DAMAGE', label: 'Damage / Loss', labelBn: 'ক্ষতিগ্রস্ত / ড্যামেজ পণ্য', dir: 'out' },
+  { id: 'PURCHASE', label: 'Purchase', labelBn: 'ক্রয় চালান', dir: 'in' },
+  { id: 'SALE', label: 'Sale', labelBn: 'বিক্রয়', dir: 'out' },
+  { id: 'CUSTOMER_RETURN', label: 'Customer Return', labelBn: 'কাস্টমার ফেরত', dir: 'in' },
+  { id: 'SUPPLIER_REJECT', label: 'Supplier Reject', labelBn: 'সাপ্লায়ার রিজেক্ট', dir: 'out' },
+  { id: 'SR_ISSUE', label: 'Issued to SR', labelBn: 'এসআর ইস্যু', dir: 'out' },
+  { id: 'SR_RETURN', label: 'Returned by SR', labelBn: 'এসআর ফেরত', dir: 'in' },
+  { id: 'ADJUSTMENT', label: 'Adjustment', labelBn: 'স্টক সমন্বয় / এডিট', dir: 'both' },
 ];
 
 const TYPE_LABEL = Object.fromEntries(TYPES.map((x) => [x.id, x.label]));
+const TYPE_LABEL_BN = Object.fromEntries(TYPES.map((x) => [x.id, x.labelBn || x.label]));
+
+const QUICK_TABS = [
+  { id: 'All', labelBn: 'সকল নড়াচড়া', labelEn: 'All Movements', icon: Layers },
+  { id: 'ADDITIONS', labelBn: '📦 পণ্য যোগের হিস্ট্রি', labelEn: '📦 Stock In History', icon: ArrowUpCircle, className: 'tab-in' },
+  { id: 'DAMAGE', labelBn: '⚠️ ড্যামেজ হিস্ট্রি', labelEn: '⚠️ Damage History', icon: AlertTriangle, className: 'tab-damage' },
+  { id: 'PURCHASE', labelBn: '🚚 ক্রয় চালান', labelEn: '🚚 Purchases', icon: TrendingUp },
+  { id: 'SALE', labelBn: '🛒 বিক্রয়', labelEn: '🛒 Sales', icon: TrendingDown },
+];
 
 /** "3 min ago" for anything today, so recent activity reads without arithmetic. */
 const relativeTime = (iso) => {
@@ -46,13 +58,14 @@ const relativeTime = (iso) => {
 
 const StockLog = () => {
   const { inventory, language, fetchStockLogs } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const [product, setProduct] = useState('');
-  const [movementType, setMovementType] = useState('All');
+  const [product, setProduct] = useState(() => searchParams.get('product') || '');
+  const [movementType, setMovementType] = useState(() => searchParams.get('type') || 'All');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [search, setSearch] = useState('');
@@ -63,7 +76,13 @@ const StockLog = () => {
     setLoading(true);
     const params = { limit: 500 };
     if (product) params.product = product;
-    if (movementType !== 'All') params.movement_type = movementType;
+    if (movementType !== 'All') {
+      if (movementType === 'ADDITIONS') {
+        params.direction = 'in';
+      } else {
+        params.movement_type = movementType;
+      }
+    }
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     if (search.trim()) params.search = search.trim();
@@ -84,7 +103,22 @@ const StockLog = () => {
   }, [load, search]);
 
   const clearFilters = () => {
-    setProduct(''); setMovementType('All'); setStartDate(''); setEndDate(''); setSearch('');
+    setProduct('');
+    setMovementType('All');
+    setStartDate('');
+    setEndDate('');
+    setSearch('');
+    setSearchParams({});
+  };
+
+  const handleTabClick = (tabId) => {
+    setMovementType(tabId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tabId === 'All') next.delete('type');
+      else next.set('type', tabId);
+      return next;
+    });
   };
 
   const productName = product ? (inventory.find((p) => p.id === product)?.name || product) : null;
@@ -95,11 +129,13 @@ const StockLog = () => {
       colour: 'var(--info)', Icon: Layers
     },
     {
-      key: 'in', label: t(language, 'Stock In'), value: `+${summary.totalIn}`,
+      key: 'in', label: language === 'bn' ? 'মোট যোগ (Stock In)' : t(language, 'Stock In'),
+      value: `+${summary.totalIn}`,
       colour: 'var(--success)', Icon: TrendingUp
     },
     {
-      key: 'out', label: t(language, 'Stock Out'), value: `-${summary.totalOut}`,
+      key: 'out', label: language === 'bn' ? 'মোট কর্তন / ক্ষতি (Stock Out)' : t(language, 'Stock Out'),
+      value: `-${summary.totalOut}`,
       colour: 'var(--danger)', Icon: TrendingDown
     },
     {
@@ -116,7 +152,7 @@ const StockLog = () => {
           <h1>{t(language, 'Stock Movement Log')}</h1>
           <p className="text-muted">
             {language === 'bn'
-              ? 'কোন পণ্য কবে কেন কমল বা বাড়ল — প্রতিটি নড়াচড়ার হিসাব।'
+              ? 'কোন পণ্য কবে কত পিস যোগ বা ড্যামেজ হয়েছে — প্রতিটি নড়াচড়ার নিখুঁত হিসাব।'
               : 'Every movement in and out of stock, and the document behind it.'}
           </p>
         </div>
@@ -129,6 +165,24 @@ const StockLog = () => {
             <Printer size={16} /> {t(language, 'Print')}
           </button>
         </div>
+      </div>
+
+      {/* Quick Filter Tabs: All, Stock In / Additions, Damage, Purchases, Sales */}
+      <div className="stocklog-tabs">
+        {QUICK_TABS.map((tab) => {
+          const isActive = movementType === tab.id;
+          const TabIcon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              className={`stocklog-tab-btn ${isActive ? `active ${tab.className || ''}` : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+            >
+              <TabIcon size={16} />
+              {language === 'bn' ? tab.labelBn : tab.labelEn}
+            </button>
+          );
+        })}
       </div>
 
       {/* What the current filters add up to. Sits on one line so the table
@@ -265,8 +319,20 @@ const StockLog = () => {
               ) : (
                 rows.map((r) => {
                   const isIn = r.quantity_changed > 0;
-                  const colour = isIn ? 'var(--success)' : 'var(--danger)';
+                  const isDamage = r.movement_type === 'DAMAGE';
+                  const colour = isDamage ? '#dc2626' : isIn ? '#059669' : '#e11d48';
                   const when = new Date(r.created_at);
+                  const unitStr = r.unit || 'pcs';
+
+                  // Determine human-friendly movement label
+                  let label = TYPE_LABEL[r.movement_type] || r.movement_type;
+                  if (language === 'bn') {
+                    if (isDamage) label = '⚠️ ড্যামেজ / নষ্ট';
+                    else if (r.movement_type === 'PURCHASE' && r.reference_id?.startsWith('INIT')) label = 'নতুন পণ্য (প্রারম্ভিক)';
+                    else if (r.movement_type === 'ADJUSTMENT' && isIn) label = 'স্টক যোগ / বৃদ্ধি';
+                    else label = TYPE_LABEL_BN[r.movement_type] || label;
+                  }
+
                   return (
                     <tr key={r.id} className={isIn ? 'is-in' : 'is-out'}>
                       <td className="when" style={{ whiteSpace: 'nowrap' }}>
@@ -282,18 +348,20 @@ const StockLog = () => {
                       <td>
                         <span
                           className="movement"
-                          style={{ background: `${colour}1f`, color: colour }}
+                          style={{ background: `${colour}1a`, color: colour, fontWeight: 600 }}
                         >
-                          {isIn ? <ArrowUpCircle size={13} /> : <ArrowDownCircle size={13} />}
-                          {TYPE_LABEL[r.movement_type] || r.movement_type}
+                          {isDamage ? <AlertTriangle size={13} /> : isIn ? <ArrowUpCircle size={13} /> : <ArrowDownCircle size={13} />}
+                          {label}
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className="qty" style={{ color: colour }}>
-                          {isIn ? `+${r.quantity_changed}` : r.quantity_changed}
+                        <span className="qty" style={{ color: colour, fontWeight: 700 }}>
+                          {isIn ? `+${r.quantity_changed}` : r.quantity_changed} {unitStr}
                         </span>
                       </td>
-                      <td style={{ textAlign: 'center' }} className="balance">{r.balance_after}</td>
+                      <td style={{ textAlign: 'center' }} className="balance font-semibold">
+                        {r.balance_after} {unitStr}
+                      </td>
                       <td><span className="ref" title={r.reference_id}>{r.reference_id || '—'}</span></td>
                       <td className="reason">{r.reason || '—'}</td>
                     </tr>
@@ -310,10 +378,16 @@ const StockLog = () => {
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
             Allahr dan gents point
           </h2>
-          <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>Stock Movement Log</h3>
+          <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '1rem' }}>
+            {movementType === 'DAMAGE'
+              ? 'ড্যামেজ হিস্ট্রি রিপোর্ট (Damage History Report)'
+              : movementType === 'ADDITIONS'
+                ? 'পণ্য যোগের হিস্ট্রি রিপোর্ট (Stock In / Additions Report)'
+                : 'Stock Movement Log'}
+          </h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.9rem' }}>
             {productName ? `${productName} · ` : ''}
-            {movementType !== 'All' ? `${TYPE_LABEL[movementType]} · ` : ''}
+            {movementType !== 'All' ? `${(language === 'bn' ? TYPE_LABEL_BN[movementType] : TYPE_LABEL[movementType]) || movementType} · ` : ''}
             {startDate || endDate ? `${startDate || 'Any'} to ${endDate || 'Any'}` : 'All dates'}
           </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
@@ -331,9 +405,9 @@ const StockLog = () => {
                   <td style={{ border: '1px solid #ccc', padding: '0.35rem' }}>{r.product_name} ({r.product_code})</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.35rem' }}>{TYPE_LABEL[r.movement_type] || r.movement_type}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.35rem', textAlign: 'center' }}>
-                    {r.quantity_changed > 0 ? `+${r.quantity_changed}` : r.quantity_changed}
+                    {r.quantity_changed > 0 ? `+${r.quantity_changed}` : r.quantity_changed} {r.unit || 'pcs'}
                   </td>
-                  <td style={{ border: '1px solid #ccc', padding: '0.35rem', textAlign: 'center' }}>{r.balance_after}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.35rem', textAlign: 'center' }}>{r.balance_after} {r.unit || 'pcs'}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.35rem' }}>{r.reference_id || '-'}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.35rem' }}>{r.reason || '-'}</td>
                 </tr>

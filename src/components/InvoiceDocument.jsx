@@ -208,13 +208,33 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
     : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
 
   const settled = sale.due <= 0;
-  const totalUnits = sale.items.reduce((n, i) => n + i.quantity, 0);
+  const totalUnits = sale.items.reduce((n, i) => n + Number(i.quantity || 0), 0);
   const totalMrp = sale.items.reduce((sum, it) => {
     const m = Number(it.mrp || it.price || 0);
     const q = Number(it.quantity) || 1;
     return sum + (m * q);
   }, 0);
-  const totalSavings = Math.max(0, totalMrp - Number(sale.total || 0));
+
+  // Calculate total item discount based on MRP - selling rate
+  const totalItemDiscount = sale.items.reduce((sum, it) => {
+    const unitPrice = Number(it.price) || 0;
+    const manualDisc = Number(it.discount || it.itemDiscount || it.item_discount || 0);
+    const effRate = it.isGift ? 0 : Math.max(0, unitPrice - manualDisc);
+    const m = Number(it.mrp || it.price || 0);
+    let uDisc = 0;
+    if (it.isGift) {
+      uDisc = m > 0 ? m : unitPrice;
+    } else if (m > effRate) {
+      uDisc = m - effRate;
+    } else if (manualDisc > 0) {
+      uDisc = manualDisc;
+    }
+    const q = Number(it.quantity) || 1;
+    return sum + (uDisc * q);
+  }, 0);
+
+  const invDiscount = Number(sale.invoiceDiscount || 0);
+  const totalOverallDiscount = totalItemDiscount + invDiscount;
 
   const totalLine = (label, value, opts = {}) => (
     <div style={{
@@ -254,12 +274,12 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
             display: 'inline-block', border: '2px solid #111827', borderRadius: '4px',
             padding: '4px 14px', fontSize: '15px', fontWeight: 800, letterSpacing: '0.12em',
           }}>
-            INVOICE
+            {language === 'bn' ? 'চালান / ইনভয়েস' : 'INVOICE'}
           </div>
           <div style={{ marginTop: '8px', fontSize: '11px', lineHeight: 1.7 }}>
-            <div><span style={{ color: '#6b7280' }}>No:</span> <strong>{sale.invoiceNumber}</strong></div>
-            <div><span style={{ color: '#6b7280' }}>Date:</span> {new Date(sale.date).toLocaleDateString('en-GB')}</div>
-            <div><span style={{ color: '#6b7280' }}>Time:</span> {new Date(sale.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
+            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'চালান নং:' : 'No:'}</span> <strong>{sale.invoiceNumber}</strong></div>
+            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'তারিখ:' : 'Date:'}</span> {new Date(sale.date).toLocaleDateString('en-GB')}</div>
+            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'সময়:' : 'Time:'}</span> {new Date(sale.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
           </div>
         </div>
       </div>
@@ -269,7 +289,7 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
       {/* ---- Parties ---- */}
       <div style={{ display: 'flex', gap: '16px', margin: '12px 0 14px' }}>
         <div style={{ flex: 1, border: '1px solid #d1d5db', borderRadius: '4px', padding: '8px 10px' }}>
-          <div style={S.label}>Billed To</div>
+          <div style={S.label}>{language === 'bn' ? 'ক্রেতার বিবরণ (Billed To)' : 'Billed To'}</div>
           <div style={{ fontWeight: 700, fontSize: '13px', marginTop: '3px' }}>{sale.customer.name}</div>
           {sale.customer.phone && <div style={{ color: '#4b5563' }}>Mobile: {sale.customer.phone}</div>}
           {sale.customer.address && <div style={{ color: '#4b5563' }}>{sale.customer.address}</div>}
@@ -277,17 +297,17 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
         </div>
 
         <div style={{ flex: '0 0 40%', border: '1px solid #d1d5db', borderRadius: '4px', padding: '8px 10px' }}>
-          <div style={S.label}>Invoice Details</div>
+          <div style={S.label}>{language === 'bn' ? 'চালান তথ্য (Invoice Details)' : 'Invoice Details'}</div>
           <div style={{ marginTop: '3px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#6b7280' }}>Salesman</span><span>{sale.salesmanName}</span>
+            <span style={{ color: '#6b7280' }}>{language === 'bn' ? 'বিক্রেতা' : 'Salesman'}</span><span>{sale.salesmanName}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#6b7280' }}>Payment</span><span>{sale.paymentType}</span>
+            <span style={{ color: '#6b7280' }}>{language === 'bn' ? 'পেমেন্ট' : 'Payment'}</span><span>{sale.paymentType}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#6b7280' }}>Status</span>
+            <span style={{ color: '#6b7280' }}>{language === 'bn' ? 'অবস্থা' : 'Status'}</span>
             <span style={{ fontWeight: 700, color: settled ? '#047857' : '#b91c1c' }}>
-              {settled ? 'PAID' : 'DUE'}
+              {settled ? (language === 'bn' ? 'পরিশোধিত (PAID)' : 'PAID') : (language === 'bn' ? 'বকেয়া (DUE)' : 'DUE')}
             </span>
           </div>
         </div>
@@ -298,17 +318,33 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
         <thead>
           <tr>
             <th style={{ ...S.th, width: '28px', textAlign: 'center' }}>#</th>
-            <th style={{ ...S.th, textAlign: 'left' }}>Description</th>
-            <th style={{ ...S.th, textAlign: 'center', width: '56px' }}>Qty</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>MRP</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>Rate</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '68px' }}>Discount</th>
-            <th style={{ ...S.th, textAlign: 'right', width: '82px' }}>Amount</th>
+            <th style={{ ...S.th, textAlign: 'left' }}>{language === 'bn' ? 'পণ্যের বিবরণ' : 'Description'}</th>
+            <th style={{ ...S.th, textAlign: 'center', width: '56px' }}>{language === 'bn' ? 'পরিমাণ' : 'Qty'}</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>{language === 'bn' ? 'এমআরপি' : 'MRP'}</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '70px' }}>{language === 'bn' ? 'দর' : 'Rate'}</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '75px' }}>{language === 'bn' ? 'ছাড়' : 'Discount'}</th>
+            <th style={{ ...S.th, textAlign: 'right', width: '82px' }}>{language === 'bn' ? 'মোট' : 'Amount'}</th>
           </tr>
         </thead>
         <tbody>
           {sale.items.map((item, idx) => {
             const itemMrp = Number(item.mrp || item.price || 0);
+            const unitPrice = Number(item.price) || 0;
+            const manualDiscount = Number(item.discount || item.itemDiscount || item.item_discount || 0);
+            const effectiveRate = item.isGift ? 0 : Math.max(0, unitPrice - manualDiscount);
+
+            let unitDiscount = 0;
+            if (item.isGift) {
+              unitDiscount = itemMrp > 0 ? itemMrp : unitPrice;
+            } else if (itemMrp > effectiveRate) {
+              unitDiscount = itemMrp - effectiveRate;
+            } else if (manualDiscount > 0) {
+              unitDiscount = manualDiscount;
+            }
+
+            const itemQty = Number(item.quantity) || 1;
+            const lineTotalDiscount = unitDiscount * itemQty;
+
             return (
               <tr key={idx}>
                 <td style={{ ...S.cell, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
@@ -326,16 +362,25 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
                   {item.code ? <div style={{ color: '#9ca3af', fontSize: '10px' }}>Code: {item.code}</div> : null}
                 </td>
                 <td style={{ ...S.cell, textAlign: 'center' }}>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</td>
-                <td style={{ ...S.cell, textAlign: 'right', color: itemMrp > item.price ? '#4b5563' : '#111827' }}>
-                  {itemMrp > item.price ? (
+                <td style={{ ...S.cell, textAlign: 'right', color: itemMrp > effectiveRate ? '#4b5563' : '#111827' }}>
+                  {itemMrp > effectiveRate ? (
                     <span style={{ textDecoration: 'line-through' }}>{money(itemMrp)}</span>
                   ) : (
                     money(itemMrp)
                   )}
                 </td>
-                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.price)}</td>
-                <td style={{ ...S.cell, textAlign: 'right', color: item.discount ? '#b91c1c' : '#9ca3af' }}>
-                  {item.discount ? money(item.discount) : '—'}
+                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(effectiveRate)}</td>
+                <td style={{ ...S.cell, textAlign: 'right', color: lineTotalDiscount > 0 ? '#b91c1c' : '#9ca3af' }}>
+                  {lineTotalDiscount > 0 ? (
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{money(lineTotalDiscount)}</span>
+                      {itemQty > 1 && (
+                        <div style={{ fontSize: '9px', color: '#6b7280' }}>
+                          ({money(unitDiscount)}/{item.unit || (language === 'bn' ? 'টি' : 'pc')})
+                        </div>
+                      )}
+                    </div>
+                  ) : '—'}
                 </td>
                 <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.total)}</td>
               </tr>
@@ -345,7 +390,7 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
         <tfoot>
           <tr>
             <td colSpan={2} style={{ ...S.cell, background: '#f9fafb', fontSize: '11px', color: '#4b5563' }}>
-              {sale.items.length} item{sale.items.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}
+              {language === 'bn' ? `${sale.items.length} টি পণ্য · মোট ${totalUnits} পিস` : `${sale.items.length} item${sale.items.length === 1 ? '' : 's'} · ${totalUnits} unit${totalUnits === 1 ? '' : 's'}`}
             </td>
             <td colSpan={5} style={{ ...S.cell, background: '#f9fafb' }} />
           </tr>
@@ -356,13 +401,13 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
       <div style={{ display: 'flex', gap: '18px', marginTop: '12px', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ border: '1px solid #d1d5db', borderRadius: '4px', padding: '8px 10px' }}>
-            <div style={S.label}>Amount in Words</div>
+            <div style={S.label}>{language === 'bn' ? 'কথায় (Amount in Words)' : 'Amount in Words'}</div>
             <div style={{ marginTop: '3px', fontStyle: 'italic', fontWeight: 600 }}>{takaInWords(sale.total)}</div>
           </div>
 
           {sale.payments.length > 0 && (
             <div style={{ marginTop: '10px' }}>
-              <div style={{ ...S.label, marginBottom: '4px' }}>Payments Received</div>
+              <div style={{ ...S.label, marginBottom: '4px' }}>{language === 'bn' ? 'জমা বিবরণ (Payments Received)' : 'Payments Received'}</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                 <thead>
                   <tr>
@@ -394,20 +439,61 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
         </div>
 
         <div style={{ flex: '0 0 42%' }}>
-          {totalMrp > Number(sale.total) && totalLine('Total MRP', `৳ ${money(totalMrp)}`)}
-          {totalSavings > 0 && totalLine('Total Savings from MRP', `− ৳ ${money(totalSavings)}`, { tone: 'paid', bold: true })}
-          {totalLine('Subtotal', `৳ ${money(sale.subtotal)}`)}
-          {sale.invoiceDiscount > 0 && totalLine('Invoice Discount', `− ৳ ${money(sale.invoiceDiscount)}`)}
-          {sale.carrying > 0 && totalLine('Carrying / Loading', `৳ ${money(sale.carrying)}`)}
-          {totalLine('Grand Total', `৳ ${money(sale.total)}`, { bold: true, big: true, rule: true })}
-          {totalLine('Paid at Sale', `৳ ${money(sale.paidAtSale)}`, { tone: 'paid' })}
-          {sale.laterPayments > 0 && totalLine('Later Payments', `৳ ${money(sale.laterPayments)}`, { tone: 'paid' })}
-          {sale.laterPayments > 0 && totalLine('Total Received', `৳ ${money(sale.totalReceived)}`, { bold: true, tone: 'paid' })}
-          {sale.cashReceived > 0 && totalLine('Cash Received', `৳ ${money(sale.cashReceived)}`)}
-          {sale.changeGiven > 0 && totalLine('Change Returned', `৳ ${money(sale.changeGiven)}`, { bold: true })}
-          {totalLine('Balance Due', `৳ ${money(sale.due)}`, {
-            bold: true, big: true, rule: true, tone: sale.due > 0 ? 'due' : 'paid',
-          })}
+          {totalMrp > Number(sale.subtotal) && totalLine(
+            language === 'bn' ? 'মোট এমআরপি (Total MRP)' : 'Total MRP',
+            `৳ ${money(totalMrp)}`
+          )}
+          {totalOverallDiscount > 0 && totalLine(
+            language === 'bn' ? 'মোট ছাড় (Total Discount)' : 'Total Discount',
+            `− ৳ ${money(totalOverallDiscount)}`,
+            { tone: 'paid', bold: true }
+          )}
+          {totalLine(
+            language === 'bn' ? 'সাবটোটাল (Subtotal)' : 'Subtotal',
+            `৳ ${money(sale.subtotal)}`
+          )}
+          {invDiscount > 0 && totalLine(
+            language === 'bn' ? 'ইনভয়েস ছাড় (Invoice Disc)' : 'Invoice Discount',
+            `− ৳ ${money(invDiscount)}`
+          )}
+          {sale.carrying > 0 && totalLine(
+            language === 'bn' ? 'ক্যারিং / লোডিং' : 'Carrying / Loading',
+            `৳ ${money(sale.carrying)}`
+          )}
+          {totalLine(
+            language === 'bn' ? 'সর্বমোট বিল (Net Total)' : 'Grand Total',
+            `৳ ${money(sale.total)}`,
+            { bold: true, big: true, rule: true }
+          )}
+          {totalLine(
+            language === 'bn' ? 'নগদ জমা (বিক্রির সময়)' : 'Paid at Sale',
+            `৳ ${money(sale.paidAtSale)}`,
+            { tone: 'paid' }
+          )}
+          {sale.laterPayments > 0 && totalLine(
+            language === 'bn' ? 'পরবর্তী আদায়' : 'Later Payments',
+            `৳ ${money(sale.laterPayments)}`,
+            { tone: 'paid' }
+          )}
+          {sale.laterPayments > 0 && totalLine(
+            language === 'bn' ? 'মোট আদায়' : 'Total Received',
+            `৳ ${money(sale.totalReceived)}`,
+            { bold: true, tone: 'paid' }
+          )}
+          {sale.cashReceived > 0 && totalLine(
+            language === 'bn' ? 'গৃহীত ক্যাশ' : 'Cash Received',
+            `৳ ${money(sale.cashReceived)}`
+          )}
+          {sale.changeGiven > 0 && totalLine(
+            language === 'bn' ? 'ফেরত দেওয়া হয়েছে' : 'Change Returned',
+            `৳ ${money(sale.changeGiven)}`,
+            { bold: true }
+          )}
+          {totalLine(
+            language === 'bn' ? 'বকেয়া (Due)' : 'Balance Due',
+            `৳ ${money(sale.due)}`,
+            { bold: true, big: true, rule: true, tone: sale.due > 0 ? 'due' : 'paid' }
+          )}
         </div>
       </div>
 

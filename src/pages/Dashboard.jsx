@@ -63,6 +63,8 @@ const Dashboard = () => {
   ];
   */
 
+  const totalCustomers = (customers || []).length;
+
   // Each card carries its own colour, chosen in Settings or falling back to
   // the default the card ships with. A loss still turns the profit cards red
   // whatever colour they were given: that signal is not a matter of taste.
@@ -73,22 +75,24 @@ const Dashboard = () => {
     todayProfit: dailyProfit,
     monthlyProfit: monthlyProfit,
     monthlyExpense: monthlyExpenses,
-    inventoryValue: totalInventoryValue,
+    totalCustomers: totalCustomers,
     customerDue: totalCustomerDue,
-    supplierDue: totalSupplierDue,
   };
   const iconByKey = {
     totalBalance: DollarSign, todaySales: ShoppingCart, todayExpense: TrendingDown,
     todayProfit: TrendingUp, monthlyProfit: TrendingUp, monthlyExpense: DollarSign,
-    inventoryValue: Package, customerDue: Users, supplierDue: Users,
+    totalCustomers: Users, customerDue: Users,
   };
   const stats = DASHBOARD_CARDS.map((card) => {
     const value = valueByKey[card.key] || 0;
     const isLoss = (card.key === 'todayProfit' || card.key === 'monthlyProfit') && value < 0;
+    const formattedValue = card.key === 'totalCustomers'
+      ? `${value.toLocaleString()} ${language === 'bn' ? 'জন' : 'Customers'}`
+      : `৳${value.toLocaleString()}`;
     return {
       key: card.key,
       label: language === 'bn' ? card.bn : card.en,
-      value: `৳${value.toLocaleString()}`,
+      value: formattedValue,
       icon: isLoss ? TrendingDown : iconByKey[card.key],
       color: isLoss ? '#dc2626' : cardColor(card, dashboardCardColors),
     };
@@ -103,7 +107,6 @@ const Dashboard = () => {
     { name: language === 'bn' ? 'সাপ্লায়ার' : 'Suppliers', path: '/suppliers', icon: Users },
     { name: language === 'bn' ? 'কাস্টমার' : 'Customers', path: '/customers', icon: Users },
     { name: language === 'bn' ? 'খরচ' : 'Expenses', path: '/expenses', icon: DollarSign },
-    { name: language === 'bn' ? 'এসআর' : 'SR', path: '/sr', icon: Truck },
     { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
     { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },

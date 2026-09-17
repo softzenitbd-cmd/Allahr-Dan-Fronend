@@ -102,14 +102,6 @@ export const SYSTEM_MENUS = [
     icon: DollarSign,
   },
   {
-    id: 'sr',
-    path: '/sr',
-    nameEn: 'SR',
-    nameBn: 'এসআর',
-    group: 'ops',
-    icon: Truck,
-  },
-  {
     id: 'stock-log',
     path: '/stock-log',
     nameEn: 'Stock Log',
@@ -202,13 +194,12 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     '/suppliers',
     '/customers',
     '/expenses',
-    '/sr',
     '/stock-log',
     '/reports',
     '/hr',
   ],
   Salesman: ['/', '/pos', '/pos-history', '/customers', '/returns'],
-  Delivery: ['/', '/sr', '/returns', '/customers'],
+  Delivery: ['/', '/returns', '/customers'],
   Cashier: ['/', '/day-book', '/pos', '/pos-history', '/customers', '/expenses'],
 };
 

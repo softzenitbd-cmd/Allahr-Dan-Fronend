@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Search, Printer, Eye, Plus, Phone, Edit, Trash2, RotateCcw, History, Receipt, X } from 'lucide-react';
+import { Search, Printer, Eye, Plus, Phone, Edit, Trash2, RotateCcw, History, Receipt, X, Users } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { toast } from 'react-toastify';
@@ -8,6 +9,7 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
 
 const Suppliers = () => {
+  const navigate = useNavigate();
   const {
     suppliers,
     deletedSuppliers,
@@ -262,12 +264,76 @@ const Suppliers = () => {
     }
   };
 
+  const totalSupplierDue = (suppliers || [])
+    .filter(s => !s.is_deleted)
+    .reduce((acc, sup) => acc + (Number(sup.due) || 0), 0);
+  const suppliersWithDue = (suppliers || [])
+    .filter(s => !s.is_deleted && Number(s.due) > 0);
+  const totalActiveSuppliers = (suppliers || [])
+    .filter(s => !s.is_deleted).length;
+
   return (
     <div className="customers-page animate-fade-in" id="printable-suppliers-list">
       <div className="page-header">
         <div>
-          <h1>Suppliers Management</h1>
-          <p className="text-muted">Manage your suppliers, add new ones, and track dues.</p>
+          <h1>{language === 'bn' ? 'সাপ্লায়ার ব্যবস্থাপনা' : 'Suppliers Management'}</h1>
+          <p className="text-muted">{language === 'bn' ? 'আপনার সাপ্লায়ারদের তালিকা ও বকেয়ার হিসাব পরিচালনা করুন।' : 'Manage your suppliers, add new ones, and track dues.'}</p>
+        </div>
+      </div>
+
+      {/* Supplier Stat Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gap: '1rem',
+        marginBottom: '1.25rem'
+      }}>
+        {/* Supplier Due Card */}
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0, borderLeft: '4px solid #be123c' }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(190, 18, 60, 0.12)', color: '#be123c' }}>
+            <Users size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'মোট সাপ্লায়ার বকেয়া (Supplier Due)' : 'Total Supplier Due'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: totalSupplierDue > 0 ? '#be123c' : 'var(--text-main)' }}>
+              ৳{totalSupplierDue.toLocaleString()}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+              {suppliersWithDue.length} {language === 'bn' ? 'জন সাপ্লায়ারের কাছে দেনা' : 'suppliers with payable due'}
+            </div>
+          </div>
+        </div>
+
+        {/* Total Active Suppliers Card */}
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(37, 99, 235, 0.1)', color: '#2563eb' }}>
+            <Users size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'মোট সক্রিয় সাপ্লায়ার' : 'Total Active Suppliers'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              {totalActiveSuppliers} {language === 'bn' ? 'জন' : ''}
+            </div>
+          </div>
+        </div>
+
+        {/* Suppliers with Due Count Card */}
+        <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0 }}>
+          <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(217, 119, 6, 0.1)', color: '#d97706' }}>
+            <Receipt size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {language === 'bn' ? 'বকেয়াযুক্ত সাপ্লায়ার' : 'Suppliers with Due'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 700, color: suppliersWithDue.length > 0 ? '#d97706' : 'var(--text-main)' }}>
+              {suppliersWithDue.length} {language === 'bn' ? 'জন' : 'Suppliers'}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -718,11 +784,21 @@ const Suppliers = () => {
               </div>
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
+            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 1.8rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
                 printElement('printable-single-person', 'Suppliers');
               }}>
-                <Printer size={20} /> Print Document
+                <Printer size={18} /> {language === 'bn' ? 'ডকুমেন্ট প্রিন্ট' : 'Print Document'}
+              </button>
+              <button
+                type="button"
+                className="btn-outline flex-align-gap"
+                style={{ padding: '0.75rem 1.8rem', fontSize: '0.9rem', borderRadius: '99px', color: '#1e40af', borderColor: '#93c5fd', background: '#eff6ff' }}
+                onClick={() => {
+                  navigate(`/ledger?kind=supplier&id=${selectedPerson.supplier_code || selectedPerson.id}&tab=products`);
+                }}
+              >
+                <Eye size={18} /> {language === 'bn' ? 'লেজারে মালের বিস্তারিত হিসাব' : 'Ledger & Purchased Goods'}
               </button>
               {(selectedPerson.is_deleted || activeTab === 'Deleted') && (
                 <>

@@ -13,9 +13,8 @@ export const DASHBOARD_CARDS = [
   { key: 'todayProfit',    en: "Today's Net Profit",          bn: 'আজকের নিট লাভ',                 color: '#16a34a' },
   { key: 'monthlyProfit',  en: 'Monthly Profit',              bn: 'মাসিক লাভ',                     color: '#7c3aed' },
   { key: 'monthlyExpense', en: 'Monthly Expense',             bn: 'মাসিক খরচ',                     color: '#ea580c' },
-  { key: 'inventoryValue', en: 'Inventory Value',             bn: 'স্টক ভ্যালু',                    color: '#0891b2' },
+  { key: 'totalCustomers', en: 'Total Customers',             bn: 'মোট কাস্টমার',                  color: '#0284c7' },
   { key: 'customerDue',    en: 'Customer Due',                bn: 'কাস্টমার বকেয়া',                color: '#d97706' },
-  { key: 'supplierDue',    en: 'Supplier Due',                bn: 'সাপ্লায়ার বকেয়া',              color: '#be123c' },
 ];
 
 /** The colour a card should be drawn in: the user's override, else its default. */

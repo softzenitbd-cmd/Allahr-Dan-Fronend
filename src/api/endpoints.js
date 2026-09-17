@@ -14,6 +14,7 @@ export const ENDPOINTS = {
   // Inventory
   PRODUCTS: '/inventory/products/',
   PRODUCT: (code) => `/inventory/products/${encodeURIComponent(code)}/`,
+  PRODUCT_RECORD_DAMAGE: '/inventory/products/record-damage/',
   BARCODE_SEARCH: '/inventory/products/barcode-search/',
   CATEGORIES: '/inventory/categories/',
   CATEGORY: (id) => `/inventory/categories/${encodeURIComponent(id)}/`,

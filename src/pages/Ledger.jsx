@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Users, Truck, UserCheck, Search, Phone, MapPin, Calendar, Printer,
   Wallet, RefreshCcw, X, BookOpen, ChevronDown, ChevronLeft, ChevronRight,
-  CheckCircle2,
+  CheckCircle2, Package, ChevronUp, Eye, FileText, Layers, Boxes,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
@@ -39,11 +40,10 @@ const quickRanges = () => {
   const today = new Date();
   const back = (n) => { const d = new Date(today); d.setDate(today.getDate() - n); return d; };
   return [
-    { id: 'all', en: 'All time', bn: 'সব', start: '', end: '' },
-    { id: 'today', en: 'Today', bn: 'আজ', start: isoLocal(today), end: isoLocal(today) },
-    { id: '7', en: '7 days', bn: '৭ দিন', start: isoLocal(back(6)), end: isoLocal(today) },
-    { id: '30', en: '30 days', bn: '৩০ দিন', start: isoLocal(back(29)), end: isoLocal(today) },
-    { id: 'month', en: 'This month', bn: 'এই মাস', start: isoLocal(new Date(today.getFullYear(), today.getMonth(), 1)), end: isoLocal(today) },
+    { key: 'all', id: 'all', en: 'All Time', bn: 'সব সময়', start: '', end: '' },
+    { key: 'today', id: 'today', en: 'Today', bn: 'আজকে', start: isoLocal(today), end: isoLocal(today) },
+    { key: '7d', id: '7d', en: '7 Days', bn: '৭ দিন', start: isoLocal(back(7)), end: isoLocal(today) },
+    { key: '30d', id: '30d', en: '30 Days', bn: '৩০ দিন', start: isoLocal(back(30)), end: isoLocal(today) },
   ];
 };
 
@@ -81,8 +81,9 @@ const Ledger = () => {
   } = useStore();
   const bn = language === 'bn';
 
-  const [kind, setKind] = useState('customer');
-  const [selectedId, setSelectedId] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [kind, setKind] = useState(() => searchParams.get('kind') || 'customer');
+  const [selectedId, setSelectedId] = useState(() => searchParams.get('id') || '');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerText, setPickerText] = useState('');
   const pickerRef = useRef(null);
@@ -93,9 +94,11 @@ const Ledger = () => {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState('primary');
+  const [tab, setTab] = useState(() => searchParams.get('tab') || 'primary');
   const [pay, setPay] = useState(null); // { mode: 'invoice'|'account'|'all', invoice?, amount, date, method, notes }
   const [saving, setSaving] = useState(false);
+  const [expandedPurchases, setExpandedPurchases] = useState({});
+  const [viewProductBills, setViewProductBills] = useState(null);
 
   useEffect(() => { refresh('customers', 'suppliers', 'staff'); }, [refresh]);
 
@@ -243,7 +246,8 @@ const Ledger = () => {
       { key: 'dues', l: bn ? 'বকেয়া চালান' : 'Due Invoices', n: data.dueInvoices.length },
     ];
     if (kind === 'supplier') return [
-      { key: 'primary', l: bn ? 'ক্রয়' : 'Purchases', n: data.purchases.length },
+      { key: 'primary', l: bn ? 'ক্রয় চালান' : 'Purchases', n: data.purchases.length },
+      { key: 'products', l: bn ? '📦 ক্রয়কৃত পণ্য' : 'Purchased Items', n: (data.products || []).length },
       { key: 'payments', l: bn ? 'পেমেন্ট' : 'Payments', n: data.payments.length },
       { key: 'statement', l: bn ? 'স্টেটমেন্ট' : 'Statement', n: data.statement.length },
       { key: 'dues', l: bn ? 'বকেয়া ক্রয়' : 'Due Purchases', n: (data.duePurchases || []).length },
@@ -285,15 +289,17 @@ const Ledger = () => {
     };
     if (kind === 'supplier') return {
       life: [
-        { l: bn ? 'ক্রয়' : 'Purchases', v: t.purchases },
-        { l: bn ? 'মোট ক্রয়' : 'Total Bought', v: money(t.bought) },
+        { l: bn ? 'ক্রয় চালান' : 'Purchases', v: t.purchases },
+        { l: bn ? 'মোট কেনা মাল' : 'Total Units Bought', v: `${t.units || 0} ${bn ? 'পিস' : 'units'}`, c: 'good' },
+        { l: bn ? 'মোট পণ্য আইটেম' : 'Distinct Items', v: `${t.productsDistinct || (data.products || []).length} ${bn ? 'টি' : 'items'}` },
+        { l: bn ? 'মোট ক্রয়মূল্য' : 'Total Bought', v: money(t.bought) },
         { l: bn ? 'মোট পরিশোধ' : 'Total Paid', v: money(t.totalPaid), c: 'good' },
         { l: bn ? 'বকেয়া ক্রয়' : 'Purchases with Due', v: t.duePurchases, c: t.duePurchases ? 'bad' : '' },
         { l: bn ? 'শেষ ক্রয়' : 'Last Purchase', v: day(t.lastPurchase) },
-        { l: bn ? 'শেষ পেমেন্ট' : 'Last Payment', v: day(t.lastPayment) },
       ],
       period: [
-        { l: bn ? 'ক্রয়' : 'Purchases', v: p.purchases },
+        { l: bn ? 'ক্রয় চালান' : 'Purchases', v: p.purchases },
+        { l: bn ? 'কেনা মাল' : 'Units Bought', v: `${p.units || 0} ${bn ? 'পিস' : 'units'}`, c: 'good' },
         { l: bn ? 'কেনা' : 'Bought', v: money(p.bought) },
         { l: bn ? 'হাতে হাতে' : 'Paid on Purchase', v: money(p.paidAtPurchase), c: 'good' },
         { l: bn ? 'পরে পরিশোধ' : 'Paid Later', v: money(p.paidLater), c: 'good' },
@@ -579,29 +585,85 @@ const Ledger = () => {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>{bn ? 'তারিখ' : 'Date'}</th><th>{bn ? 'ক্রয় নং' : 'Purchase'}</th><th>{bn ? 'পেমেন্ট' : 'Payment'}</th><th>{bn ? 'পণ্য' : 'Items'}</th>
-                      <th className="num">{bn ? 'মোট' : 'Total'}</th><th className="num">{bn ? 'পরিশোধ' : 'Paid'}</th><th className="num">{bn ? 'বকেয়া' : 'Due'}</th>
+                      <th>{bn ? 'তারিখ' : 'Date'}</th>
+                      <th>{bn ? 'ক্রয় চালান নং' : 'Purchase Bill'}</th>
+                      <th>{bn ? 'পেমেন্ট' : 'Payment'}</th>
+                      <th>{bn ? 'ক্রয়কৃত পণ্য ও বিবরণ' : 'Purchased Items & Details'}</th>
+                      <th className="num">{bn ? 'মোট মাল' : 'Total Units'}</th>
+                      <th className="num">{bn ? 'চালান মূল্য' : 'Bill Total'}</th>
+                      <th className="num">{bn ? 'পরিশোধ' : 'Paid'}</th>
+                      <th className="num">{bn ? 'বকেয়া' : 'Due'}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pager.slice.length === 0 && <tr><td colSpan="7" className="text-center text-muted" style={{ padding: '1.5rem' }}>{bn ? 'এই সময়ে কোনো ক্রয় নেই।' : 'No purchases in this period.'}</td></tr>}
-                    {pager.slice.map((r) => (
-                      <tr key={r.id}>
-                        <td>{day(r.date)}</td>
-                        <td style={{ fontWeight: 600 }}>{r.id}</td>
-                        <td><span className={`badge ${r.due > 0 ? 'bg-danger' : 'bg-success'}`}>{r.paymentType}</span></td>
-                        <td>
-                          {r.lines.slice(0, 3).map((l, i) => <div key={i} style={{ fontSize: '0.78rem' }}>{l.name}{l.variant ? ` (${l.variant})` : ''} × {l.quantity}</div>)}
-                          {r.lines.length > 3 && <div className="text-muted" style={{ fontSize: '0.72rem' }}>+{r.lines.length - 3} {bn ? 'আরও' : 'more'}</div>}
+                    {pager.slice.length === 0 && (
+                      <tr>
+                        <td colSpan="8" className="text-center text-muted" style={{ padding: '1.5rem' }}>
+                          {bn ? 'এই সময়ে কোনো ক্রয় নেই।' : 'No purchases in this period.'}
                         </td>
-                        <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
-                        <td className="num text-success">
-                          {money(r.paidAtPurchase + (r.duePaid || 0))}
-                          {r.duePaid > 0 && <div className="text-muted" style={{ fontSize: '0.7rem', fontWeight: 400 }}>{bn ? 'পরে' : 'later'} {money(r.duePaid)}</div>}
-                        </td>
-                        <td className={`num ${r.due > 0 ? 'text-danger font-bold' : 'text-muted'}`}>{money(r.due)}</td>
                       </tr>
-                    ))}
+                    )}
+                    {pager.slice.map((r) => {
+                      const isExpanded = !!expandedPurchases[r.id];
+                      const displayLines = isExpanded ? r.lines : r.lines.slice(0, 3);
+                      return (
+                        <tr key={r.id} style={{ verticalAlign: 'top' }}>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{day(r.date)}</div>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 700, color: 'var(--primary-dark, #1e40af)' }}>{r.id}</span>
+                          </td>
+                          <td>
+                            <span className={`badge ${r.due > 0 ? 'bg-danger' : 'bg-success'}`}>
+                              {r.paymentType}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {displayLines.map((l, i) => (
+                                <div key={i} style={{ fontSize: '0.82rem', lineHeight: '1.4', background: '#f8fafc', padding: '3px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+                                  <span style={{ fontWeight: 600, color: '#1e293b' }}>{l.name}</span>
+                                  {l.variant ? <span className="text-muted" style={{ fontSize: '0.76rem' }}> ({l.variant})</span> : null}
+                                  {l.product_code ? <span className="text-muted" style={{ fontSize: '0.72rem', marginLeft: 4 }}>[{l.product_code}]</span> : null}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', fontSize: '0.75rem', marginTop: 1 }}>
+                                    <span style={{ color: '#047857', fontWeight: 600 }}>
+                                      {l.quantity} {l.unit || (bn ? 'পিস' : 'pcs')}
+                                    </span>
+                                    <span>
+                                      @ {money(l.price)} = <strong style={{ color: '#0f172a' }}>{money(l.total)}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              {r.lines.length > 3 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPurchases((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}
+                                  className="btn-link"
+                                  style={{ fontSize: '0.75rem', textAlign: 'left', padding: '2px 0', cursor: 'pointer', color: '#2563eb', background: 'none', border: 'none' }}
+                                >
+                                  {isExpanded
+                                    ? (bn ? '▲ কম দেখান' : '▲ Show less')
+                                    : (bn ? `▼ আরও ${r.lines.length - 3}টি পণ্য দেখুন` : `▼ Show ${r.lines.length - 3} more items`)}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="num">
+                            <span className="badge" style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', fontWeight: 700, fontSize: '0.82rem' }}>
+                              {r.units || 0} {bn ? 'পিস' : 'pcs'}
+                            </span>
+                          </td>
+                          <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
+                          <td className="num text-success">
+                            {money(r.paidAtPurchase + (r.duePaid || 0))}
+                            {r.duePaid > 0 && <div className="text-muted" style={{ fontSize: '0.7rem', fontWeight: 400 }}>{bn ? 'পরে' : 'later'} {money(r.duePaid)}</div>}
+                          </td>
+                          <td className={`num ${r.due > 0 ? 'text-danger font-bold' : 'text-muted'}`}>{money(r.due)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -676,7 +738,14 @@ const Ledger = () => {
                     {pager.slice.map((e) => (
                       <tr key={`${e.id}-${e.type}`}>
                         <td>{day(e.date)}</td>
-                        <td>{e.description}</td>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{e.description}</div>
+                          {e.itemsSummary && (
+                            <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 2, lineHeight: 1.3 }}>
+                              {e.itemsSummary}
+                            </div>
+                          )}
+                        </td>
                         <td className="text-muted" style={{ fontSize: '0.78rem' }}>{e.id}</td>
                         <td className="num text-danger">{e.type === 'charge' ? money(e.amount) : ''}</td>
                         <td className="num text-success">{e.type === 'payment' ? money(e.amount) : ''}</td>
@@ -687,7 +756,75 @@ const Ledger = () => {
                 </table>
               )}
 
-              {tab === 'products' && (
+              {tab === 'products' && kind === 'supplier' ? (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{bn ? 'পণ্য ও বিবরণ' : 'Product & Description'}</th>
+                      <th>{bn ? 'কোড / বারকোড' : 'Code / Barcode'}</th>
+                      <th className="num">{bn ? 'মোট কেনা মাল' : 'Total Units Bought'}</th>
+                      <th className="num">{bn ? 'চালান সংখ্যা' : 'Bills Count'}</th>
+                      <th className="num">{bn ? 'গড় ক্রয়দর' : 'Avg Buying Rate'}</th>
+                      <th className="num">{bn ? 'মোট ক্রয়ের টাকা' : 'Total Purchase Cost'}</th>
+                      <th>{bn ? 'সর্বশেষ ক্রয়' : 'Last Purchased'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pager.slice.length === 0 && (
+                      <tr>
+                        <td colSpan="7" className="text-center text-muted" style={{ padding: '1.5rem' }}>
+                          {bn ? 'এই সাপ্লায়ারের কাছ থেকে কোনো পণ্য ক্রয়ের রেকর্ড নেই।' : 'No goods purchased from this supplier.'}
+                        </td>
+                      </tr>
+                    )}
+                    {pager.slice.map((p) => {
+                      const isBillsOpen = viewProductBills === `${p.code}-${p.variant}`;
+                      return (
+                        <React.Fragment key={`${p.code}-${p.variant}`}>
+                          <tr>
+                            <td>
+                              <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{p.name}</div>
+                              {p.variant ? <span className="text-muted" style={{ fontSize: '0.78rem' }}>সাইজ/কালার: {p.variant}</span> : null}
+                            </td>
+                            <td>
+                              <span className="badge" style={{ background: '#f1f5f9', color: '#475569', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                                {p.code}
+                              </span>
+                            </td>
+                            <td className="num">
+                              <span className="badge" style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', fontWeight: 700, fontSize: '0.85rem' }}>
+                                {p.qty} {p.unit || (bn ? 'পিস' : 'pcs')}
+                              </span>
+                            </td>
+                            <td className="num">
+                              <button
+                                type="button"
+                                onClick={() => setViewProductBills(isBillsOpen ? null : `${p.code}-${p.variant}`)}
+                                className="btn-link"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 600, fontSize: '0.82rem' }}
+                                title={bn ? 'চালানের নম্বর দেখতে ক্লিক করুন' : 'Click to view bills'}
+                              >
+                                {p.purchases} {bn ? 'টি চালানে' : 'bills'} {isBillsOpen ? '▲' : '▼'}
+                              </button>
+                            </td>
+                            <td className="num" style={{ fontWeight: 600 }}>{money(p.avgPrice)}</td>
+                            <td className="num" style={{ fontWeight: 700, color: 'var(--primary-dark, #1e40af)' }}>{money(p.amount)}</td>
+                            <td style={{ fontSize: '0.85rem' }}>{p.lastDate ? day(p.lastDate) : '—'}</td>
+                          </tr>
+                          {isBillsOpen && p.bills && p.bills.length > 0 && (
+                            <tr style={{ background: '#f8fafc' }}>
+                              <td colSpan="7" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: '#475569' }}>
+                                <strong>{bn ? 'যেসব চালানে পণ্যটি কেনা হয়েছে:' : 'Bills containing this item:'}</strong>{' '}
+                                <span style={{ fontFamily: 'monospace', color: '#1e40af' }}>{p.bills.join(', ')}</span>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : tab === 'products' ? (
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -710,7 +847,7 @@ const Ledger = () => {
                     ))}
                   </tbody>
                 </table>
-              )}
+              ) : null}
 
               {tab === 'sr' && (
                 <table className="data-table">
@@ -807,7 +944,12 @@ const Ledger = () => {
                     {!hasWindow && <tr><td colSpan={5} style={{ ...cell, color: '#6b7280' }}>Opening balance</td><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{money(data.party.openingDue)}</td></tr>}
                     {data.statement.map((e) => (
                       <tr key={`${e.id}-${e.type}`}>
-                        <td style={cell}>{day(e.date)}</td><td style={cell}>{e.description}</td><td style={{ ...cell, color: '#6b7280' }}>{e.id}</td>
+                        <td style={cell}>{day(e.date)}</td>
+                        <td style={cell}>
+                          <div style={{ fontWeight: 600 }}>{e.description}</div>
+                          {e.itemsSummary && <div style={{ fontSize: '9px', color: '#6b7280', marginTop: 1 }}>{e.itemsSummary}</div>}
+                        </td>
+                        <td style={{ ...cell, color: '#6b7280' }}>{e.id}</td>
                         <td style={{ ...cell, textAlign: 'right' }}>{e.type === 'charge' ? money(e.amount) : ''}</td>
                         <td style={{ ...cell, textAlign: 'right' }}>{e.type === 'payment' ? money(e.amount) : ''}</td>
                         <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{money(e.balance)}</td>
