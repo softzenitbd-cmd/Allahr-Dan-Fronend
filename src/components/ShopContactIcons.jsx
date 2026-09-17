@@ -86,7 +86,7 @@ export const getShopPhoneNumbers = (phoneStr) => {
  * @param {string} mode - 'thermal' (stacked, centered) or 'invoice' (horizontal flex)
  * @param {number} iconSize - size in pixels
  */
-export const ShopPhoneContact = ({ phone, mode = 'thermal', iconSize = 13.5, style = {} }) => {
+export const ShopPhoneContact = ({ phone, mode = 'thermal', iconSize = 12, style = {} }) => {
   const { firstPhone, secondPhone } = getShopPhoneNumbers(phone);
 
   if (mode === 'thermal') {
@@ -95,23 +95,27 @@ export const ShopPhoneContact = ({ phone, mode = 'thermal', iconSize = 13.5, sty
         className="shop-phone-contact thermal-mode"
         style={{
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: 'row',
           alignItems: 'center',
-          gap: '3px',
-          marginTop: '4px',
-          fontSize: '10.5px',
+          justifyContent: 'center',
+          flexWrap: 'nowrap',
+          gap: '5px',
+          marginTop: '3px',
+          fontSize: '9.5px',
           fontWeight: 800,
           color: '#000000',
-          lineHeight: 1.3,
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap',
           ...style,
         }}
       >
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '2.5px', whiteSpace: 'nowrap' }}>
           <WhatsAppIcon size={iconSize} />
           <BkashIcon size={iconSize} />
           <span>{firstPhone}</span>
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <span style={{ fontWeight: 800, color: '#000000', margin: '0 1px' }}>,</span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '2.5px', whiteSpace: 'nowrap' }}>
           <WhatsAppIcon size={iconSize} />
           <NagadIcon size={iconSize} />
           <span>{secondPhone}</span>

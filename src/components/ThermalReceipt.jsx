@@ -110,7 +110,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
           <ShopPhoneContact
             phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
             mode="thermal"
-            iconSize={13.5}
+            iconSize={12}
           />
         </div>
 
