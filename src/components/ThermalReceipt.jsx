@@ -2,6 +2,7 @@ import React from 'react';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
+import { ShopPhoneContact } from './ShopContactIcons';
 
 const money = (value) => {
   const n = Number(value) || 0;
@@ -16,9 +17,15 @@ const money = (value) => {
 const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt', language = 'bn' }) => {
   if (!sale) return null;
 
-  const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
+  let rawShopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allahr dan gents point');
+    : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
+
+  // Ensure "Allahr Dan Gents Point" with proper spelling
+  if (!rawShopName || rawShopName.toLowerCase() === 'allah dan gents point' || rawShopName === 'Allah Dan Gents Point') {
+    rawShopName = 'Allahr Dan Gents Point';
+  }
+  const shopName = rawShopName;
 
   const received = Number(sale.totalReceived ?? sale.paid_amount ?? sale.paidAtSale) || 0;
   const due = Number(sale.due ?? sale.due_amount ?? sale.dueRemaining) || 0;
@@ -100,10 +107,11 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
           <div style={{ fontSize: '9.5px', fontWeight: 600, marginTop: '2px', color: '#000000' }}>
             {shopProfile?.address || DEFAULT_SHOP_ADDRESS}
           </div>
-          <div style={{ fontSize: '10px', fontWeight: 800, marginTop: '2px', color: '#000000' }}>
-            {shopProfile?.phone || DEFAULT_SHOP_PHONE}
-            {shopProfile?.whatsapp && !shopProfile?.phone?.includes(shopProfile.whatsapp) ? ` | WA: ${shopProfile.whatsapp}` : ''}
-          </div>
+          <ShopPhoneContact
+            phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
+            mode="thermal"
+            iconSize={13.5}
+          />
         </div>
 
         {/* Dashed divider */}
@@ -194,6 +202,8 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
               }
 
               const lineTotalDisc = perUnitDisc * itemQty;
+              const originalUnitRate = itemMrp > effectiveRate ? itemMrp : (manualDisc > 0 ? unitPrice : 0);
+              const originalLineTotal = originalUnitRate * itemQty;
 
               return (
                 <tr key={idx} style={{ borderBottom: '1px dashed #cccccc' }}>
@@ -221,22 +231,20 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
                     {item.quantity}{item.unit ? ` ${item.unit}` : ''}
                   </td>
                   <td style={{ textAlign: 'right', padding: '3px 2px', verticalAlign: 'top', color: '#000000' }}>
-                    {itemMrp > effectiveRate ? (
-                      <>
-                        <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(itemMrp)}</div>
-                        <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
-                      </>
-                    ) : manualDisc > 0 ? (
-                      <>
-                        <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#555555', fontWeight: 600 }}>{money(unitPrice)}</div>
-                        <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
-                      </>
-                    ) : (
-                      <div style={{ fontWeight: 700, color: '#000000' }}>{money(unitPrice)}</div>
+                    <div style={{ fontWeight: 800, color: '#000000' }}>{money(effectiveRate)}</div>
+                    {originalUnitRate > effectiveRate && (
+                      <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#000000', fontWeight: 700 }}>
+                        {money(originalUnitRate)}
+                      </div>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right', padding: '3px 0', verticalAlign: 'top', fontWeight: 900, color: '#000000' }}>
-                    ৳{money(itemTotal)}
+                  <td style={{ textAlign: 'right', padding: '3px 0', verticalAlign: 'top', color: '#000000' }}>
+                    <div style={{ fontWeight: 900, color: '#000000' }}>৳{money(itemTotal)}</div>
+                    {originalLineTotal > itemTotal && (
+                      <div style={{ textDecoration: 'line-through', fontSize: '8.5px', color: '#000000', fontWeight: 700 }}>
+                        ৳{money(originalLineTotal)}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

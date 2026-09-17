@@ -1,5 +1,6 @@
 import React from 'react';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
+import { ShopPhoneContact } from './ShopContactIcons';
 
 /**
  * The shop's invoice, as it goes on paper.
@@ -203,9 +204,14 @@ const S = {
 const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', language = 'en' }) => {
   if (!sale) return null;
 
-  const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
+  let rawShopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
     : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
+
+  if (!rawShopName || rawShopName.toLowerCase() === 'allah dan gents point' || rawShopName === 'Allah Dan Gents Point') {
+    rawShopName = 'Allahr Dan Gents Point';
+  }
+  const shopName = rawShopName;
 
   const settled = sale.due <= 0;
   const totalUnits = sale.items.reduce((n, i) => n + Number(i.quantity || 0), 0);
@@ -262,11 +268,13 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
           </div>
           {shopProfile?.tagline && <div style={{ color: '#4b5563', marginTop: '2px' }}>{shopProfile.tagline}</div>}
           <div style={{ color: '#4b5563' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
-          <div style={{ color: '#4b5563' }}>
-            Mobile: {shopProfile?.phone || DEFAULT_SHOP_PHONE}
-            {shopProfile?.whatsapp ? `   WhatsApp: ${shopProfile.whatsapp}` : ''}
-            {shopProfile?.email ? `   ${shopProfile.email}` : ''}
-          </div>
+          <ShopPhoneContact
+            phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
+            mode="invoice"
+            iconSize={13}
+            style={{ marginTop: '3px' }}
+          />
+          {shopProfile?.email && <div style={{ color: '#4b5563', fontSize: '10.5px', marginTop: '2px' }}>Email: {shopProfile.email}</div>}
         </div>
 
         <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
@@ -344,6 +352,7 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
 
             const itemQty = Number(item.quantity) || 1;
             const lineTotalDiscount = unitDiscount * itemQty;
+            const lineTotalMrp = (itemMrp > 0 ? itemMrp : unitPrice) * itemQty;
 
             return (
               <tr key={idx}>
@@ -382,7 +391,14 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
                     </div>
                   ) : '—'}
                 </td>
-                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>{money(item.total)}</td>
+                <td style={{ ...S.cell, textAlign: 'right', fontWeight: 600 }}>
+                  <div>{money(item.total)}</div>
+                  {lineTotalMrp > Number(item.total) && (
+                    <div style={{ fontSize: '10px', color: '#6b7280', textDecoration: 'line-through' }}>
+                      {money(lineTotalMrp)}
+                    </div>
+                  )}
+                </td>
               </tr>
             );
           })}

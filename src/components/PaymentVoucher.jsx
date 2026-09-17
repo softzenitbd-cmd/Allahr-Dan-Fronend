@@ -1,6 +1,7 @@
 import React from 'react';
-import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
+import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 import { takaInWords } from './InvoiceDocument';
+import { ShopPhoneContact } from './ShopContactIcons';
 
 /**
  * The money receipt handed over at the counter.
@@ -29,9 +30,14 @@ const S = {
 const PaymentVoucher = ({ sale, shopProfile, domId = 'printable-voucher', language = 'en' }) => {
   if (!sale) return null;
 
-  const shopName = (language === 'bn' && shopProfile?.shop_name_bn)
+  let rawShopName = (language === 'bn' && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || 'Allahr dan gents point');
+    : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
+
+  if (!rawShopName || rawShopName.toLowerCase() === 'allah dan gents point' || rawShopName === 'Allah Dan Gents Point') {
+    rawShopName = 'Allahr Dan Gents Point';
+  }
+  const shopName = rawShopName;
 
   // What the customer actually handed over, which is what a voucher attests.
   const received = Number(sale.totalReceived) || 0;
@@ -61,12 +67,12 @@ const PaymentVoucher = ({ sale, shopProfile, domId = 'printable-voucher', langua
           {shopName}
         </div>
         <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
-        {(shopProfile?.phone || shopProfile?.whatsapp) && (
-          <div style={{ color: '#4b5563', fontSize: '11px' }}>
-            {shopProfile.phone ? `Mobile: ${shopProfile.phone}` : ''}
-            {shopProfile.whatsapp ? `   WhatsApp: ${shopProfile.whatsapp}` : ''}
-          </div>
-        )}
+        <ShopPhoneContact
+          phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
+          mode="invoice"
+          iconSize={13}
+          style={{ justifyContent: 'center', marginTop: '3px' }}
+        />
       </div>
 
       <div style={{ borderTop: '2px solid #111827', margin: '12px 0 0' }} />

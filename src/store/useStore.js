@@ -366,10 +366,16 @@ const useStore = create(
         if (!get().shopProfile || !profileLast || (now - profileLast) > 10 * 60 * 1000) {
           try {
             const profile = await CoreService.shopProfile();
+            let sName = profile?.shop_name || DEFAULT_SHOP_NAME;
+            if (!sName || sName.toLowerCase() === 'allah dan gents point' || sName === 'Allah Dan Gents Point') {
+              sName = 'Allahr Dan Gents Point';
+            }
             set((state) => ({
               shopProfile: {
                 ...profile,
+                shop_name: sName,
                 address: profile?.address || DEFAULT_SHOP_ADDRESS,
+                phone: profile?.phone || DEFAULT_SHOP_PHONE,
               },
               _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
             }));

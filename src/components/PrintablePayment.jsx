@@ -1,7 +1,8 @@
 import React from 'react';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
-import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
+import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
+import { ShopPhoneContact } from './ShopContactIcons';
 
 const money = (value) => {
   const n = Number(value) || 0;
@@ -37,9 +38,14 @@ const PrintablePayment = ({
     ? (isBn ? 'প্রাপক (সরবরাহকারী)' : 'Paid To (Supplier)')
     : (isBn ? 'প্রদানকারী (গ্রাহক)' : 'Received From (Customer)');
 
-  const shopName = (isBn && shopProfile?.shop_name_bn)
+  let rawShopName = (isBn && shopProfile?.shop_name_bn)
     ? shopProfile.shop_name_bn
-    : (shopProfile?.shop_name || "Allah'r Dan Gents Point");
+    : (shopProfile?.shop_name || DEFAULT_SHOP_NAME);
+
+  if (!rawShopName || rawShopName.toLowerCase() === 'allah dan gents point' || rawShopName === 'Allah Dan Gents Point') {
+    rawShopName = 'Allahr Dan Gents Point';
+  }
+  const shopName = rawShopName;
 
   const address = shopProfile?.address || DEFAULT_SHOP_ADDRESS;
   const phone = shopProfile?.phone || shopProfile?.whatsapp || '';
@@ -163,9 +169,12 @@ const PrintablePayment = ({
         <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '12px', borderTop: '1px dotted #000', paddingTop: '6px' }}>
           <div>Served by: {operatorName}</div>
           <div style={{ fontWeight: 'bold', marginTop: '2px' }}>Thank you!</div>
-          <div style={{ marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000', fontSize: '12px', fontWeight: 900, letterSpacing: '0.02em' }}>
-            01811648721, 01688448383
-          </div>
+          <ShopPhoneContact
+            phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
+            mode="thermal"
+            iconSize={13}
+            style={{ marginTop: '8px', paddingTop: '5px', borderTop: '1px dashed #000' }}
+          />
         </div>
       </div>
     );
@@ -206,11 +215,12 @@ const PrintablePayment = ({
           {shopName}
         </div>
         {address && <div style={{ color: '#475569', fontSize: '11.5px', marginTop: '2px' }}>{address}</div>}
-        {phone && (
-          <div style={{ color: '#475569', fontSize: '11.5px' }}>
-            Phone: {phone}
-          </div>
-        )}
+        <ShopPhoneContact
+          phone={shopProfile?.phone || DEFAULT_SHOP_PHONE}
+          mode="invoice"
+          iconSize={13}
+          style={{ justifyContent: 'center', marginTop: '3px' }}
+        />
       </div>
 
       <div style={{ borderTop: '2px solid #0f172a', margin: '10px 0 14px' }} />
