@@ -284,8 +284,10 @@ const Purchase = () => {
 
           {/* FLOATING FOOTER */}
           <div className="qe-footer">
-            <div className="text-muted">
-              {items.filter(i => i.productId).length} products added
+            <div className="text-muted" style={{ fontWeight: 600 }}>
+              {language === 'bn'
+                ? `${items.filter(i => i.productId).length} প্রকার পণ্য (মোট ${items.filter(i => i.productId).reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)} পিস)`
+                : `${items.filter(i => i.productId).length} Products (Total ${items.filter(i => i.productId).reduce((acc, it) => acc + (Number(it.quantity) || 0), 0)} pcs)`}
             </div>
             <div className="flex-align-gap" style={{ gap: '1.5rem' }}>
               <div className="text-right">
@@ -410,7 +412,20 @@ const Purchase = () => {
                     <td>{p.date.split('T')[0]}</td>
                     <td>{p.id}</td>
                     <td>{p.supplierName}</td>
-                    <td>{p.items.reduce((acc, i) => acc + i.quantity, 0)} items</td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                          {language === 'bn'
+                            ? `${(p.items || []).length} প্রকার পণ্য`
+                            : `${(p.items || []).length} Products`}
+                        </span>
+                        <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                          {language === 'bn'
+                            ? `মোট ${(p.items || []).reduce((acc, i) => acc + (Number(i.quantity) || 0), 0)} পিস`
+                            : `Total ${(p.items || []).reduce((acc, i) => acc + (Number(i.quantity) || 0), 0)} pcs`}
+                        </span>
+                      </div>
+                    </td>
                     <td><span className={`badge ${p.paymentType === 'Cash' ? 'bg-success' : 'bg-warning'}`}>{p.paymentType}</span></td>
                     <td className="font-bold">৳{p.total.toLocaleString()}</td>
                     <td className="text-success font-bold">৳{purchasePaid(p).toLocaleString()}</td>
@@ -549,6 +564,12 @@ const Purchase = () => {
                     ))}
                   </tbody>
                 </table>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '0.5rem', color: '#555' }}>
+                  <span>Total Items:</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {(selectedInvoice.items || []).length} products ({(selectedInvoice.items || []).reduce((acc, i) => acc + (Number(i.quantity) || 0), 0)} pcs)
+                  </span>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.9rem', marginTop: '1rem', color: '#000' }}>
                   <span>Total:</span>
                   <span>৳{selectedInvoice.total}</span>

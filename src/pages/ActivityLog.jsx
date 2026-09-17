@@ -26,6 +26,13 @@ import {
   Clock,
   User,
   Info,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Code,
+  ArrowRight,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -71,6 +78,7 @@ const ActivityLog = () => {
 
   // Selected Log for detail modal
   const [selectedLog, setSelectedLog] = useState(null);
+  const [showRawJson, setShowRawJson] = useState(false);
 
   // Helper for quick date calculation
   const getFilterDates = useCallback(() => {
@@ -256,6 +264,302 @@ const ActivityLog = () => {
       minute: '2-digit',
       hour12: true,
     });
+  };
+
+  const renderLogDetails = (log) => {
+    if (!log || !log.details || Object.keys(log.details).length === 0) {
+      return (
+        <div style={{ textAlign: 'center', padding: '1.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+          {language === 'bn' ? 'অতিরিক্ত কোনো কারিগরি তথ্য পাওয়া যায়নি।' : 'No additional details recorded for this activity.'}
+        </div>
+      );
+    }
+
+    const details = log.details;
+    const hasChanges = Array.isArray(details.changes) && details.changes.length > 0;
+    const hasStockFlow = details.old_stock !== undefined || details.stock_change !== undefined || details.last_stock !== undefined;
+    const hasItems = Array.isArray(details.items) && details.items.length > 0;
+
+    const handledKeys = new Set([
+      'changes', 'items', 'old_stock', 'new_stock', 'stock_change', 'raw_diff',
+      'last_stock', 'old_price', 'new_price', 'old_cost_price', 'new_cost_price',
+      'product_code', 'name', 'unit', 'category'
+    ]);
+
+    const remainingKeys = Object.entries(details).filter(([k, v]) => !handledKeys.has(k) && typeof v !== 'object' && v !== null && v !== undefined && v !== '');
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.85rem' }}>
+        {/* Product Information Card */}
+        {(details.product_code || details.name) && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {language === 'bn' ? 'সম্পৃক্ত পণ্য (Product)' : 'Affected Product'}
+                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>
+                  {details.name || 'Product'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {details.product_code && (
+                  <span style={{ fontSize: '0.78rem', padding: '3px 8px', borderRadius: '6px', background: '#e2e8f0', color: '#334155', fontWeight: 600 }}>
+                    {language === 'bn' ? 'কোড' : 'Code'}: {details.product_code}
+                  </span>
+                )}
+                {details.category && (
+                  <span style={{ fontSize: '0.78rem', padding: '3px 8px', borderRadius: '6px', background: '#e0e7ff', color: '#3730a3', fontWeight: 600 }}>
+                    {details.category}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Stock Movement Summary Block */}
+        {hasStockFlow && (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.9rem 1rem' }}>
+            <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Package size={16} className="text-primary" />
+              <span>{language === 'bn' ? 'স্টক পরিবর্তন ও হিসাব (Stock Movement)' : 'Stock Movement Details'}</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', textAlign: 'center' }}>
+              {/* Previous Stock */}
+              <div style={{ background: '#f8fafc', padding: '0.75rem 0.5rem', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  {language === 'bn' ? 'পূর্বের স্টক' : 'Previous Stock'}
+                </div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#475569', marginTop: '3px' }}>
+                  {details.old_stock !== undefined ? `${details.old_stock} ${details.unit || 'pcs'}` : (details.last_stock !== undefined ? `${details.last_stock} ${details.unit || 'pcs'}` : '—')}
+                </div>
+              </div>
+
+              {/* Added / Removed Quantity */}
+              <div
+                style={{
+                  background: (details.stock_change || 0) > 0 ? '#ecfdf5' : ((details.stock_change || 0) < 0 ? '#fef2f2' : '#f8fafc'),
+                  padding: '0.75rem 0.5rem',
+                  borderRadius: '8px',
+                  border: `1px solid ${(details.stock_change || 0) > 0 ? '#bbf7d0' : ((details.stock_change || 0) < 0 ? '#fecaca' : '#e2e8f0')}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    color: (details.stock_change || 0) > 0 ? '#15803d' : ((details.stock_change || 0) < 0 ? '#b91c1c' : 'var(--text-muted)'),
+                  }}
+                >
+                  {(details.stock_change || 0) > 0
+                    ? (language === 'bn' ? 'যোগ করা হয়েছে' : 'Added')
+                    : ((details.stock_change || 0) < 0
+                      ? (language === 'bn' ? 'কমানো হয়েছে' : 'Removed')
+                      : (language === 'bn' ? 'পরিবর্তন' : 'Change'))}
+                </div>
+                <div
+                  style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    marginTop: '3px',
+                    color: (details.stock_change || 0) > 0 ? '#16a34a' : ((details.stock_change || 0) < 0 ? '#dc2626' : '#64748b'),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  {(details.stock_change || 0) > 0 ? <TrendingUp size={16} /> : ((details.stock_change || 0) < 0 ? <TrendingDown size={16} /> : null)}
+                  <span>{(details.stock_change || 0) > 0 ? `+${details.stock_change}` : details.stock_change || 0} {details.unit || 'pcs'}</span>
+                </div>
+              </div>
+
+              {/* New / Balance Stock */}
+              <div style={{ background: '#eff6ff', padding: '0.75rem 0.5rem', borderRadius: '8px', border: '1px solid #dbeafe' }}>
+                <div style={{ fontSize: '0.74rem', color: '#1d4ed8', fontWeight: 600 }}>
+                  {language === 'bn' ? 'বর্তমান স্টক' : 'Current Stock'}
+                </div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1d4ed8', marginTop: '3px' }}>
+                  {details.new_stock !== undefined ? `${details.new_stock} ${details.unit || 'pcs'}` : (details.stock !== undefined ? `${details.stock} ${details.unit || 'pcs'}` : '—')}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Field Changes Comparison Table */}
+        {hasChanges && (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+            <div style={{ padding: '0.7rem 1rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Layers size={16} className="text-primary" />
+              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                {language === 'bn' ? 'ক্ষেত্রভিত্তিক পরিবর্তনের অডিট তালিকা' : 'Field Comparison Audit'}
+              </span>
+            </div>
+            <div className="table-responsive" style={{ margin: 0 }}>
+              <table className="data-table" style={{ fontSize: '0.83rem', margin: 0 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th>{language === 'bn' ? 'ফিল্ডের নাম' : 'Field'}</th>
+                    <th>{language === 'bn' ? 'পূর্বের মান' : 'Previous Value'}</th>
+                    <th>{language === 'bn' ? 'নতুন মান' : 'New Value'}</th>
+                    <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'পার্থক্য' : 'Difference'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {details.changes.map((ch, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: 600 }}>{ch.label || ch.field}</td>
+                      <td style={{ color: '#64748b' }}>{ch.old ?? '—'}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{ch.new ?? '—'}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        {ch.diff ? (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              background: String(ch.diff).startsWith('+') ? '#dcfce7' : (String(ch.diff).startsWith('-') ? '#fee2e2' : '#f1f5f9'),
+                              color: String(ch.diff).startsWith('+') ? '#15803d' : (String(ch.diff).startsWith('-') ? '#b91c1c' : '#475569'),
+                            }}
+                          >
+                            {ch.diff}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice / Purchase Items breakdown */}
+        {hasItems && (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+            <div style={{ padding: '0.7rem 1rem', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ShoppingBag size={16} className="text-primary" />
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  {language === 'bn' ? (log.module === 'PURCHASE' ? 'ক্রয়কৃত পণ্যের তালিকা' : 'চালানের পণ্য তালিকা') : (log.module === 'PURCHASE' ? 'Purchased Items List' : 'Invoice Items List')}
+                </span>
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {details.items.length} {language === 'bn' ? 'প্রকার পণ্য' : 'products'} ({details.items.reduce((a, b) => a + (Number(b.qty) || 0), 0)} {language === 'bn' ? 'পিস' : 'pcs'})
+              </span>
+            </div>
+            <div className="table-responsive" style={{ margin: 0 }}>
+              <table className="data-table" style={{ fontSize: '0.83rem', margin: 0 }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th>{language === 'bn' ? 'পণ্যের নাম' : 'Item'}</th>
+                    <th style={{ textAlign: 'center' }}>{language === 'bn' ? 'পরিমাণ' : 'Qty'}</th>
+                    <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'একক মূল্য' : 'Price'}</th>
+                    <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'মোট' : 'Total'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {details.items.map((it, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{it.name}</div>
+                        {it.variant && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{it.variant}</div>}
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: 700 }}>{it.qty}</td>
+                      <td style={{ textAlign: 'right' }}>৳{Number(it.price || 0).toLocaleString()}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>৳{(Number(it.qty || 0) * Number(it.price || 0)).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: '#f8fafc', fontWeight: 700, borderTop: '2px solid #e2e8f0' }}>
+                    <td>{language === 'bn' ? `সর্বমোট: ${details.items.length} প্রকার পণ্য` : `Total: ${details.items.length} products`}</td>
+                    <td style={{ textAlign: 'center', color: 'var(--primary)' }}>
+                      {details.items.reduce((a, b) => a + (Number(b.qty) || 0), 0)}
+                    </td>
+                    <td></td>
+                    <td style={{ textAlign: 'right', color: 'var(--primary)' }}>
+                      ৳{details.items.reduce((a, b) => a + ((Number(b.qty) || 0) * (Number(b.price) || 0)), 0).toLocaleString()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Other metadata attributes */}
+        {remainingKeys.length > 0 && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {language === 'bn' ? 'অন্যান্য সম্পর্কিত তথ্য' : 'Other Attributes'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.65rem' }}>
+              {remainingKeys.map(([k, val]) => (
+                <div key={k} style={{ background: '#ffffff', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                    {k.replace(/_/g, ' ')}
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginTop: '2px', wordBreak: 'break-word' }}>
+                    {typeof val === 'number' && (k.includes('price') || k.includes('amount') || k.includes('total') || k.includes('due') || k.includes('paid'))
+                      ? `৳${val.toLocaleString()}`
+                      : String(val)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Raw JSON viewer */}
+        <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.5rem' }}>
+          <button
+            type="button"
+            onClick={() => setShowRawJson(!showRawJson)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '0.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              padding: '4px 0',
+              fontWeight: 500,
+            }}
+          >
+            <Code size={14} />
+            <span>{showRawJson ? (language === 'bn' ? 'কারিগরি JSON ডেটা লুকান' : 'Hide Raw JSON') : (language === 'bn' ? 'কারিগরি JSON ডেটা দেখুন' : 'View Raw JSON Data')}</span>
+            {showRawJson ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {showRawJson && (
+            <pre
+              style={{
+                background: '#0f172a',
+                color: '#38bdf8',
+                padding: '0.85rem 1rem',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                overflowX: 'auto',
+                maxHeight: '220px',
+                marginTop: '0.5rem',
+                lineHeight: 1.4,
+              }}
+            >
+              {JSON.stringify(details, null, 2)}
+            </pre>
+          )}
+        </div>
+      </div>
+    );
   };
 
   if (user?.role !== 'Admin') {
@@ -613,7 +917,109 @@ const ActivityLog = () => {
 
                       {/* Description */}
                       <td style={{ fontSize: '0.88rem', lineHeight: 1.4 }}>
-                        <span>{log.description}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span>{log.description}</span>
+                          {/* Rich inline details indicators */}
+                          {log.details && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                              {log.details.stock_change !== undefined && log.details.stock_change !== 0 && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 700,
+                                    background: log.details.stock_change > 0 ? '#dcfce7' : '#fee2e2',
+                                    color: log.details.stock_change > 0 ? '#15803d' : '#b91c1c',
+                                    border: `1px solid ${log.details.stock_change > 0 ? '#bbf7d0' : '#fecaca'}`,
+                                  }}
+                                >
+                                  {log.details.stock_change > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                                  <span>
+                                    {log.details.stock_change > 0 ? `+${log.details.stock_change}` : log.details.stock_change} {log.details.unit || 'pcs'}
+                                  </span>
+                                </span>
+                              )}
+                              {log.details.changes && log.details.changes.length > 0 && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    background: '#f1f5f9',
+                                    color: '#475569',
+                                    border: '1px solid #e2e8f0',
+                                  }}
+                                >
+                                  <Layers size={11} />
+                                  <span>{log.details.changes.length}টি ফিল্ড পরিবর্তিত</span>
+                                </span>
+                              )}
+                              {log.details.invoice_number && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    background: '#eff6ff',
+                                    color: '#1d4ed8',
+                                    border: '1px solid #bfdbfe',
+                                  }}
+                                >
+                                  #{log.details.invoice_number}
+                                </span>
+                              )}
+                              {log.details.purchase_number && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    background: '#fef3c7',
+                                    color: '#b45309',
+                                    border: '1px solid #fde68a',
+                                  }}
+                                >
+                                  #{log.details.purchase_number}
+                                </span>
+                              )}
+                              {(log.details.total_quantity !== undefined || (log.details.items && log.details.items.length > 0)) && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    background: '#f0fdf4',
+                                    color: '#15803d',
+                                    border: '1px solid #bbf7d0',
+                                  }}
+                                >
+                                  <Package size={11} />
+                                  <span>
+                                    {log.details.items_count || (log.details.items || []).length} প্রকার ({log.details.total_quantity || (log.details.items || []).reduce((a, b) => a + (Number(b.qty) || 0), 0)} পিস)
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* Details button */}
@@ -696,71 +1102,99 @@ const ActivityLog = () => {
         <div className="drawer-overlay" style={{ zIndex: 1100 }}>
           <div
             className="drawer animate-slide-up"
-            style={{ maxWidth: '520px', margin: 'auto', borderRadius: '12px', overflow: 'hidden' }}
+            style={{
+              maxWidth: '640px',
+              width: '92%',
+              margin: 'auto',
+              borderRadius: '14px',
+              overflow: 'hidden',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
           >
-            <div className="drawer-header">
+            <div className="drawer-header" style={{ padding: '1rem 1.25rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Info size={20} className="text-primary" />
                 <h3 style={{ margin: 0 }}>
                   {language === 'bn' ? 'অ্যাক্টিভিটি বিস্তারিত বিবরণ' : 'Activity Log Details'}
                 </h3>
               </div>
-              <button className="btn-icon" onClick={() => setSelectedLog(null)}>
+              <button
+                className="btn-icon"
+                onClick={() => {
+                  setSelectedLog(null);
+                  setShowRawJson(false);
+                }}
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="drawer-body" style={{ padding: '1.25rem' }}>
-              <div style={{ marginBottom: '1rem', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {language === 'bn' ? 'কার্যকলাপ' : 'Activity'}
+            <div className="drawer-body" style={{ padding: '1.25rem', overflowY: 'auto' }}>
+              {/* Activity Description Header */}
+              <div style={{ marginBottom: '1rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {language === 'bn' ? 'কার্যকলাপের বিবরণ' : 'Activity Summary'}
                 </div>
-                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.96rem', marginTop: '4px', lineHeight: 1.45, color: 'var(--text-main)' }}>
                   {selectedLog.description}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '0.5rem' }}>
+              {/* High-level metadata */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '0.5rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.75rem 1rem' }}>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'ব্যবহারকারী' : 'User'}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: '2px' }}>
                     {selectedLog.user_name || 'System'}
-                    {selectedLog.user_role ? ` (${selectedLog.user_role})` : ''}
                   </div>
+                  {selectedLog.user_role && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{selectedLog.user_role}</div>
+                  )}
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'মডিউল' : 'Module'}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{selectedLog.module}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: '2px' }}>{selectedLog.module}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'অ্যাকশন' : 'Action'}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{selectedLog.action}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: '2px' }}>{selectedLog.action}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'তারিখ ও সময়' : 'Time'}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatLogTime(selectedLog.created_at)}</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.84rem', marginTop: '2px' }}>{formatLogTime(selectedLog.created_at)}</div>
                 </div>
                 {selectedLog.ip_address && (
                   <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {language === 'bn' ? 'আইপি অ্যাড্রেস' : 'IP Address'}
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {language === 'bn' ? 'আইপি' : 'IP Address'}
                     </div>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{selectedLog.ip_address}</div>
+                    <div style={{ fontWeight: 600, fontSize: '0.82rem', marginTop: '2px' }}>{selectedLog.ip_address}</div>
                   </div>
                 )}
               </div>
+
+              {/* Rich Details Section */}
+              {renderLogDetails(selectedLog)}
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'flex-end' }}>
-              <button className="btn-primary" onClick={() => setSelectedLog(null)}>
+            <div className="drawer-footer" style={{ justifyContent: 'flex-end', padding: '0.85rem 1.25rem', borderTop: '1px solid #e2e8f0' }}>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  setSelectedLog(null);
+                  setShowRawJson(false);
+                }}
+              >
                 {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
               </button>
             </div>
