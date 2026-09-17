@@ -60,9 +60,24 @@ const SHEET_STYLES = `
 const THERMAL_STYLES = `
   @page {
     size: 80mm auto;
-    margin: 2mm 1mm;
+    margin: 0 !important;
+  }
+  @page :first {
+    margin-top: 0 !important;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
   }
   @media print {
+    @page {
+      size: 80mm auto;
+      margin: 0 !important;
+    }
+    @page :first {
+      margin-top: 0 !important;
+    }
     html {
       width: 100% !important;
       margin: 0 !important;
@@ -72,7 +87,7 @@ const THERMAL_STYLES = `
       width: 100% !important;
       max-width: 78mm !important;
       margin: 0 auto !important;
-      padding: 0 1mm !important;
+      padding: 0 !important;
       background: #fff !important;
       color: #000 !important;
       -webkit-print-color-adjust: exact !important;
@@ -88,6 +103,10 @@ const THERMAL_STYLES = `
     .thermal-wrapper, .thermal-wrapper * {
       color: #000000 !important;
     }
+    .thermal-receipt {
+      margin: 0 auto !important;
+      padding-top: 0 !important;
+    }
   }
   * {
     box-sizing: border-box !important;
@@ -99,7 +118,7 @@ const THERMAL_STYLES = `
     width: 100%;
     max-width: 78mm;
     margin: 0 auto;
-    padding: 1mm 1mm;
+    padding: 0 !important;
     background: #fff;
     color: #000;
     font-size: 11px;
@@ -139,7 +158,7 @@ export const printHtml = (html, title = 'Print', options = {}) => new Promise((r
 
   const doc = iframe.contentWindow.document;
   doc.open();
-  doc.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${styles}</style></head><body>${content}</body></html>`);
+  doc.write(`<!DOCTYPE html><html><head><title>${isThermal ? '' : title}</title><style>${styles}</style></head><body>${content}</body></html>`);
   doc.close();
 
   // Let the document lay out before the dialog measures the page.

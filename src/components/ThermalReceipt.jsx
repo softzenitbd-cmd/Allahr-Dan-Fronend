@@ -67,7 +67,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
         width: '100%',
         maxWidth: '290px',
         margin: '0 auto',
-        padding: '4px 2px',
+        padding: '0 2px 4px 2px',
         background: '#ffffff',
         color: '#000000',
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
@@ -78,25 +78,25 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
       }}
     >
       {/* Safe margin container */}
-      <div style={{ width: '100%', boxSizing: 'border-box', padding: '0', color: '#000000' }}>
+      <div style={{ width: '100%', boxSizing: 'border-box', padding: '0', margin: '0', color: '#000000' }}>
 
         {/* ---- Header & Logo ---- */}
-        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+        <div style={{ textAlign: 'center', margin: '0 0 3px 0', padding: '0' }}>
           <img
             src={shopProfile?.logo || defaultLogo}
             alt="Logo"
             style={{
-              maxHeight: '125px',
-              maxWidth: '240px',
+              maxHeight: '65px',
+              maxWidth: '150px',
               width: 'auto',
               height: 'auto',
               objectFit: 'contain',
-              margin: '0 auto 6px auto',
+              margin: '0 auto 2px auto',
               display: 'block',
               filter: 'grayscale(100%) contrast(160%)',
             }}
           />
-          <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.01em', lineHeight: 1.2, color: '#000000' }}>
+          <div style={{ fontSize: '15px', fontWeight: 900, letterSpacing: '0.01em', lineHeight: 1.2, color: '#000000' }}>
             {shopName}
           </div>
           {shopProfile?.tagline && (
