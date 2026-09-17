@@ -10,7 +10,11 @@ import './Dashboard.css';
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const { user, sales, expenses, inventory, customers, suppliers, language, dashboardSummary, cashBalance, bankBalance, dashboardCardColors, rolePermissions } = useStore();
+  const {
+    user, sales, expenses, inventory, customers, suppliers, language,
+    dashboardSummary, cashBalance, bankBalance, dashboardCardColors, rolePermissions,
+    refresh
+  } = useStore();
   const isAdmin = user?.role === 'Admin';
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -20,6 +24,13 @@ const Dashboard = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Keep dashboard metrics fresh from the backend balance sheet / day book
+  useEffect(() => {
+    if (typeof refresh === 'function') {
+      refresh('dashboard');
+    }
+  }, [refresh]);
 
   // Calculate dynamic stats
   const todayStr = new Date().toISOString().split('T')[0];
@@ -33,15 +44,34 @@ const Dashboard = () => {
   const dailyExpenses = expenses.filter(e => e.date && e.date.startsWith(todayStr)).reduce((acc, exp) => acc + exp.amount, 0);
   const monthlyExpenses = expenses.filter(e => e.date && e.date.startsWith(currentMonthStr)).reduce((acc, exp) => acc + exp.amount, 0);
 
-  // Profit/Loss
-  const dailyProfit = dailySales - dailyExpenses;
-  const monthlyProfit = monthlySales - monthlyExpenses;
+  // Helper to calculate total COGS (Cost of Goods Sold) for a sale
+  const calcSaleCogs = (sale) => {
+    if (!sale?.items || !Array.isArray(sale.items)) return 0;
+    return sale.items.reduce((sum, it) => {
+      const q = Number(it.quantity) || 1;
+      let cost = Number(it.cost_price ?? it.costPrice);
+      if (isNaN(cost) || cost <= 0) {
+        const prod = (inventory || []).find(p => p.id === it.id || p.product_code === it.id || p.product_code === it.product_code || p.name === it.name);
+        cost = Number(prod?.cost_price ?? prod?.costPrice ?? 0);
+      }
+      return sum + (cost * q);
+    }, 0);
+  };
 
-  // The money the shop actually holds. This card used to read sales minus
-  // expenses, which left purchases out of it entirely and ignored the opening
-  // balances, so a card labelled "balance" showed something that was not one.
-  // Cash and bank are now tracked for real, so the card can just say what they
-  // add up to.
+  const dailyCogs = sales.filter(s => s.date && s.date.startsWith(todayStr)).reduce((acc, sale) => acc + calcSaleCogs(sale), 0);
+  const monthlyCogs = sales.filter(s => s.date && s.date.startsWith(currentMonthStr)).reduce((acc, sale) => acc + calcSaleCogs(sale), 0);
+
+  // Profit/Loss: (Sales - COGS) - Operating Expenses
+  // Matches DayBook & BalanceSheet calculations exactly
+  const dailyProfit = dashboardSummary?.dailyProfit !== undefined
+    ? Number(dashboardSummary.dailyProfit)
+    : (dailySales - dailyCogs - dailyExpenses);
+
+  const monthlyProfit = dashboardSummary?.monthlyProfit !== undefined
+    ? Number(dashboardSummary.monthlyProfit)
+    : (monthlySales - monthlyCogs - monthlyExpenses);
+
+  // The money the shop actually holds.
   const totalBalance = (cashBalance || 0) + (bankBalance || 0);
 
   const totalInventoryValue = inventory.reduce((acc, item) => acc + (item.stock * item.price), 0);
@@ -132,11 +162,14 @@ const Dashboard = () => {
     const dayExpenses = (expenses || [])
       .filter(e => e.date && e.date.startsWith(dStr))
       .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+    const dayCogs = (sales || [])
+      .filter(s => s.date && s.date.startsWith(dStr))
+      .reduce((acc, s) => acc + calcSaleCogs(s), 0);
     computedWeeklyChartData.push({
       name: dayName,
       date: dStr,
       sales: daySales,
-      profit: daySales - dayExpenses
+      profit: (daySales - dayCogs) - dayExpenses
     });
   }
 
@@ -160,10 +193,17 @@ const Dashboard = () => {
         return eDate >= startD.toISOString().split('T')[0] && eDate <= endD.toISOString().split('T')[0];
       })
       .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+    const periodCogs = (sales || [])
+      .filter(s => {
+        if (!s.date) return false;
+        const sDate = s.date.split('T')[0];
+        return sDate >= startD.toISOString().split('T')[0] && sDate <= endD.toISOString().split('T')[0];
+      })
+      .reduce((acc, s) => acc + calcSaleCogs(s), 0);
     computedMonthlyChartData.push({
       name: `Week ${4 - i}`,
       sales: periodSales,
-      profit: periodSales - periodExpenses
+      profit: (periodSales - periodCogs) - periodExpenses
     });
   }
 
