@@ -40,7 +40,7 @@ import ChangePasswordModal from './ChangePasswordModal';
 
 // Route-to-Data requirements mapping for lazy-loading
 const ROUTE_SLICES = {
-  '/': ['dashboard', 'sales', 'expenses', 'treasury', 'inventory', 'customers', 'suppliers'],
+  '/': ['dashboard', 'sales', 'expenses', 'treasury', 'inventory', 'customers', 'suppliers', 'staff', 'payrolls'],
   '/pos': ['inventory', 'customers', 'drafts', 'staff', 'sales'],
   '/pos-history': ['sales', 'customers', 'settlements', 'treasury'],
   // The day book fetches its own figures; the slices are for acting on rows.
@@ -56,7 +56,7 @@ const ROUTE_SLICES = {
   '/accounts': ['treasury'],
   // The balance sheet fetches its own figures for the chosen range.
   '/balance-sheet': [],
-  '/ledger': ['customers', 'suppliers', 'staff'],
+  '/ledger': ['customers', 'suppliers', 'staff', 'expenses', 'payrolls'],
   '/reports': ['dashboard', 'sales', 'inventory', 'purchases', 'expenses', 'customers', 'suppliers', 'staff', 'payrolls', 'returns', 'attendance', 'leaves', 'treasury', 'settlements'],
   '/hr': ['staff', 'attendance', 'leaves', 'payrolls'],
   '/sms': ['sms', 'customers'],
@@ -92,8 +92,20 @@ const Layout = () => {
       useStore.getState().setIsOnline(false);
     };
 
+    const handleStorage = (e) => {
+      if (e.key === 'allha_role_permissions_sync' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed?.next) {
+            useStore.getState().setRolePermissions(parsed.next);
+          }
+        } catch {}
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('storage', handleStorage);
 
     // If online on initial load and offline items exist, trigger auto-sync
     if (navigator.onLine && (useStore.getState().offlineSalesQueue || []).length > 0) {
@@ -103,6 +115,7 @@ const Layout = () => {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -122,11 +135,8 @@ const Layout = () => {
     const cleanPath = location.pathname.replace(/\/$/, '') || '/';
     const slices = ROUTE_SLICES[cleanPath] || [];
     try {
-      if (slices.length > 0) {
-        await refresh(...slices);
-      } else {
-        await refresh();
-      }
+      const fetchList = Array.from(new Set([...slices, 'profile']));
+      await refresh(...fetchList);
       toast.info(language === 'bn' ? 'তথ্য রিফ্রেশ হয়েছে' : 'Data refreshed');
     } catch {
       toast.error(language === 'bn' ? 'রিফ্রেশ ব্যর্থ হয়েছে' : 'Failed to refresh data');
@@ -154,9 +164,13 @@ const Layout = () => {
     { name: language === 'bn' ? 'স্টক লগ' : 'Stock Log', path: '/stock-log', icon: ClipboardList },
   ].filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 
+  const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
+
+  const isOnlyPersonalLedger = isSalesman && !rolePermissions?.Salesman?.some((p) => ['/accounts', '/balance-sheet', '/reports', '/hr', '/settings'].includes(p));
+
   const adminServices = [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },
-    { name: language === 'bn' ? 'খাতা (লেজার)' : 'Ledger', icon: BookOpen, path: '/ledger' },
+    { name: language === 'bn' ? (isOnlyPersonalLedger ? 'আমার হিসাব' : 'খাতা (লেজার)') : (isOnlyPersonalLedger ? 'My Ledger' : 'Ledger'), icon: BookOpen, path: '/ledger' },
     { name: language === 'bn' ? 'ব্যালেন্স শিট' : 'Balance Sheet', icon: Scale, path: '/balance-sheet' },
     { name: language === 'bn' ? 'রিপোর্ট' : 'Reports', icon: FileText, path: '/reports' },
     { name: language === 'bn' ? 'কর্মী' : 'HR', icon: Calendar, path: '/hr' },
@@ -170,7 +184,7 @@ const Layout = () => {
   // short lists, and the admin half is visibly a different kind of work.
   const navGroups = [
     { key: 'ops', label: language === 'bn' ? 'দৈনন্দিন' : 'Operations', items: allServices },
-    { key: 'admin', label: language === 'bn' ? 'ব্যবস্থাপনা' : 'Management', items: adminServices },
+    { key: 'admin', label: language === 'bn' ? (isOnlyPersonalLedger ? 'ব্যক্তিগত' : 'ব্যবস্থাপনা') : (isOnlyPersonalLedger ? 'Personal' : 'Management'), items: adminServices },
   ].filter((group) => group.items.length > 0);
 
   return (

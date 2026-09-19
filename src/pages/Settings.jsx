@@ -110,25 +110,32 @@ const Settings = () => {
 
   const handleToggleMenu = (path) => {
     if (selectedRole === 'Admin') return;
-    setSelectedMenuPaths((prev) =>
-      prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]
-    );
+    const nextPaths = selectedMenuPaths.includes(path)
+      ? selectedMenuPaths.filter((p) => p !== path)
+      : [...selectedMenuPaths, path];
+    setSelectedMenuPaths(nextPaths);
+    updateRolePermissions(selectedRole, nextPaths);
   };
 
   const handleSelectAll = () => {
     if (selectedRole === 'Admin') return;
     setSelectedMenuPaths(ALL_MENU_PATHS);
+    updateRolePermissions(selectedRole, ALL_MENU_PATHS);
   };
 
   const handleDeselectAll = () => {
     if (selectedRole === 'Admin') return;
-    setSelectedMenuPaths(['/']);
+    const minPaths = ['/'];
+    setSelectedMenuPaths(minPaths);
+    updateRolePermissions(selectedRole, minPaths);
   };
 
   const handleResetRoleToDefault = () => {
     if (selectedRole === 'Admin') return;
     const defaultPaths = DEFAULT_ROLE_PERMISSIONS[selectedRole] || ['/'];
     setSelectedMenuPaths(defaultPaths);
+    updateRolePermissions(selectedRole, defaultPaths);
+    toast.info(bn ? `${selectedRole} রোলের পারমিশন ডিফল্টে ফেরানো হয়েছে` : `${selectedRole} reset to default permissions`);
   };
 
   const handleSavePermissions = async () => {
@@ -556,6 +563,16 @@ const Settings = () => {
               </button>
               <button type="button" className="btn-outline" onClick={handleResetRoleToDefault} style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}>
                 <RotateCcw size={13} /> {bn ? 'ডিফল্টে ফেরান' : 'Reset'}
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSavePermissions}
+                disabled={savingPermissions}
+                style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: 'auto' }}
+              >
+                <Save size={13} />
+                {savingPermissions ? (bn ? 'সংরক্ষণ হচ্ছে…' : 'Saving…') : (bn ? 'পারমিশন সেভ করুন' : 'Save Permissions')}
               </button>
             </div>
           </div>

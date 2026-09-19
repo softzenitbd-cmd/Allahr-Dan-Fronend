@@ -252,6 +252,18 @@ const useStore = create(
           })),
           sms: () => SMSService.balance().then((r) => ({ smsBalance: r.smsBalance ?? r.balance ?? 0 })),
           dashboard: () => ReportService.summary().then((r) => ({ dashboardSummary: r })),
+          profile: () => CoreService.shopProfile().then((profile) => {
+            const sName = profile?.shop_name || DEFAULT_SHOP_NAME;
+            return {
+              shopProfile: {
+                ...profile,
+                shop_name: sName,
+                address: profile?.address || DEFAULT_SHOP_ADDRESS,
+                phone: profile?.phone || DEFAULT_SHOP_PHONE,
+              },
+              ...(profile?.role_permissions ? { rolePermissions: { ...DEFAULT_ROLE_PERMISSIONS, ...profile.role_permissions } } : {}),
+            };
+          }),
         };
 
         const flatSlices = slices.flat().filter(Boolean);
@@ -368,25 +380,26 @@ const useStore = create(
         const profileLast = timestamps._shopProfile;
         const settingsLast = timestamps._userSettings;
 
-        // Profile: only fetch if missing or older than 10 minutes
-        if (!get().shopProfile || !profileLast || (now - profileLast) > 10 * 60 * 1000) {
-          try {
-            const profile = await CoreService.shopProfile();
-            let sName = profile?.shop_name || DEFAULT_SHOP_NAME;
-            if (!sName || sName.toLowerCase() === 'allah dan gents point' || sName === 'Allah Dan Gents Point') {
-              sName = 'Allahr Dan Gents Point';
-            }
-            set((state) => ({
-              shopProfile: {
-                ...profile,
-                shop_name: sName,
-                address: profile?.address || DEFAULT_SHOP_ADDRESS,
-                phone: profile?.phone || DEFAULT_SHOP_PHONE,
-              },
-              _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
-            }));
-          } catch {}
-        }
+        // Profile & dynamic role permissions: ALWAYS fetch fresh on session hydrate
+        try {
+          const profile = await CoreService.shopProfile();
+          let sName = profile?.shop_name || DEFAULT_SHOP_NAME;
+          if (!sName || sName.toLowerCase() === 'allah dan gents point' || sName === 'Allah Dan Gents Point') {
+            sName = 'Allahr Dan Gents Point';
+          }
+          set((state) => ({
+            shopProfile: {
+              ...profile,
+              shop_name: sName,
+              address: profile?.address || DEFAULT_SHOP_ADDRESS,
+              phone: profile?.phone || DEFAULT_SHOP_PHONE,
+            },
+            rolePermissions: (profile?.role_permissions && Object.keys(profile.role_permissions).length > 0)
+              ? { ...DEFAULT_ROLE_PERMISSIONS, ...profile.role_permissions }
+              : (state.rolePermissions || DEFAULT_ROLE_PERMISSIONS),
+            _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
+          }));
+        } catch {}
 
         // Settings: only fetch if missing or older than 10 minutes
         if (!settingsLast || (now - settingsLast) > 10 * 60 * 1000) {
@@ -498,26 +511,39 @@ const useStore = create(
       setRolePermissions: (rolePermissions) => set({ rolePermissions }),
 
       updateRolePermissions: async (role, allowedPaths) => {
+        const current = get().rolePermissions || DEFAULT_ROLE_PERMISSIONS;
         const next = {
-          ...(get().rolePermissions || DEFAULT_ROLE_PERMISSIONS),
+          ...current,
           [role]: allowedPaths,
         };
         // Admin must always have access to everything
         next.Admin = ALL_MENU_PATHS;
         set({ rolePermissions: next });
 
-        // Optionally persist to backend settings if supported
+        // Broadcast to other open tabs in the same browser
         try {
-          if (CoreService?.saveUserSettings) {
-            await CoreService.saveUserSettings({ role_permissions: next });
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('allha_role_permissions_sync', JSON.stringify({ next, ts: Date.now() }));
           }
-        } catch {
-          // Local zustand persistence remains authoritative
-        }
+        } catch {}
+
+        // Persist to backend ShopProfile so EVERY user & device gets it
+        try {
+          if (CoreService?.saveShopProfile) {
+            await CoreService.saveShopProfile({ role_permissions: next });
+          }
+        } catch {}
         return { ok: true, rolePermissions: next };
       },
 
-      resetRolePermissions: () => set({ rolePermissions: DEFAULT_ROLE_PERMISSIONS }),
+      resetRolePermissions: async () => {
+        set({ rolePermissions: DEFAULT_ROLE_PERMISSIONS });
+        try {
+          if (CoreService?.saveShopProfile) {
+            await CoreService.saveShopProfile({ role_permissions: DEFAULT_ROLE_PERMISSIONS });
+          }
+        } catch {}
+      },
 
       // ---------------------------------------------------------------- //
       // Cart. Purely local until checkout.

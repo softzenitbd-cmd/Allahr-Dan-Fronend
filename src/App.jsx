@@ -65,6 +65,11 @@ function App() {
   // the server once the persisted user is known.
   useEffect(() => {
     if (user) hydrate();
+    const onFocus = () => {
+      if (user) hydrate();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [user, hydrate]);
 
   useEffect(() => {
@@ -142,8 +147,8 @@ function App() {
             <Route path="ledger" element={<ProtectedRoute path="/ledger"><Ledger /></ProtectedRoute>} />
             <Route path="hr" element={<ProtectedRoute path="/hr"><HR /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute path="/reports"><Reports /></ProtectedRoute>} />
-            <Route path="activity-log" element={<ProtectedRoute path="/activity-log" requiredRole="Admin"><ActivityLog /></ProtectedRoute>} />
-            <Route path="settings" element={<ProtectedRoute path="/settings" requiredRole="Admin"><Settings /></ProtectedRoute>} />
+            <Route path="activity-log" element={<ProtectedRoute path="/activity-log"><ActivityLog /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute path="/settings"><Settings /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Suspense>

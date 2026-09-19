@@ -13,8 +13,10 @@ const Dashboard = () => {
   const {
     user, sales, expenses, inventory, customers, suppliers, language,
     dashboardSummary, cashBalance, bankBalance, dashboardCardColors, rolePermissions,
+    staff, ensureLoaded,
     refresh
   } = useStore();
+  const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
   const isAdmin = user?.role === 'Admin';
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -30,7 +32,28 @@ const Dashboard = () => {
     if (typeof refresh === 'function') {
       refresh('dashboard');
     }
-  }, [refresh]);
+    if (isSalesman && typeof ensureLoaded === 'function') {
+      ensureLoaded('staff', 'payrolls');
+    }
+  }, [refresh, isSalesman, ensureLoaded]);
+
+  // Match logged-in salesman to their staff profile
+  const currentStaff = React.useMemo(() => {
+    if (!user || !isSalesman) return null;
+    const uName = String(user.username || '').toLowerCase();
+    const uFullName = String(user.name || '').trim().toLowerCase();
+    const uId = String(user.id || '');
+    return (staff || []).find((s) => {
+      const sUser = String(s.username || '').toLowerCase();
+      const sCode = String(s.staff_code || '').toLowerCase();
+      const sName = String(s.name || '').trim().toLowerCase();
+      const sId = String(s.id || '');
+      return (sUser && sUser === uName) ||
+             (sCode && sCode === uName) ||
+             (sName && uFullName && sName === uFullName) ||
+             (sId && uId && sId === uId);
+    }) || null;
+  }, [user, staff, isSalesman]);
 
   // Calculate dynamic stats
   const todayStr = new Date().toISOString().split('T')[0];
@@ -149,67 +172,88 @@ const Dashboard = () => {
   const allServices = rawServices.filter((item) => hasMenuAccess(user, item.path, rolePermissions));
 
   // Dynamic Chart Data Calculation (Zero Mock Data)
-  const computedWeeklyChartData = [];
-  const todayDate = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(todayDate);
-    d.setDate(todayDate.getDate() - i);
-    const dStr = d.toISOString().split('T')[0];
-    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const daySales = (sales || [])
-      .filter(s => s.date && s.date.startsWith(dStr))
-      .reduce((acc, s) => acc + (Number(s.total) || 0), 0);
-    const dayExpenses = (expenses || [])
-      .filter(e => e.date && e.date.startsWith(dStr))
-      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-    const dayCogs = (sales || [])
-      .filter(s => s.date && s.date.startsWith(dStr))
-      .reduce((acc, s) => acc + calcSaleCogs(s), 0);
-    computedWeeklyChartData.push({
-      name: dayName,
-      date: dStr,
-      sales: daySales,
-      profit: (daySales - dayCogs) - dayExpenses
-    });
-  }
+  const computedWeeklyChartData = React.useMemo(() => {
+    const list = [];
+    const todayDate = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(todayDate);
+      d.setDate(todayDate.getDate() - i);
+      const dStr = d.toISOString().split('T')[0];
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const daySales = (sales || [])
+        .filter(s => s.date && s.date.startsWith(dStr))
+        .reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+      const dayExpenses = (expenses || [])
+        .filter(e => e.date && e.date.startsWith(dStr))
+        .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+      const dayCogs = (sales || [])
+        .filter(s => s.date && s.date.startsWith(dStr))
+        .reduce((acc, s) => acc + calcSaleCogs(s), 0);
+      list.push({
+        name: dayName,
+        date: dStr,
+        sales: daySales,
+        profit: (daySales - dayCogs) - dayExpenses
+      });
+    }
+    return list;
+  }, [sales, expenses]);
 
-  const computedMonthlyChartData = [];
-  for (let i = 3; i >= 0; i--) {
-    const startD = new Date(todayDate);
-    startD.setDate(todayDate.getDate() - (i * 7 + 6));
-    const endD = new Date(todayDate);
-    endD.setDate(todayDate.getDate() - (i * 7));
-    const periodSales = (sales || [])
-      .filter(s => {
-        if (!s.date) return false;
-        const sDate = s.date.split('T')[0];
-        return sDate >= startD.toISOString().split('T')[0] && sDate <= endD.toISOString().split('T')[0];
-      })
-      .reduce((acc, s) => acc + (Number(s.total) || 0), 0);
-    const periodExpenses = (expenses || [])
-      .filter(e => {
-        if (!e.date) return false;
-        const eDate = e.date.split('T')[0];
-        return eDate >= startD.toISOString().split('T')[0] && eDate <= endD.toISOString().split('T')[0];
-      })
-      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-    const periodCogs = (sales || [])
-      .filter(s => {
-        if (!s.date) return false;
-        const sDate = s.date.split('T')[0];
-        return sDate >= startD.toISOString().split('T')[0] && sDate <= endD.toISOString().split('T')[0];
-      })
-      .reduce((acc, s) => acc + calcSaleCogs(s), 0);
-    computedMonthlyChartData.push({
-      name: `Week ${4 - i}`,
-      sales: periodSales,
-      profit: (periodSales - periodCogs) - periodExpenses
-    });
-  }
+  const computedMonthlyChartData = React.useMemo(() => {
+    const list = [];
+    const todayDate = new Date();
+    for (let i = 3; i >= 0; i--) {
+      const startD = new Date(todayDate);
+      startD.setDate(todayDate.getDate() - (i * 7 + 6));
+      const endD = new Date(todayDate);
+      endD.setDate(todayDate.getDate() - (i * 7));
+      const periodSales = (sales || [])
+        .filter(s => {
+          if (!s.date) return false;
+          const sDate = s.date.split('T')[0];
+          return sDate >= startD.toISOString().split('T')[0] && sDate <= endD.toISOString().split('T')[0];
+        })
+        .reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+      const periodExpenses = (expenses || [])
+        .filter(e => {
+          if (!e.date) return false;
+          const eDate = e.date.split('T')[0];
+          return eDate >= startD.toISOString().split('T')[0] && eDate <= endD.toISOString().split('T')[0];
+        })
+        .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+      const periodCogs = (sales || [])
+        .filter(s => {
+          if (!s.date) return false;
+          const sDate = s.date.split('T')[0];
+          return sDate >= startD.toISOString().split('T')[0] && sDate <= endD.toISOString().split('T')[0];
+        })
+        .reduce((acc, s) => acc + calcSaleCogs(s), 0);
+      list.push({
+        name: `Week ${4 - i}`,
+        sales: periodSales,
+        profit: (periodSales - periodCogs) - periodExpenses
+      });
+    }
+    return list;
+  }, [sales, expenses]);
 
-  const activeChartData = chartTimeframe === 'Weekly'
-    ? (dashboardSummary?.chartData && dashboardSummary.chartData.length > 0 ? dashboardSummary.chartData : computedWeeklyChartData)
-    : computedMonthlyChartData;
+  const activeChartData = chartTimeframe === 'Weekly' ? computedWeeklyChartData : computedMonthlyChartData;
+
+  const myPersonalSales = React.useMemo(() => {
+    if (!currentStaff) return { today: 0, total: 0, count: 0 };
+    const sId = String(currentStaff.staff_code || currentStaff.id || user?.username || '').toLowerCase();
+    const sName = String(currentStaff.name || user?.name || '').trim().toLowerCase();
+    const mySales = (sales || []).filter((s) => {
+      const invSid = String(s.salesman_id || s.salesmanId || '').toLowerCase();
+      const invSname = String(s.salesman_name || s.salesmanName || '').trim().toLowerCase();
+      return (invSid && invSid === sId) || (invSname && invSname === sName);
+    });
+    const today = mySales
+      .filter((s) => s.date && String(s.date).startsWith(todayStr))
+      .reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+    const total = mySales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+    return { today, total, count: mySales.length };
+  }, [currentStaff, sales, todayStr, user]);
 
   return (
     <div className="dashboard-page animate-fade-in">
@@ -237,6 +281,94 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Salesman Personal Salary & Due Banner */}
+      {isSalesman && currentStaff && (
+        <div className="card mb-6" style={{
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+          color: '#fff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '1.25rem 1.5rem',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: '50%',
+                background: 'var(--primary)', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.2rem', fontWeight: 800
+              }}>
+                {(currentStaff.name || user?.name || 'S')[0]?.toUpperCase()}
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', fontWeight: 700 }}>
+                  {language === 'bn' ? `স্বাগতম, ${currentStaff.name}` : `Welcome, ${currentStaff.name}`}
+                </h2>
+                <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 2 }}>
+                  {language === 'bn' ? 'সেলসম্যান ব্যক্তিগত হিসাব ও বেতন বিবরণী' : 'Personal Salary & Due Overview'} · {currentStaff.staff_code || currentStaff.id}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigate('/ledger')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 18px', fontSize: '0.875rem' }}
+            >
+              <BookOpen size={17} />
+              {language === 'bn' ? 'আমার সম্পূর্ণ খাতা ও বিবরণী' : 'View My Full Ledger'}
+            </button>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+            gap: '1rem',
+            marginTop: '1.25rem',
+            paddingTop: '1.25rem',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.85rem 1rem', borderRadius: '8px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                {language === 'bn' ? 'মূল বেতন' : 'Base Salary'}
+              </div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#38bdf8', marginTop: 4 }}>
+                ৳{(Number(currentStaff.base_salary) || 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.85rem 1rem', borderRadius: '8px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                {language === 'bn' ? 'দোকানকে দেনা (বকেয়া)' : 'Current Due (Owed)'}
+              </div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700, color: (Number(currentStaff.due) || 0) > 0 ? '#f87171' : '#4ade80', marginTop: 4 }}>
+                ৳{(Number(currentStaff.due) || 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.85rem 1rem', borderRadius: '8px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                {language === 'bn' ? 'আজকের নিজস্ব বিক্রয়' : "Today's Personal Sales"}
+              </div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#facc15', marginTop: 4 }}>
+                ৳{myPersonalSales.today.toLocaleString()}
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.85rem 1rem', borderRadius: '8px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                {language === 'bn' ? 'মোট নিজস্ব বিক্রয়' : 'Total Personal Sales'}
+              </div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#4ade80', marginTop: 4 }}>
+                ৳{myPersonalSales.total.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick services */}
       <div className="card mb-6">

@@ -198,7 +198,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     '/reports',
     '/hr',
   ],
-  Salesman: ['/', '/pos', '/pos-history', '/customers', '/returns'],
+  Salesman: ['/', '/pos', '/pos-history', '/inventory', '/returns', '/customers', '/ledger'],
   Delivery: ['/', '/returns', '/customers'],
   Cashier: ['/', '/day-book', '/pos', '/pos-history', '/customers', '/expenses'],
 };
@@ -207,12 +207,20 @@ export const DEFAULT_ROLE_PERMISSIONS = {
  * Normalizes and returns role permissions, merging defaults with any custom overrides.
  */
 export const getEffectivePermissions = (customPermissions = {}) => {
-  return {
-    ...DEFAULT_ROLE_PERMISSIONS,
-    ...customPermissions,
-    // Admin always retains full access
-    Admin: ALL_MENU_PATHS,
-  };
+  const merged = { ...DEFAULT_ROLE_PERMISSIONS };
+  if (customPermissions && typeof customPermissions === 'object') {
+    Object.keys(customPermissions).forEach((role) => {
+      if (Array.isArray(customPermissions[role])) {
+        if (String(role).toLowerCase() === 'admin') {
+          merged.Admin = ALL_MENU_PATHS;
+        } else {
+          merged[role] = customPermissions[role];
+        }
+      }
+    });
+  }
+  merged.Admin = ALL_MENU_PATHS;
+  return merged;
 };
 
 /**
@@ -221,14 +229,26 @@ export const getEffectivePermissions = (customPermissions = {}) => {
 export const hasMenuAccess = (userOrRole, path, rolePermissions = {}) => {
   if (!userOrRole || !path) return false;
 
-  const role = typeof userOrRole === 'object' ? userOrRole.role : userOrRole;
-  if (!role) return false;
+  const rawRole = typeof userOrRole === 'object' ? userOrRole.role : userOrRole;
+  if (!rawRole) return false;
 
   // Admin always has full access
-  if (role.toLowerCase() === 'admin') return true;
+  if (String(rawRole).toLowerCase() === 'admin') return true;
 
   const effective = getEffectivePermissions(rolePermissions);
-  const allowedPaths = effective[role] || DEFAULT_ROLE_PERMISSIONS[role] || ['/'];
+  // Match key case-insensitively
+  const matchedKey = Object.keys(effective).find(
+    (k) => k.toLowerCase() === String(rawRole).toLowerCase()
+  ) || rawRole;
+
+  let allowedPaths = effective[matchedKey] || DEFAULT_ROLE_PERMISSIONS[matchedKey] || DEFAULT_ROLE_PERMISSIONS[rawRole] || ['/'];
+
+  // Critical safeguard: Salesman role ALWAYS has access to their personal ledger account
+  if (String(rawRole).toLowerCase() === 'salesman') {
+    if (!allowedPaths.includes('/ledger')) {
+      allowedPaths = [...allowedPaths, '/ledger'];
+    }
+  }
 
   return allowedPaths.includes(path);
 };

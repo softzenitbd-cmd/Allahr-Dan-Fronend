@@ -78,13 +78,15 @@ const Ledger = () => {
   const {
     customers, suppliers, staff, language, shopProfile,
     expenses, payrolls, ensureLoaded,
-    fetchPartyLedger, payInvoiceDue, payAll, refresh,
+    fetchPartyLedger, payInvoiceDue, payAll, refresh, user,
   } = useStore();
   const bn = language === 'bn';
 
+  const isSalesmanUser = String(user?.role || '').toLowerCase() === 'salesman';
+
   const [searchParams, setSearchParams] = useSearchParams();
-  const [kind, setKind] = useState(() => searchParams.get('kind') || 'customer');
-  const [selectedId, setSelectedId] = useState(() => searchParams.get('id') || '');
+  const [kind, setKind] = useState(() => (isSalesmanUser ? 'salesman' : searchParams.get('kind') || 'customer'));
+  const [selectedId, setSelectedId] = useState(() => (isSalesmanUser ? '' : searchParams.get('id') || ''));
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerText, setPickerText] = useState('');
   const pickerRef = useRef(null);
@@ -95,7 +97,7 @@ const Ledger = () => {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState(() => searchParams.get('tab') || 'primary');
+  const [tab, setTab] = useState(() => (isSalesmanUser ? 'due_statement' : searchParams.get('tab') || 'primary'));
   const [pay, setPay] = useState(null); // { mode: 'invoice'|'account'|'all', invoice?, amount, date, method, notes }
   const [saving, setSaving] = useState(false);
   const [expandedPurchases, setExpandedPurchases] = useState({});
@@ -113,6 +115,23 @@ const Ledger = () => {
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
+  const myStaff = useMemo(() => {
+    if (!user || !isSalesmanUser) return null;
+    const uName = String(user.username || '').toLowerCase();
+    const uFullName = String(user.name || '').trim().toLowerCase();
+    const uId = String(user.id || '');
+    return (staff || []).find((s) => {
+      const sUser = String(s.username || '').toLowerCase();
+      const sCode = String(s.staff_code || '').toLowerCase();
+      const sName = String(s.name || '').trim().toLowerCase();
+      const sId = String(s.id || '');
+      return (sUser && sUser === uName) ||
+             (sCode && sCode === uName) ||
+             (sName && uFullName && sName === uFullName) ||
+             (sId && uId && sId === uId);
+    }) || null;
+  }, [user, staff, isSalesmanUser]);
+
   const adminOption = useMemo(() => ({
     id: 'Admin',
     staff_code: 'Admin',
@@ -123,6 +142,9 @@ const Ledger = () => {
   }), [bn]);
 
   const source = useMemo(() => {
+    if (isSalesmanUser) {
+      return myStaff ? [myStaff] : [];
+    }
     if (kind === 'customer') return customers || [];
     if (kind === 'supplier') return suppliers || [];
     const list = [...(staff || [])];
@@ -130,13 +152,16 @@ const Ledger = () => {
       list.unshift(adminOption);
     }
     return list;
-  }, [kind, customers, suppliers, staff, adminOption]);
+  }, [isSalesmanUser, myStaff, kind, customers, suppliers, staff, adminOption]);
 
   const selected = useMemo(() => {
     return (source || []).find((p) => p.id === selectedId || p.staff_code === selectedId) || null;
   }, [source, selectedId]);
 
   const options = useMemo(() => {
+    if (isSalesmanUser) {
+      return myStaff ? [myStaff] : [];
+    }
     const term = pickerText.trim().toLowerCase();
     return (source || [])
       .filter((p) => !term
@@ -152,7 +177,7 @@ const Ledger = () => {
         return (Number(b.due) || 0) - (Number(a.due) || 0) || (a.name || '').localeCompare(b.name || '');
       })
       .slice(0, 60);
-  }, [source, pickerText, kind]);
+  }, [source, pickerText, kind, isSalesmanUser, myStaff]);
 
   const load = useCallback(async () => {
     if (!selectedId) { setData(null); return; }
@@ -170,6 +195,17 @@ const Ledger = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-lock kind and targetId for salesman
+  useEffect(() => {
+    if (isSalesmanUser) {
+      if (kind !== 'salesman') setKind('salesman');
+      const targetId = myStaff?.id || myStaff?.staff_code || (user ? String(user.staff_code || user.username || user.id) : '');
+      if (targetId && selectedId !== targetId) {
+        setSelectedId(targetId);
+      }
+    }
+  }, [isSalesmanUser, myStaff, user, kind, selectedId]);
+
   useEffect(() => {
     if (kind === 'salesman' && selectedId && String(selectedId).toLowerCase() !== 'admin') {
       setTab((prev) => (prev === 'primary' || prev === 'due_statement' ? 'due_statement' : prev));
@@ -177,6 +213,7 @@ const Ledger = () => {
   }, [kind, selectedId]);
 
   const switchKind = (k) => {
+    if (isSalesmanUser) return;
     setKind(k); setSelectedId(''); setData(null); setPickerText(''); setTab('primary'); setPay(null);
   };
 
@@ -245,9 +282,9 @@ const Ledger = () => {
     }
 
     const sParty = data.party || {};
-    const sId = String(selectedId || sParty.id || '').toLowerCase();
-    const sCode = String(selected?.staff_code || sParty.id || '').toLowerCase();
-    const sName = String(selected?.name || sParty.name || '').trim().toLowerCase();
+    const sId = String(selectedId || selected?.id || myStaff?.id || sParty.id || '').toLowerCase();
+    const sCode = String(selected?.staff_code || myStaff?.staff_code || sParty.id || '').toLowerCase();
+    const sName = String(selected?.name || myStaff?.name || sParty.name || '').trim().toLowerCase();
 
     const isMatchingStaff = (objStaffId, objStaffName, objStaffCode) => {
       const idStr = String(objStaffId || '').toLowerCase();
@@ -419,10 +456,10 @@ const Ledger = () => {
         totalDueAdded: totalDueAddedAll,
         totalRecovered,
         currentDue,
-        baseSalary: Number(sParty.baseSalary) || Number(selected?.base_salary) || 0,
+        baseSalary: Number(sParty.baseSalary) || Number(selected?.base_salary) || Number(myStaff?.base_salary) || 0,
       },
     };
-  }, [kind, data, isSalesmanAdmin, selectedId, selected, payrolls, expenses, bn]);
+  }, [kind, data, isSalesmanAdmin, selectedId, selected, payrolls, expenses, bn, myStaff]);
 
   // ---------------------------------------------------------------- //
   // Rows for the active tab, paged
@@ -578,81 +615,167 @@ const Ledger = () => {
     <div className="ledger-page animate-fade-in">
       <div className="page-header">
         <div>
-          <h1>{bn ? 'খাতা (লেজার)' : 'Ledger'}</h1>
+          <h1>{isSalesmanUser ? (bn ? 'আমার খাতা ও হিসাব' : 'My Account & Ledger') : (bn ? 'খাতা (লেজার)' : 'Ledger')}</h1>
           <p className="text-muted">
-            {bn
-              ? 'কাস্টমার, সাপ্লায়ার বা সেলসম্যান বেছে নিন — সব হিসাব এক পাতায়, পেমেন্টও এখান থেকেই।'
-              : 'Pick a customer, supplier or salesman — every invoice, payment and due on one page, and settle it right here.'}
+            {isSalesmanUser
+              ? (bn ? 'আপনার ব্যক্তিগত বেতন, খরচ/অগ্রিম কর্তন, বকেয়া এবং বিক্রয় বিবরণী।' : 'Your personal salary, staff advance/expense deductions, dues and sales history.')
+              : (bn
+                ? 'কাস্টমার, সাপ্লায়ার বা সেলসম্যান বেছে নিন — সব হিসাব এক পাতায়, পেমেন্টও এখান থেকেই।'
+                : 'Pick a customer, supplier or salesman — every invoice, payment and due on one page, and settle it right here.')}
           </p>
         </div>
       </div>
 
       {/* ---------------- Who ---------------- */}
       <div className="card ledger-pick">
-        <div className="segmented-control">
-          {KINDS.map((k) => (
-            <button key={k.key} type="button" className={kind === k.key ? 'active' : ''} onClick={() => switchKind(k.key)}>
-              <k.Icon size={15} style={{ marginRight: 6, verticalAlign: '-2px' }} />{bn ? k.bn : k.en}
-            </button>
-          ))}
-        </div>
-
-        <div className="party-picker" ref={pickerRef}>
-          <button type="button" className={`pp-trigger ${pickerOpen ? 'open' : ''}`} onClick={() => setPickerOpen((o) => !o)}>
-            {selected ? (
-              <>
-                <span className="ll-avatar">{initials(selected.name)}</span>
-                <span className="pp-main">
-                  <span className="pp-name">{selected.name}</span>
-                  <span className="pp-sub">{selected.phone || selected.role || selected.company || selected.id}</span>
-                </span>
-                {Number(selected.due) > 0 && <span className="ll-due owed">{money(selected.due)}</span>}
-              </>
-            ) : (
-              <span className="pp-placeholder">
-                <Search size={15} />
-                {bn ? `${kindMeta.bn} বেছে নিন…` : `Choose a ${kindMeta.en.toLowerCase()}…`}
-              </span>
-            )}
-            <ChevronDown size={16} className="pp-chev" />
-          </button>
-
-          {pickerOpen && (
-            <div className="pp-menu">
-              <div className="pp-search">
-                <Search size={14} />
-                <input
-                  autoFocus
-                  placeholder={bn ? 'নাম, ফোন বা আইডি লিখুন' : 'Type a name, phone or ID'}
-                  value={pickerText}
-                  onChange={(e) => setPickerText(e.target.value)}
-                />
+        {isSalesmanUser ? (
+          <div style={{
+            flex: '1 1 100%',
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            color: '#ffffff',
+            padding: '1.25rem 1.5rem',
+            borderRadius: '12px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.25rem',
+                fontWeight: 700,
+                color: '#ffffff',
+                border: '2px solid rgba(255,255,255,0.2)'
+              }}>
+                {initials(myStaff?.name || user?.name || user?.username || 'S')}
               </div>
-              <div className="pp-list">
-                {options.length === 0 && <div className="ll-empty">{bn ? 'কিছু পাওয়া যায়নি।' : 'Nothing matches.'}</div>}
-                {options.map((p) => {
-                  const due = Number(p.due) || 0;
-                  return (
-                    <button key={p.id} type="button" className={`ll-row ${p.id === selectedId ? 'active' : ''}`}
-                      onClick={() => {
-                        setSelectedId(p.id);
-                        setPickerOpen(false);
-                        setPickerText('');
-                        setTab(kind === 'salesman' && String(p.id).toLowerCase() !== 'admin' ? 'due_statement' : 'primary');
-                      }}>
-                      <span className="ll-avatar">{initials(p.name)}</span>
-                      <span className="ll-main">
-                        <span className="ll-name">{p.name}</span>
-                        <span className="ll-sub">{p.phone || p.role || p.company || p.id}</span>
-                      </span>
-                      <span className={`ll-due ${due > 0 ? 'owed' : 'zero'}`}>{due > 0 ? money(due) : '—'}</span>
-                    </button>
-                  );
-                })}
+              <div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc' }}>
+                  {myStaff?.name || user?.name || user?.username}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: 2 }}>
+                  <span>{myStaff?.staff_code || user?.username}</span>
+                  <span>•</span>
+                  <span>{myStaff?.role || (bn ? 'সেলসম্যান' : 'Salesman')}</span>
+                  {(myStaff?.phone || user?.phone) && (
+                    <>
+                      <span>•</span>
+                      <span>{myStaff?.phone || user?.phone}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          )}
-        </div>
+
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                padding: '0.6rem 1.1rem',
+                borderRadius: '8px',
+                textAlign: 'center',
+                minWidth: 120
+              }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>{bn ? 'মূল বেতন' : 'Base Salary'}</div>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#38bdf8' }}>
+                  {money(myStaff?.base_salary || staffDueSummary.baseSalary || 0)}
+                </div>
+              </div>
+
+              <div style={{
+                background: Number(myStaff?.due || staffDueSummary.currentDue || 0) > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+                border: `1px solid ${Number(myStaff?.due || staffDueSummary.currentDue || 0) > 0 ? 'rgba(239,68,68,0.35)' : 'rgba(16,185,129,0.35)'}`,
+                padding: '0.6rem 1.1rem',
+                borderRadius: '8px',
+                textAlign: 'center',
+                minWidth: 120
+              }}>
+                <div style={{ fontSize: '0.75rem', color: Number(myStaff?.due || staffDueSummary.currentDue || 0) > 0 ? '#fca5a5' : '#86efac', marginBottom: 2 }}>
+                  {bn ? 'দোকানকে দেনা (বকেয়া)' : 'Due Owed to Shop'}
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: Number(myStaff?.due || staffDueSummary.currentDue || 0) > 0 ? '#ef4444' : '#10b981' }}>
+                  {money(myStaff?.due ?? staffDueSummary.currentDue ?? 0)}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="segmented-control">
+              {KINDS.map((k) => (
+                <button key={k.key} type="button" className={kind === k.key ? 'active' : ''} onClick={() => switchKind(k.key)}>
+                  <k.Icon size={15} style={{ marginRight: 6, verticalAlign: '-2px' }} />{bn ? k.bn : k.en}
+                </button>
+              ))}
+            </div>
+
+            <div className="party-picker" ref={pickerRef}>
+              <button type="button" className={`pp-trigger ${pickerOpen ? 'open' : ''}`} onClick={() => setPickerOpen((o) => !o)}>
+                {selected ? (
+                  <>
+                    <span className="ll-avatar">{initials(selected.name)}</span>
+                    <span className="pp-main">
+                      <span className="pp-name">{selected.name}</span>
+                      <span className="pp-sub">{selected.phone || selected.role || selected.company || selected.id}</span>
+                    </span>
+                    {Number(selected.due) > 0 && <span className="ll-due owed">{money(selected.due)}</span>}
+                  </>
+                ) : (
+                  <span className="pp-placeholder">
+                    <Search size={15} />
+                    {bn ? `${kindMeta.bn} বেছে নিন…` : `Choose a ${kindMeta.en.toLowerCase()}…`}
+                  </span>
+                )}
+                <ChevronDown size={16} className="pp-chev" />
+              </button>
+
+              {pickerOpen && (
+                <div className="pp-menu">
+                  <div className="pp-search">
+                    <Search size={14} />
+                    <input
+                      autoFocus
+                      placeholder={bn ? 'নাম, ফোন বা আইডি লিখুন' : 'Type a name, phone or ID'}
+                      value={pickerText}
+                      onChange={(e) => setPickerText(e.target.value)}
+                    />
+                  </div>
+                  <div className="pp-list">
+                    {options.length === 0 && <div className="ll-empty">{bn ? 'কিছু পাওয়া যায়নি।' : 'Nothing matches.'}</div>}
+                    {options.map((p) => {
+                      const due = Number(p.due) || 0;
+                      return (
+                        <button key={p.id} type="button" className={`ll-row ${p.id === selectedId ? 'active' : ''}`}
+                          onClick={() => {
+                            setSelectedId(p.id);
+                            setPickerOpen(false);
+                            setPickerText('');
+                            setTab(kind === 'salesman' && String(p.id).toLowerCase() !== 'admin' ? 'due_statement' : 'primary');
+                          }}>
+                          <span className="ll-avatar">{initials(p.name)}</span>
+                          <span className="ll-main">
+                            <span className="ll-name">{p.name}</span>
+                            <span className="ll-sub">{p.phone || p.role || p.company || p.id}</span>
+                          </span>
+                          <span className={`ll-due ${due > 0 ? 'owed' : 'zero'}`}>{due > 0 ? money(due) : '—'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {/* ---- When ---- */}
         <div className="ledger-range">
@@ -675,9 +798,18 @@ const Ledger = () => {
       {/* ---------------- Detail ---------------- */}
       {!selectedId ? (
         <div className="card ld-empty-detail">
-          <BookOpen size={40} />
-          <h3>{bn ? 'উপরের বাক্স থেকে একজনকে বেছে নিন' : 'Choose someone in the box above'}</h3>
-          <p className="text-sm">{bn ? 'তার পুরো খাতা এখানে খুলবে।' : 'Their full ledger opens here.'}</p>
+          {isSalesmanUser ? (
+            <>
+              <RefreshCcw size={32} className="animate-spin" />
+              <h3>{bn ? 'আপনার হিসাবের তথ্য প্রস্তুত করা হচ্ছে…' : 'Preparing your ledger account…'}</h3>
+            </>
+          ) : (
+            <>
+              <BookOpen size={40} />
+              <h3>{bn ? 'উপরের বাক্স থেকে একজনকে বেছে নিন' : 'Choose someone in the box above'}</h3>
+              <p className="text-sm">{bn ? 'তার পুরো খাতা এখানে খুলবে।' : 'Their full ledger opens here.'}</p>
+            </>
+          )}
         </div>
       ) : !data ? (
         <div className="card ld-empty-detail">
@@ -725,7 +857,7 @@ const Ledger = () => {
             </div>
 
             <div className="ld-actions">
-              {partyDue > 0 && (
+              {!isSalesmanUser && partyDue > 0 && (
                 <>
                   <button className="btn-primary" onClick={() => openPay('all')}>
                     <CheckCircle2 size={16} /> {bn ? `পুরো বকেয়া পরিশোধ (${money(partyDue)})` : `Pay Full Due (${money(partyDue)})`}

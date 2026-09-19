@@ -33,15 +33,29 @@ const Suppliers = () => {
   const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
   const [receiptModal, setReceiptModal] = useState({ show: false, settlement: null, party: null });
 
+  const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
+
+  useEffect(() => {
+    if (isSalesman && activeTab === 'Deleted') {
+      setActiveTab('Active');
+    }
+  }, [isSalesman, activeTab]);
+
+  useEffect(() => {
+    if (isSalesman && selectedPerson?.is_deleted) {
+      setSelectedPerson(null);
+    }
+  }, [isSalesman, selectedPerson]);
+
   useEffect(() => {
     ensureLoaded?.('suppliers', 'purchases', 'settlements');
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'Deleted') {
+    if (activeTab === 'Deleted' && !isSalesman) {
       refresh?.('deletedSuppliers');
     }
-  }, [activeTab]);
+  }, [activeTab, isSalesman]);
 
   const getSupplierTransactions = (supplierId) => {
     if (!supplierId) return [];
@@ -116,7 +130,9 @@ const Suppliers = () => {
   const [editingPerson, setEditingPerson] = useState(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', company: '', phone: '', email: '', location: '', notes: '' });
 
-  const currentList = activeTab === 'Active' ? (suppliers || []) : (deletedSuppliers || []);
+  const currentList = activeTab === 'Active'
+    ? (suppliers || [])
+    : (!isSalesman ? (deletedSuppliers || []) : []);
 
   const filteredList = currentList.filter(
     (person) =>
@@ -346,14 +362,16 @@ const Suppliers = () => {
             >
               {language === 'bn' ? 'সক্রিয় সাপ্লায়ার' : 'Active Suppliers'} ({suppliers?.length || 0})
             </button>
-            <button
-              className={activeTab === 'Deleted' ? 'active' : ''}
-              onClick={() => setActiveTab('Deleted')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-            >
-              <History size={14} />
-              {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {deletedSuppliers?.length ? `(${deletedSuppliers.length})` : ''}
-            </button>
+            {!isSalesman && (
+              <button
+                className={activeTab === 'Deleted' ? 'active' : ''}
+                onClick={() => setActiveTab('Deleted')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <History size={14} />
+                {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {deletedSuppliers?.length ? `(${deletedSuppliers.length})` : ''}
+              </button>
+            )}
           </div>
 
           <div className="search-bar">

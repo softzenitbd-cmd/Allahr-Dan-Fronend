@@ -48,16 +48,30 @@ const Customers = () => {
   const [editingPerson, setEditingPerson] = useState(null);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', notes: '' });
 
+  const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
+
+  useEffect(() => {
+    if (isSalesman && activeTab === 'Deleted') {
+      setActiveTab('Customer');
+    }
+  }, [isSalesman, activeTab]);
+
+  useEffect(() => {
+    if (isSalesman && selectedPerson?.is_deleted) {
+      setSelectedPerson(null);
+    }
+  }, [isSalesman, selectedPerson]);
+
   // Fetch needed slices on mount & refresh deleted lists when switching to Deleted tab
   useEffect(() => {
     ensureLoaded?.('customers', 'suppliers', 'sales', 'purchases', 'settlements');
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'Deleted') {
+    if (activeTab === 'Deleted' && !isSalesman) {
       refresh?.('deletedCustomers', 'deletedSuppliers');
     }
-  }, [activeTab]);
+  }, [activeTab, isSalesman]);
 
   // Compute Ledger for selected person
   let personLedger = [];
@@ -163,7 +177,7 @@ const Customers = () => {
     ? (customers || [])
     : activeTab === 'Supplier'
       ? (suppliers || [])
-      : (deletedType === 'Customer' ? (deletedCustomers || []) : (deletedSuppliers || []));
+      : (!isSalesman && deletedType === 'Customer' ? (deletedCustomers || []) : (!isSalesman ? (deletedSuppliers || []) : []));
 
   const filteredList = currentList.filter(
     (person) =>
@@ -371,6 +385,7 @@ const Customers = () => {
             >
               {t(language, 'Suppliers Due')} ({suppliers?.length || 0})
             </button>
+          {!isSalesman && (
             <button
               className={activeTab === 'Deleted' ? 'active' : ''}
               onClick={() => setActiveTab('Deleted')}
@@ -379,9 +394,10 @@ const Customers = () => {
               <History size={14} />
               {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0)) > 0 ? `(${((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0))})` : ''}
             </button>
+          )}
           </div>
 
-          {activeTab === 'Deleted' && (
+          {!isSalesman && activeTab === 'Deleted' && (
             <div className="segmented-control" style={{ maxWidth: '320px' }}>
               <button
                 className={deletedType === 'Customer' ? 'active' : ''}
