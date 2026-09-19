@@ -219,12 +219,68 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
   };
 };
 
+/**
+ * Helper to resolve the actor (person who performed the action) for display.
+ * For POS / Sales activities, the salesman's name should be displayed instead of the logged-in user (e.g. Admin).
+ */
+const getLogActorInfo = (log, salesList = [], staffList = []) => {
+  if (!log) return { name: 'System', role: '', isSalesman: false, loginUser: null };
+
+  const isPosModule = log.module === 'POS' || /বিক্রয়|চালান|Sale|Invoice/i.test(log.description || '');
+
+  if (isPosModule) {
+    const details = log.details || {};
+    // 1. Check details.salesman_name or details.salesmanName
+    let salesmanName = details.salesman_name || details.salesmanName || null;
+
+    // 2. Check details.salesman if object or string
+    if (!salesmanName && details.salesman) {
+      salesmanName = typeof details.salesman === 'object' ? details.salesman.name : String(details.salesman);
+    }
+
+    // 3. Check matched invoice in store sales list
+    if (!salesmanName && Array.isArray(salesList) && salesList.length > 0) {
+      const invNum = details.invoice_number || details.invoiceId || details.invoice_id;
+      if (invNum) {
+        const matched = salesList.find(s => s.invoice_number === invNum || s.id === invNum);
+        if (matched) {
+          salesmanName = matched.salesman_name || matched.salesman?.name || null;
+        }
+      }
+    }
+
+    // 4. Check if description has salesman pattern e.g. (বিক্রেতা: ...) or (সেলসম্যান: ...)
+    if (!salesmanName && log.description) {
+      const match = log.description.match(/(?:সেলসম্যান|বিক্রেতা|Salesman)[:\s]+([^\s,)]+)/i);
+      if (match && match[1]) salesmanName = match[1];
+    }
+
+    // 5. If salesman name was found and is valid:
+    if (salesmanName && salesmanName !== 'null' && salesmanName !== 'undefined' && String(salesmanName).trim()) {
+      const cleanName = String(salesmanName).trim();
+      return {
+        name: cleanName,
+        role: 'Salesman',
+        isSalesman: true,
+        loginUser: log.user_name && log.user_name !== cleanName ? log.user_name : null,
+      };
+    }
+  }
+
+  return {
+    name: log.user_name || 'System',
+    role: log.user_role || '',
+    isSalesman: false,
+    loginUser: null,
+  };
+};
+
 const ActivityLog = () => {
-  const { user, language, staff, expenses, ensureLoaded } = useStore();
+  const { user, language, staff, expenses, sales, ensureLoaded } = useStore();
 
   useEffect(() => {
     if (typeof ensureLoaded === 'function') {
-      ensureLoaded('staff', 'expenses');
+      ensureLoaded('staff', 'expenses', 'sales');
     }
   }, [ensureLoaded]);
 
@@ -559,6 +615,93 @@ const ActivityLog = () => {
             </div>
           </div>
         )}
+
+        {/* Dedicated POS Sale & Salesman Card */}
+        {(log.module === 'POS' || details.invoice_number) && (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ShoppingBag size={16} style={{ color: '#059669' }} />
+                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  {language === 'bn' ? 'বিক্রয় চালান ও বিক্রেতার তথ্য' : 'Sale & Salesman Details'}
+                </span>
+              </div>
+              {details.invoice_number && (
+                <span style={{ fontSize: '0.78rem', padding: '2px 8px', borderRadius: '6px', background: '#eff6ff', color: '#1d4ed8', fontWeight: 700 }}>
+                  #{details.invoice_number}
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.6rem', marginTop: '0.5rem' }}>
+              {/* Salesman */}
+              {(() => {
+                const actor = getLogActorInfo(log, sales, staff);
+                return (
+                  <div style={{ background: '#ecfdf5', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
+                      {language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman'}
+                    </div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#065f46', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <User size={13} />
+                      <span>{actor.name}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Customer */}
+              {details.customer_name && (
+                <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    {language === 'bn' ? 'ক্রেতা' : 'Customer'}
+                  </div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>
+                    {details.customer_name}
+                  </div>
+                  {details.customer_phone && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{details.customer_phone}</div>}
+                </div>
+              )}
+
+              {/* Total Sale */}
+              {details.total !== undefined && (
+                <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    {language === 'bn' ? 'মোট বিক্রয়' : 'Total Amount'}
+                  </div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
+                    ৳{Number(details.total).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* Paid Amount */}
+              {details.paid_amount !== undefined && (
+                <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 600 }}>
+                    {language === 'bn' ? 'পরিশোধ' : 'Paid Amount'}
+                  </div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#16a34a', marginTop: '2px' }}>
+                    ৳{Number(details.paid_amount).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* Due Amount */}
+              {details.due_amount !== undefined && Number(details.due_amount) > 0 && (
+                <div style={{ background: '#fef2f2', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
+                    {language === 'bn' ? 'বকেয়া' : 'Due Amount'}
+                  </div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
+                    ৳{Number(details.due_amount).toLocaleString()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Product Information Card */}
         {(details.product_code || details.name) && (
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
@@ -1153,36 +1296,56 @@ const ActivityLog = () => {
                         </span>
                       </td>
 
-                      {/* User */}
+                      {/* User / Salesman */}
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div
-                            style={{
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '50%',
-                              background: 'rgba(59, 130, 246, 0.15)',
-                              color: '#2563eb',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {(log.user_name || 'S').charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                              {log.user_name || 'System'}
-                            </div>
-                            {log.user_role && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                {log.user_role}
+                        {(() => {
+                          const actor = getLogActorInfo(log, sales, staff);
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  borderRadius: '50%',
+                                  background: actor.isSalesman ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                  color: actor.isSalesman ? '#059669' : '#2563eb',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  border: `1px solid ${actor.isSalesman ? '#86efac' : '#bfdbfe'}`,
+                                }}
+                              >
+                                {actor.name.charAt(0).toUpperCase()}
                               </div>
-                            )}
-                          </div>
-                        </div>
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                                  {actor.name}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    color: actor.isSalesman ? '#059669' : 'var(--text-muted)',
+                                    fontWeight: actor.isSalesman ? 700 : 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  {actor.isSalesman ? (
+                                    <>
+                                      <Tag size={10} />
+                                      <span>{language === 'bn' ? 'সেলসম্যান' : 'Salesman'}</span>
+                                    </>
+                                  ) : (
+                                    actor.role || ''
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Description */}
@@ -1348,6 +1511,31 @@ const ActivityLog = () => {
                                       #{log.details.invoice_number}
                                     </span>
                                   )}
+                                  {(() => {
+                                    const actor = getLogActorInfo(log, sales, staff);
+                                    if (actor.isSalesman) {
+                                      return (
+                                        <span
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
+                                            padding: '1px 6px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            background: '#ecfdf5',
+                                            color: '#059669',
+                                            border: '1px solid #a7f3d0',
+                                          }}
+                                        >
+                                          <User size={10} />
+                                          <span>{language === 'bn' ? 'বিক্রেতা:' : 'Salesman:'} {actor.name}</span>
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                   {log.details.purchase_number && (
                                     <span
                                       style={{
@@ -1527,17 +1715,29 @@ const ActivityLog = () => {
 
               {/* High-level metadata */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '0.5rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.75rem 1rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    {language === 'bn' ? 'ব্যবহারকারী' : 'User'}
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: '2px' }}>
-                    {selectedLog.user_name || 'System'}
-                  </div>
-                  {selectedLog.user_role && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{selectedLog.user_role}</div>
-                  )}
-                </div>
+                {(() => {
+                  const actor = getLogActorInfo(selectedLog, sales, staff);
+                  return (
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {actor.isSalesman
+                          ? (language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman')
+                          : (language === 'bn' ? 'ব্যবহারকারী' : 'User')}
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: '2px', color: actor.isSalesman ? '#059669' : 'inherit' }}>
+                        {actor.name}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: actor.isSalesman ? '#059669' : 'var(--text-muted)', fontWeight: actor.isSalesman ? 600 : 400 }}>
+                        {actor.isSalesman ? (language === 'bn' ? 'সেলসম্যান' : 'Salesman') : (selectedLog.user_role || '')}
+                        {actor.loginUser && (
+                          <span style={{ color: 'var(--text-subtle)', marginLeft: '4px', fontSize: '0.68rem' }}>
+                            ({language === 'bn' ? 'লগইন' : 'login'}: {actor.loginUser})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'মডিউল' : 'Module'}
@@ -1612,7 +1812,7 @@ const ActivityLog = () => {
                   <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{formatLogTime(l.created_at)}</td>
                   <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}>{l.action}</td>
                   <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.module}</td>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.user_name || 'System'}</td>
+                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{getLogActorInfo(l, sales, staff).name}</td>
                   <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.description}</td>
                 </tr>
               ))}

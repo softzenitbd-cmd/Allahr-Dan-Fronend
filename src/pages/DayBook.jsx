@@ -297,8 +297,7 @@ const DayBook = () => {
     const groups = {};
 
     loans.forEach((loan) => {
-      const normName = (loan.name || '').trim();
-      if (!normName) return;
+      const normName = (loan.name || '').trim() || loan.id || 'Unnamed';
       const key = `${normName.toLowerCase()}___${loan.type}`;
 
       if (!groups[key]) {
@@ -324,8 +323,10 @@ const DayBook = () => {
       g.loans.push(loan);
 
       if (!g.phone && loan.phone) g.phone = loan.phone;
-      if (loan.date && (!g.date || new Date(loan.date) > new Date(g.date))) {
-        g.date = loan.date;
+      if (loan.date) {
+        if (!g.date || String(loan.date).localeCompare(String(g.date)) > 0) {
+          g.date = loan.date;
+        }
       }
 
       g.amount += Number(loan.amount) || 0;
@@ -343,6 +344,9 @@ const DayBook = () => {
     });
 
     return Object.values(groups).map((g) => {
+      g.amount = Math.round(g.amount * 100) / 100;
+      g.paidAmount = Math.round(g.paidAmount * 100) / 100;
+      g.remainingAmount = Math.max(0, Math.round(g.remainingAmount * 100) / 100);
       g.status = g.remainingAmount <= 0.01 ? 'settled' : 'active';
       g.payments.sort((a, b) => new Date(a.date) - new Date(b.date));
       return g;
@@ -668,14 +672,24 @@ const DayBook = () => {
     const isGiven = loanPayTarget.type === 'given';
 
     setSaving(true);
-    const res = await payLoan(loanPayTarget.id, {
-      amount: payAmt,
-      account,
-      date: loanPayDate || today,
-      note: (loanPayNote || '').trim(),
-    }, { name: loanPayTarget.name });
+    const subLoans = loanPayTarget.loans && loanPayTarget.loans.length > 0
+      ? loanPayTarget.loans
+      : [loanPayTarget];
+    const activeSubs = subLoans.filter(l => (Number(l.remainingAmount) || 0) > 0.001);
+    let toPay = payAmt;
+
+    for (const targetSub of activeSubs) {
+      if (toPay <= 0.001) break;
+      const chunk = Math.min(toPay, Number(targetSub.remainingAmount) || 0);
+      await payLoan(targetSub.id, {
+        amount: chunk,
+        account,
+        date: loanPayDate || today,
+        note: (loanPayNote || '').trim() || (bn ? 'কিস্তি পরিশোধ' : 'Loan Repayment'),
+      }, { name: loanPayTarget.name });
+      toPay -= chunk;
+    }
     setSaving(false);
-    if (!res?.ok) return;
 
     toast.success(bn
       ? `${money(payAmt)} পরিশোধ এবং ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
@@ -1278,25 +1292,67 @@ const DayBook = () => {
           <div className="card db-feed-card">
             <div className="db-feed-head">
               <div className="db-chips">
-                {[
-                  { key: 'all', bn: 'সব', en: 'All', count: loans.length },
-                  { key: 'given', bn: 'কর্জ দেওয়া', en: 'Given', count: loans.filter((l) => l.type === 'given').length },
-                  { key: 'taken', bn: 'কর্জ নেওয়া', en: 'Taken', count: loans.filter((l) => l.type === 'taken').length },
-                  { key: 'active', bn: 'বকেয়া আছে', en: 'Due / Active', count: loans.filter((l) => l.status === 'active').length },
-                  { key: 'settled', bn: 'পরিশোধিত', en: 'Settled', count: loans.filter((l) => l.status === 'settled').length },
-                ].map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    className={`db-chip ${loanFilter === f.key ? 'active' : ''}`}
-                    onClick={() => setLoanFilter(f.key)}
-                  >
-                    {bn ? f.bn : f.en} <span className="n">{f.count}</span>
-                  </button>
-                ))}
+                {(() => {
+                  const baseList = loanViewMode === 'grouped' ? groupedLoans : loans;
+                  return [
+                    { key: 'all', bn: 'সব', en: 'All', count: baseList.length },
+                    { key: 'given', bn: 'কর্জ দেওয়া', en: 'Given', count: baseList.filter((l) => l.type === 'given').length },
+                    { key: 'taken', bn: 'কর্জ নেওয়া', en: 'Taken', count: baseList.filter((l) => l.type === 'taken').length },
+                    { key: 'active', bn: 'বকেয়া আছে', en: 'Due / Active', count: baseList.filter((l) => l.status === 'active').length },
+                    { key: 'settled', bn: 'পরিশোধিত', en: 'Settled', count: baseList.filter((l) => l.status === 'settled').length },
+                  ].map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className={`db-chip ${loanFilter === f.key ? 'active' : ''}`}
+                      onClick={() => setLoanFilter(f.key)}
+                    >
+                      {bn ? f.bn : f.en} <span className="n">{f.count}</span>
+                    </button>
+                  ));
+                })()}
               </div>
 
               <div className="flex-align-gap">
+                <div style={{ display: 'inline-flex', background: 'var(--bg-muted, #f1f5f9)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setLoanViewMode('grouped')}
+                    style={{
+                      border: 'none',
+                      background: loanViewMode === 'grouped' ? '#fff' : 'transparent',
+                      color: loanViewMode === 'grouped' ? 'var(--primary)' : 'var(--text-muted)',
+                      fontWeight: loanViewMode === 'grouped' ? 700 : 500,
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      boxShadow: loanViewMode === 'grouped' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    }}
+                    title={bn ? '১ ব্যক্তি ১ সারি (একীভূত হিসাব)' : 'Consolidated (1 Person 1 Row)'}
+                  >
+                    {bn ? 'ব্যক্তিভিত্তিক (১ সারি)' : 'By Person (1 Row)'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoanViewMode('detailed')}
+                    style={{
+                      border: 'none',
+                      background: loanViewMode === 'detailed' ? '#fff' : 'transparent',
+                      color: loanViewMode === 'detailed' ? 'var(--primary)' : 'var(--text-muted)',
+                      fontWeight: loanViewMode === 'detailed' ? 700 : 500,
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      boxShadow: loanViewMode === 'detailed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    }}
+                    title={bn ? 'সকল পৃথক এন্ট্রি ভিউ' : 'All Detailed Entries'}
+                  >
+                    {bn ? 'সকল এন্ট্রি' : 'All Entries'}
+                  </button>
+                </div>
+
                 <div className="db-search">
                   <Search size={14} />
                   <input
@@ -1368,12 +1424,30 @@ const DayBook = () => {
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
                               <div>
-                                <div
-                                  style={{ fontWeight: 700, color: 'var(--text-main)', cursor: 'pointer' }}
-                                  onClick={() => setLoanSearch(loan.name)}
-                                  title={bn ? 'এই ব্যক্তির সকল কর্জ রেকর্ড দেখতে ক্লিক করুন' : 'Click to filter all loans for this name'}
-                                >
-                                  {loan.name}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                  <div
+                                    style={{ fontWeight: 700, color: 'var(--text-main)', cursor: 'pointer' }}
+                                    onClick={() => setLoanSearch(loan.name)}
+                                    title={bn ? 'এই ব্যক্তির সকল কর্জ রেকর্ড দেখতে ক্লিক করুন' : 'Click to filter all loans for this name'}
+                                  >
+                                    {loan.name}
+                                  </div>
+                                  {loan.loans && loan.loans.length > 1 && (
+                                    <span
+                                      style={{
+                                        fontSize: '0.6875rem',
+                                        padding: '1px 6px',
+                                        borderRadius: '999px',
+                                        background: 'rgba(37,99,235,0.1)',
+                                        color: '#2563eb',
+                                        fontWeight: 600,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                      title={bn ? `এই ব্যক্তির ${loan.loans.length}টি এন্ট্রি একসাথে সমন্বিত রয়েছে` : `${loan.loans.length} entries consolidated`}
+                                    >
+                                      {loan.loans.length} {bn ? 'টি এন্ট্রি' : 'entries'}
+                                    </span>
+                                  )}
                                 </div>
                                 {loan.phone && (
                                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem' }}>
@@ -1425,7 +1499,9 @@ const DayBook = () => {
                             )}
                           </td>
                           <td style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', maxWidth: '200px' }}>
-                            {loan.note || '—'}
+                            {loan.loans && loan.loans.length > 1
+                              ? (bn ? `${loan.loans.length}টি এন্ট্রির সমন্বিত হিসাব` : `${loan.loans.length} consolidated entries`)
+                              : (loan.note || '—')}
                           </td>
                           <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -1987,50 +2063,70 @@ const DayBook = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{loanHistoryTarget.date}</td>
-                      <td>
-                        <strong>{loanHistoryTarget.type === 'given' ? (bn ? 'মূল ঋণ প্রদান' : 'Loan Given') : (bn ? 'মূল ঋণ গ্রহণ' : 'Loan Taken')}</strong>
-                        {loanHistoryTarget.note && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{loanHistoryTarget.note}</div>}
-                      </td>
-                      <td><span className="badge badge-secondary">{loanHistoryTarget.account || 'Cash'}</span></td>
-                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
-                      {isAdmin && <td></td>}
-                    </tr>
-                    {(() => {
-                      let running = Number(loanHistoryTarget.amount) || 0;
-                      const sortedPayments = [...(loanHistoryTarget.payments || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
-                      return sortedPayments.map((p) => {
-                        running = Math.max(0, running - (Number(p.amount) || 0));
-                        return (
-                          <tr key={p.id}>
-                            <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.date}</td>
-                            <td>
-                              <span style={{ color: 'var(--success)', fontWeight: 600 }}>{bn ? 'কিস্তি পরিশোধ' : 'Payment Installment'}</span>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginLeft: '0.35rem' }}>#{p.id}</span>
-                              {p.note && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{p.note}</div>}
-                            </td>
-                            <td><span className="badge badge-secondary">{p.account || 'Cash'}</span></td>
-                            <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>−{money(p.amount)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: running > 0 ? '#b91c1c' : 'var(--text-muted)' }}>{money(running)}</td>
-                            {isAdmin && (
-                              <td style={{ textAlign: 'center' }}>
+                    {personLedger.map((entry) => {
+                      const isLoanAdd = entry.type === 'loan';
+                      return (
+                        <tr key={entry.id}>
+                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{entry.date}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{
+                                fontWeight: 700,
+                                color: isLoanAdd ? (loanHistoryTarget.type === 'given' ? '#b91c1c' : '#2563eb') : 'var(--success)'
+                              }}>
+                                {entry.description}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-subtle)' }}>#{entry.id}</span>
+                            </div>
+                            {entry.note && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>{entry.note}</div>}
+                          </td>
+                          <td><span className="badge badge-secondary">{entry.account || 'Cash'}</span></td>
+                          <td style={{
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: isLoanAdd ? 'var(--text-main)' : 'var(--success)',
+                            fontVariantNumeric: 'tabular-nums'
+                          }}>
+                            {isLoanAdd ? `+${money(entry.amount)}` : `−${money(entry.amount)}`}
+                          </td>
+                          <td style={{
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: entry.runningBalance > 0 ? '#b91c1c' : 'var(--text-muted)',
+                            fontVariantNumeric: 'tabular-nums'
+                          }}>
+                            {money(entry.runningBalance)}
+                          </td>
+                          {isAdmin && (
+                            <td style={{ textAlign: 'center' }}>
+                              {entry.type === 'payment' ? (
                                 <button
                                   type="button"
                                   className="btn-icon text-danger"
                                   style={{ padding: '2px' }}
-                                  onClick={() => handleDeleteLoanPayment(loanHistoryTarget, p)}
+                                  onClick={() => handleDeleteLoanPayment(entry.rawLoan, entry.rawPayment)}
                                   title={bn ? 'এই কিস্তি মুছুন' : 'Delete installment'}
                                 >
                                   <Trash2 size={13} />
                                 </button>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      });
-                    })()}
+                              ) : (
+                                (loanHistoryTarget.loans && loanHistoryTarget.loans.length > 1) && (
+                                  <button
+                                    type="button"
+                                    className="btn-icon text-danger"
+                                    style={{ padding: '2px' }}
+                                    onClick={() => handleDeleteLoan(entry.rawLoan)}
+                                    title={bn ? 'এই নির্দিষ্ট এন্ট্রিটি মুছুন' : 'Delete this specific entry'}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2653,26 +2749,28 @@ const DayBook = () => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{loanHistoryTarget.date}</td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
-                    <strong>{loanHistoryTarget.type === 'given' ? (bn ? 'মূল কর্জ প্রদান' : 'Loan Given') : (bn ? 'মূল কর্জ গ্রহণ' : 'Loan Taken')}</strong>
-                    {loanHistoryTarget.note ? ` (${loanHistoryTarget.note})` : ''}
-                  </td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{loanHistoryTarget.account || 'Cash'}</td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
-                </tr>
-                {(loanHistoryTarget.payments || []).map((p, idx) => (
-                  <tr key={p.id || idx}>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{p.date}</td>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
-                      {bn ? 'কিস্তি পরিশোধ' : 'Payment Installment'}
-                      {p.note ? ` (${p.note})` : ''}
-                    </td>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{p.account || 'Cash'}</td>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', color: '#166534', fontWeight: 600 }}>-{money(p.amount)}</td>
-                  </tr>
-                ))}
+                {personLedger.map((entry, idx) => {
+                  const isLoanAdd = entry.type === 'loan';
+                  return (
+                    <tr key={entry.id || idx}>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{entry.date}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
+                        <strong>{entry.description}</strong>
+                        {entry.note ? ` (${entry.note})` : ''}
+                      </td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{entry.account || 'Cash'}</td>
+                      <td style={{
+                        border: '1px solid #cbd5e1',
+                        padding: '6px',
+                        textAlign: 'right',
+                        color: isLoanAdd ? '#b91c1c' : '#166534',
+                        fontWeight: 600
+                      }}>
+                        {isLoanAdd ? `+${money(entry.amount)}` : `-${money(entry.amount)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {/* Signature */}
