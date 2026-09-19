@@ -69,13 +69,20 @@ const ACTION_OPTIONS = [
 const getExpenseDetails = (log, staffList = [], expenseList = []) => {
   if (!log) return null;
 
+  // Module check: Non-expense modules MUST NEVER be treated as expenses.
+  // Especially INVENTORY, POS, CUSTOMERS, SUPPLIERS, PURCHASE, AUTH, LOAN.
+  const isExpenseModule = log.module === 'EXPENSE';
+  if (log.module && !isExpenseModule && log.module !== 'HR' && log.module !== 'ACCOUNTS') {
+    return null;
+  }
+
   const desc = log.description || '';
   const details = log.details || {};
-  const isExpenseModule = log.module === 'EXPENSE';
 
-  // Detect whether this log is related to an expense or salary payment
+  // For HR, ACCOUNTS, or unassigned modules: only treat as expense if explicitly related to expenses or salary
   const hasExpenseKeywords = /খরচ|বেতন|Salary|Expense|Staff Cost|স্টাফ খরচ/i.test(desc) || 
-    Boolean(details.category) || 
+    Boolean(details.expense_id) ||
+    (isExpenseModule && Boolean(details.category)) || 
     Boolean(details.amount !== undefined && (details.staff_name || details.staffId || details.staff_id));
 
   if (!isExpenseModule && !hasExpenseKeywords) {
@@ -92,7 +99,7 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
   }
 
   // 2. Category
-  let category = details.category;
+  let category = isExpenseModule ? details.category : null;
   if (!category) {
     const catMatch = desc.match(/\(([^)]+)\)/);
     if (catMatch && catMatch[1]) {
@@ -146,11 +153,11 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
     }
   }
 
-  // Match against expenseList in store
-  if (!staffName && Array.isArray(expenseList) && expenseList.length > 0) {
+  // Match against expenseList in store (ONLY when valid amount exists to prevent accidental matches)
+  if (!staffName && Array.isArray(expenseList) && expenseList.length > 0 && amount !== null && amount > 0) {
     const cleanNote = details.description || desc;
     const candidates = expenseList.filter(e => {
-      if (amount !== null && Math.abs(Number(e.amount) - amount) > 0.01) return false;
+      if (Math.abs(Number(e.amount) - amount) > 0.01) return false;
       return true;
     });
 
@@ -158,8 +165,8 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
       staffName = candidates[0].staffName || (candidates[0].staff && staffList.find(s => String(s.id) === String(candidates[0].staff) || s.staff_code === candidates[0].staff)?.name);
     } else if (candidates.length > 1) {
       const exactMatch = candidates.find(e => {
-        if (e.description && cleanNote.includes(e.description)) return true;
-        if (e.date && log.created_at && log.created_at.startsWith(e.date)) return true;
+        if (e.description && cleanNote && cleanNote.includes(e.description)) return true;
+        if (e.date && log.created_at && log.created_at.startsWith(e.date) && cleanNote && cleanNote.includes(e.category)) return true;
         return false;
       });
       if (exactMatch) {
@@ -168,8 +175,8 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
     }
   }
 
-  // Fallback: check if any staff member's name appears as a distinct word in description
-  if (!staffName && Array.isArray(staffList)) {
+  // Fallback: check if any staff member's name appears as a distinct word in description (only for salary / staff cost logs)
+  if (!staffName && Array.isArray(staffList) && (/বেতন|Salary|Staff Cost|স্টাফ খরচ/i.test(desc) || /Staff Cost|স্টাফ/i.test(category))) {
     const foundStaff = staffList.find(s => {
       if (!s.name || s.name.length < 2) return false;
       const regex = new RegExp(`(^|[\\s(,-])${s.name}([\\s),-]|$|\\b)`, 'i');
@@ -192,7 +199,7 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
   }
 
   // 5. Account / Method
-  const account = details.account || details.payment_method || details.paymentMethod || details.method || 'Cash';
+  const account = details.account || details.payment_method || details.paymentMethod || details.method || (isExpenseModule ? 'Cash' : '');
 
   // 6. Date
   const date = details.date || (log.created_at ? log.created_at.split('T')[0] : '');
