@@ -283,11 +283,23 @@ const DayBook = () => {
     affectCash: true,
   });
 
-  // Keep history modal up to date with latest loan data
+  // Quick Plus (+) and Minus (-) Adjustments for loans (same name)
+  const [quickAdjustTarget, setQuickAdjustTarget] = useState(null);
+  const [quickAdjustType, setQuickAdjustType] = useState('increase'); // 'increase' (+) | 'decrease' (-)
+  const [quickAdjustAmount, setQuickAdjustAmount] = useState('');
+  const [quickAdjustAccount, setQuickAdjustAccount] = useState('Cash');
+  const [quickAdjustDate, setQuickAdjustDate] = useState(today);
+  const [quickAdjustNote, setQuickAdjustNote] = useState('');
+
+  // Keep history and quick adjust modals up to date with latest loan data
   useEffect(() => {
     if (loanHistoryTarget) {
       const refreshed = loans.find(l => l.id === loanHistoryTarget.id);
       if (refreshed) setLoanHistoryTarget(refreshed);
+    }
+    if (quickAdjustTarget) {
+      const refreshed = loans.find(l => l.id === quickAdjustTarget.id);
+      if (refreshed) setQuickAdjustTarget(refreshed);
     }
   }, [loans]);
 
@@ -491,6 +503,69 @@ const DayBook = () => {
     load(true);
   };
 
+  const openLoanAdjustModal = (loan, type = 'increase') => {
+    setQuickAdjustTarget(loan);
+    setQuickAdjustType(type);
+    setQuickAdjustAmount(type === 'decrease' ? String(loan.remainingAmount || '') : '');
+    setQuickAdjustAccount(loan.account || 'Cash');
+    setQuickAdjustDate(today);
+    setQuickAdjustNote('');
+  };
+
+  const handleQuickAdjustSubmit = async (e) => {
+    e.preventDefault();
+    if (!quickAdjustTarget) return;
+
+    const amount = parseFloat(quickAdjustAmount);
+    if (!amount || amount <= 0) {
+      toast.error(bn ? 'সঠিক টাকার পরিমাণ লিখুন' : 'Please enter a valid amount');
+      return;
+    }
+
+    setSaving(true);
+    if (quickAdjustType === 'decrease') {
+      if (amount > quickAdjustTarget.remainingAmount + 0.001) {
+        toast.error(bn ? `সর্বোচ্চ সমন্বয়যোগ্য বকেয়া ${money(quickAdjustTarget.remainingAmount)}` : `Maximum payable is ${money(quickAdjustTarget.remainingAmount)}`);
+        setSaving(false);
+        return;
+      }
+      const res = await payLoan(quickAdjustTarget.id, {
+        amount,
+        account: quickAdjustAccount || 'Cash',
+        date: quickAdjustDate || today,
+        note: (quickAdjustNote || '').trim() || (bn ? '[ঋণ হ্রাস / কিস্তি পরিশোধ]' : '[Repayment / Decrease]'),
+      }, { name: quickAdjustTarget.name });
+      setSaving(false);
+      if (res?.ok) {
+        toast.success(bn
+          ? `${quickAdjustTarget.name}-এর ঋণ থেকে ${money(amount)} পরিশোধ / হ্রাস করা হয়েছে`
+          : `Recorded repayment of ${money(amount)} for ${quickAdjustTarget.name}`);
+        setQuickAdjustTarget(null);
+        load(true);
+      }
+    } else {
+      const res = await addLoan({
+        type: quickAdjustTarget.type,
+        account: quickAdjustAccount || 'Cash',
+        name: quickAdjustTarget.name,
+        phone: quickAdjustTarget.phone || '',
+        amount,
+        note: (quickAdjustNote || '').trim()
+          ? `[কর্জ বৃদ্ধি (+)] ${quickAdjustNote}`
+          : `[কর্জ বৃদ্ধি (+)] আগের ঋণ: ${quickAdjustTarget.id}`,
+        date: quickAdjustDate || today,
+      });
+      setSaving(false);
+      if (res?.ok) {
+        toast.success(bn
+          ? `${quickAdjustTarget.name}-এর নামে নতুন ${money(amount)} ঋণ বৃদ্ধি করা হয়েছে`
+          : `Loan increased by ${money(amount)} for ${quickAdjustTarget.name}`);
+        setQuickAdjustTarget(null);
+        load(true);
+      }
+    }
+  };
+
   const openLoanPay = (loan) => {
     setLoanPayTarget(loan);
     setLoanPayAccount(loan.account || 'Cash');
@@ -610,6 +685,16 @@ const DayBook = () => {
       return [l.name, l.phone, l.note, l.id].some((v) => String(v || '').toLowerCase().includes(q));
     });
   }, [loans, loanFilter, loanSearch]);
+
+  const sameNameLoans = useMemo(() => {
+    if (!quickAdjustTarget) return [];
+    const targetName = (quickAdjustTarget.name || '').trim().toLowerCase();
+    return loans.filter((l) => (l.name || '').trim().toLowerCase() === targetName);
+  }, [loans, quickAdjustTarget]);
+
+  const totalSameNameRemaining = useMemo(() => {
+    return sameNameLoans.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
+  }, [sameNameLoans]);
 
   // ---------------------------------------------------------------- //
   // Figures
@@ -1146,12 +1231,43 @@ const DayBook = () => {
                             {loan.date || '—'}
                           </td>
                           <td>
-                            <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{loan.name}</div>
-                            {loan.phone && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem' }}>
-                                <Phone size={11} /> {loan.phone}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                              <div>
+                                <div
+                                  style={{ fontWeight: 700, color: 'var(--text-main)', cursor: 'pointer' }}
+                                  onClick={() => setLoanSearch(loan.name)}
+                                  title={bn ? 'এই ব্যক্তির সকল কর্জ রেকর্ড দেখতে ক্লিক করুন' : 'Click to filter all loans for this name'}
+                                >
+                                  {loan.name}
+                                </div>
+                                {loan.phone && (
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem' }}>
+                                    <Phone size={11} /> {loan.phone}
+                                  </div>
+                                )}
                               </div>
-                            )}
+                              <div className="loan-name-quick-actions">
+                                <button
+                                  type="button"
+                                  className="loan-pill-btn plus"
+                                  onClick={() => openLoanAdjustModal(loan, 'increase')}
+                                  title={bn ? `${loan.name}-এর নামে কর্জ বৃদ্ধি (+)` : `Increase loan for ${loan.name} (+)`}
+                                >
+                                  <Plus size={11} />
+                                  <span>{bn ? 'প্লাস' : '+'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="loan-pill-btn minus"
+                                  onClick={() => openLoanAdjustModal(loan, 'decrease')}
+                                  title={isSettled ? (bn ? 'পরিশোধিত' : 'Settled') : (bn ? `${loan.name}-এর ঋণ পরিশোধ/হ্রাস (−)` : `Pay / Decrease loan for ${loan.name} (−)`)}
+                                  disabled={isSettled}
+                                >
+                                  <Minus size={11} />
+                                  <span>{bn ? 'মাইনাস' : '−'}</span>
+                                </button>
+                              </div>
+                            </div>
                           </td>
                           <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                             {money(loan.amount)}
@@ -1180,22 +1296,42 @@ const DayBook = () => {
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                               <button
                                 type="button"
+                                className="loan-act-btn plus"
+                                onClick={() => openLoanAdjustModal(loan, 'increase')}
+                                title={bn ? `${loan.name}-এর নামে ঋণ বৃদ্ধি (+)` : `Increase loan (+)`}
+                              >
+                                <Plus size={13} />
+                                <span>{bn ? 'বৃদ্ধি (+)' : '+ Add'}</span>
+                              </button>
+                              {!isSettled ? (
+                                <button
+                                  type="button"
+                                  className="loan-act-btn minus"
+                                  onClick={() => openLoanAdjustModal(loan, 'decrease')}
+                                  title={bn ? `${loan.name}-এর ঋণ পরিশোধ বা হ্রাস (−)` : `Pay / Decrease (−)`}
+                                >
+                                  <Minus size={13} />
+                                  <span>{bn ? 'পরিশোধ (−)' : '− Pay'}</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="loan-act-btn settled-btn"
+                                  disabled
+                                  title={bn ? 'সম্পূর্ণ পরিশোধিত' : 'Settled'}
+                                >
+                                  <Check size={12} />
+                                  <span>{bn ? 'পরিশোধিত' : 'Settled'}</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
                                 className="btn-icon text-primary"
                                 onClick={() => setLoanHistoryTarget(loan)}
                                 title={bn ? 'ঋণ স্টেটমেন্ট ও কিস্তির হিস্টরি দেখুন' : 'View History & Statement'}
                               >
                                 <FileText size={16} />
                               </button>
-                              {!isSettled && (
-                                <button
-                                  type="button"
-                                  className="loan-pay-btn"
-                                  onClick={() => openLoanPay(loan)}
-                                  title={bn ? 'টাকা পরিশোধ / কিস্তি জমা' : 'Pay Installment'}
-                                >
-                                  <DollarSign size={13} /> {bn ? 'Pay' : 'Pay'}
-                                </button>
-                              )}
                               {isAdmin && (
                                 <button
                                   type="button"
@@ -1769,20 +1905,304 @@ const DayBook = () => {
               <button type="button" className="btn-outline" onClick={() => setLoanHistoryTarget(null)}>
                 {bn ? 'বন্ধ করুন' : 'Close'}
               </button>
-              {loanHistoryTarget.remainingAmount > 0.01 && (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
                   type="button"
-                  className="btn-primary flex-align-gap"
+                  className="btn-outline flex-align-gap"
+                  style={{ borderColor: '#10b981', color: '#059669', fontWeight: 600 }}
                   onClick={() => {
                     const tgt = loanHistoryTarget;
                     setLoanHistoryTarget(null);
-                    openLoanPay(tgt);
+                    openLoanAdjustModal(tgt, 'increase');
                   }}
+                  title={bn ? 'এই ব্যক্তির নামে ঋণ বৃদ্ধি করুন (+)' : 'Increase loan on this person (+)'}
                 >
-                  <DollarSign size={16} /> {bn ? 'কিস্তি / টাকা জমা নিন' : 'Pay / Collect Installment'}
+                  <Plus size={15} /> {bn ? 'কর্জ বৃদ্ধি (+)' : 'Add Loan (+)'}
                 </button>
-              )}
+                {loanHistoryTarget.remainingAmount > 0.01 && (
+                  <button
+                    type="button"
+                    className="btn-primary flex-align-gap"
+                    onClick={() => {
+                      const tgt = loanHistoryTarget;
+                      setLoanHistoryTarget(null);
+                      openLoanAdjustModal(tgt, 'decrease');
+                    }}
+                    title={bn ? 'ঋণ পরিশোধ বা কিস্তি জমা নিন (−)' : 'Pay / Collect Installment (−)'}
+                  >
+                    <Minus size={15} /> {bn ? 'কিস্তি পরিশোধ (−)' : 'Pay Installment (−)'}
+                  </button>
+                )}
+              </div>
             </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Quick Loan Plus/Minus Modal for the same person */}
+      {quickAdjustTarget && createPortal(
+        <div className="drawer-overlay" onClick={() => setQuickAdjustTarget(null)}>
+          <div className="drawer-container" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                {quickAdjustType === 'increase' ? (
+                  <>
+                    <span style={{ color: '#10b981', display: 'flex', alignItems: 'center' }}><Plus size={22} /></span>
+                    <span>{bn ? 'কর্জ বৃদ্ধি (+)' : 'Increase Loan (+)'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center' }}><Minus size={22} /></span>
+                    <span>{bn ? 'কর্জ পরিশোধ / হ্রাস (−)' : 'Pay / Decrease Loan (−)'}</span>
+                  </>
+                )}
+              </h2>
+              <button type="button" className="drawer-close-btn" onClick={() => setQuickAdjustTarget(null)}>
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* Switch between Increase (+) and Decrease (-) */}
+            <div style={{ padding: '0.75rem 1.25rem 0' }}>
+              <div className="loan-adjust-tabs" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', background: 'var(--bg-muted)', padding: '0.25rem', borderRadius: 'var(--radius-md)' }}>
+                <button
+                  type="button"
+                  className={`loan-adjust-tab ${quickAdjustType === 'increase' ? 'active' : ''}`}
+                  onClick={() => {
+                    setQuickAdjustType('increase');
+                    setQuickAdjustAmount('');
+                  }}
+                  style={quickAdjustType === 'increase' ? { background: '#10b981', color: '#fff', fontWeight: 700 } : {}}
+                >
+                  <Plus size={15} />
+                  {bn ? 'ঋণ বৃদ্ধি (+)' : 'Increase (+)'}
+                </button>
+                <button
+                  type="button"
+                  className={`loan-adjust-tab ${quickAdjustType === 'decrease' ? 'active' : ''}`}
+                  onClick={() => {
+                    setQuickAdjustType('decrease');
+                    setQuickAdjustAmount(String(quickAdjustTarget.remainingAmount || ''));
+                  }}
+                  style={quickAdjustType === 'decrease' ? { background: '#2563eb', color: '#fff', fontWeight: 700 } : {}}
+                  disabled={quickAdjustTarget.remainingAmount <= 0.01}
+                >
+                  <Minus size={15} />
+                  {bn ? 'পরিশোধ / হ্রাস (−)' : 'Pay / Decrease (−)'}
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleQuickAdjustSubmit} className="db-form" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div className="drawer-body" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {/* Person Information Card */}
+                <div style={{ lineHeight: 1.7, padding: '0.75rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-md)', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span className="text-muted" style={{ fontSize: '0.75rem' }}>{bn ? 'একই ব্যক্তি / প্রতিষ্ঠানের নাম:' : 'Person / Party Name:'}</span>
+                      <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-main)' }}>{quickAdjustTarget.name}</div>
+                      {quickAdjustTarget.phone && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.1rem' }}>
+                          <Phone size={11} /> {quickAdjustTarget.phone}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      {quickAdjustTarget.type === 'given' ? (
+                        <span className="loan-badge-given"><ArrowUpCircle size={12} /> {bn ? 'কর্জ দেওয়া (পাওনা)' : 'Loan Given'}</span>
+                      ) : (
+                        <span className="loan-badge-taken"><ArrowDownCircle size={12} /> {bn ? 'কর্জ নেওয়া (দেনা)' : 'Loan Taken'}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)', fontSize: '0.8125rem' }}>
+                    <div>
+                      <span className="text-muted">{bn ? 'মূল ঋণ:' : 'Original:'}</span>{' '}
+                      <strong>{money(quickAdjustTarget.amount)}</strong>
+                    </div>
+                    <div>
+                      <span className="text-muted">{bn ? 'ইতোমধ্যে পরিশোধ:' : 'Paid:'}</span>{' '}
+                      <span className="text-success" style={{ fontWeight: 600 }}>{money(quickAdjustTarget.paidAmount || 0)}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '0.35rem', fontSize: '0.85rem' }}>
+                    <span className="text-muted">{bn ? 'বর্তমান অবশিষ্ট দেনা/পাওনা:' : 'Current Due:'}</span>{' '}
+                    <strong style={{ color: quickAdjustTarget.type === 'given' ? '#dc2626' : '#2563eb', fontSize: '1rem' }}>
+                      {money(quickAdjustTarget.remainingAmount)}
+                    </strong>
+                  </div>
+
+                  {sameNameLoans.length > 1 && (
+                    <div style={{ marginTop: '0.4rem', padding: '0.3rem 0.5rem', background: 'rgba(37, 99, 235, 0.08)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', color: '#1d4ed8' }}>
+                      ℹ️ {bn ? `এই একই নামে (${quickAdjustTarget.name}) মোট ${sameNameLoans.length}টি ঋণ রয়েছে। সর্বমোট বকেয়া: ${money(totalSameNameRemaining)}` : `Total ${sameNameLoans.length} loans exist for this name. Combined due: ${money(totalSameNameRemaining)}`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Chips */}
+                {quickAdjustType === 'increase' ? (
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                      {bn ? 'দ্রুত পরিমাণ পছন্দ করুন (বা নিচে লিখুন):' : 'Quick Amount:'}
+                    </div>
+                    <div className="loan-quick-chips">
+                      {[500, 1000, 2000, 5000, 10000, 20000].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          className={`loan-quick-chip ${Number(quickAdjustAmount) === amt ? 'active' : ''}`}
+                          onClick={() => setQuickAdjustAmount(String(amt))}
+                        >
+                          +{money(amt)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                      {bn ? 'দ্রুত কিস্তি নির্বাচন (বা নিচে যেকোনো পরিমাণ লিখুন):' : 'Quick Installment:'}
+                    </div>
+                    <div className="loan-quick-chips">
+                      <button
+                        type="button"
+                        className={`loan-quick-chip ${Number(quickAdjustAmount) === Number(quickAdjustTarget.remainingAmount) ? 'active' : ''}`}
+                        onClick={() => setQuickAdjustAmount(String(quickAdjustTarget.remainingAmount))}
+                      >
+                        {bn ? 'সম্পূর্ণ বাকি' : 'Full'}: {money(quickAdjustTarget.remainingAmount)}
+                      </button>
+                      {quickAdjustTarget.remainingAmount > 100 && (
+                        <button
+                          type="button"
+                          className={`loan-quick-chip ${Number(quickAdjustAmount) === Math.round(quickAdjustTarget.remainingAmount / 2) ? 'active' : ''}`}
+                          onClick={() => setQuickAdjustAmount(String(Math.round(quickAdjustTarget.remainingAmount / 2)))}
+                        >
+                          {bn ? '৫০% (অর্ধেক)' : '50%'}: {money(Math.round(quickAdjustTarget.remainingAmount / 2))}
+                        </button>
+                      )}
+                      {[500, 1000, 2000, 5000].filter(amt => amt < quickAdjustTarget.remainingAmount).map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          className={`loan-quick-chip ${Number(quickAdjustAmount) === amt ? 'active' : ''}`}
+                          onClick={() => setQuickAdjustAmount(String(amt))}
+                        >
+                          {money(amt)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Amount input */}
+                <label>
+                  {quickAdjustType === 'increase'
+                    ? (bn ? 'নতুন ঋণ বৃদ্ধির টাকার পরিমাণ (BDT) *' : 'Increase Amount (BDT) *')
+                    : (bn ? 'পরিশোধ / জমার টাকার পরিমাণ (BDT) *' : 'Payment Amount (BDT) *')}
+                </label>
+                <input
+                  type="number"
+                  value={quickAdjustAmount}
+                  onChange={(e) => setQuickAdjustAmount(e.target.value)}
+                  min="1"
+                  max={quickAdjustType === 'decrease' ? quickAdjustTarget.remainingAmount : undefined}
+                  step="any"
+                  placeholder="0.00"
+                  required
+                  autoFocus
+                />
+
+                {/* Live Preview */}
+                {(() => {
+                  const entered = parseFloat(quickAdjustAmount) || 0;
+                  if (quickAdjustType === 'increase') {
+                    const totalAfter = quickAdjustTarget.remainingAmount + entered;
+                    return (
+                      <div style={{ padding: '0.65rem 0.85rem', background: 'rgba(16, 185, 129, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid #86efac', marginTop: '0.65rem', marginBottom: '0.65rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                          <span className="text-muted">{bn ? 'বর্তমান বকেয়া:' : 'Current Due:'}</span>
+                          <strong>{money(quickAdjustTarget.remainingAmount)}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem', color: '#059669' }}>
+                          <span>{bn ? 'নতুন কর্জ বৃদ্ধি (+):' : 'Adding Loan (+):'}</span>
+                          <strong>+{money(entered)}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 800, borderTop: '1px dashed #86efac', paddingTop: '0.35rem', marginTop: '0.25rem' }}>
+                          <span>{bn ? 'বৃদ্ধির পর মোট বকেয়া হবে:' : 'Total Due After Increase:'}</span>
+                          <span style={{ color: '#059669' }}>{money(totalAfter)}</span>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    const remAfter = Math.max(0, quickAdjustTarget.remainingAmount - entered);
+                    const isFullySettled = entered >= quickAdjustTarget.remainingAmount;
+                    return (
+                      <div style={{ padding: '0.65rem 0.85rem', background: isFullySettled ? 'rgba(16, 185, 129, 0.08)' : 'rgba(37, 99, 235, 0.08)', borderRadius: 'var(--radius-md)', border: `1px solid ${isFullySettled ? '#86efac' : '#93c5fd'}`, marginTop: '0.65rem', marginBottom: '0.65rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                          <span className="text-muted">{bn ? 'পরিশোধিত হচ্ছে:' : 'Paying now:'}</span>
+                          <strong>{money(entered)}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 800, borderTop: `1px dashed ${isFullySettled ? '#86efac' : '#93c5fd'}`, paddingTop: '0.35rem', marginTop: '0.25rem' }}>
+                          <span>{bn ? 'পরিশোধ পরবর্তী অবশিষ্ট থাকবে:' : 'Remaining after payment:'}</span>
+                          <span style={{ color: isFullySettled ? '#16a34a' : '#dc2626' }}>{money(remAfter)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                })()}
+
+                {/* Account and Date */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  <div>
+                    <label>{bn ? 'লেনদেনের মাধ্যম / একাউন্ট' : 'Account'} *</label>
+                    <select
+                      value={quickAdjustAccount}
+                      onChange={(e) => setQuickAdjustAccount(e.target.value)}
+                    >
+                      <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
+                      <option value="Bank">Bank Account (ব্যাংক)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>{bn ? 'তারিখ' : 'Date'}</label>
+                    <input
+                      type="date"
+                      value={quickAdjustDate}
+                      onChange={(e) => setQuickAdjustDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Note */}
+                <label style={{ marginTop: '0.5rem' }}>{bn ? 'বিবরণ বা নোট' : 'Note / Reference'}</label>
+                <input
+                  type="text"
+                  value={quickAdjustNote}
+                  onChange={(e) => setQuickAdjustNote(e.target.value)}
+                  placeholder={quickAdjustType === 'increase'
+                    ? (bn ? 'কর্জ বৃদ্ধির উদ্দেশ্য বা বিবরণ (ঐচ্ছিক)' : 'Increase note/purpose (optional)')
+                    : (bn ? 'নগদ / কিস্তি নং / রেফারেন্স (ঐচ্ছিক)' : 'Payment note/ref (optional)')}
+                />
+              </div>
+
+              <div className="drawer-footer" style={{ flexShrink: 0 }}>
+                <button type="button" className="btn-outline" onClick={() => setQuickAdjustTarget(null)}>
+                  {bn ? 'বাতিল' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={quickAdjustType === 'increase' ? { background: '#10b981', borderColor: '#10b981' } : {}}
+                >
+                  {quickAdjustType === 'increase'
+                    ? (bn ? 'কর্জ বৃদ্ধি সংরক্ষণ করুন (+)' : 'Save Loan Increase (+)')
+                    : (bn ? 'পরিশোধ আপডেট করুন (−)' : 'Save Payment (−)')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>,
         document.body,
