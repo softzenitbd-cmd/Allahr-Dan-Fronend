@@ -243,7 +243,55 @@ const StockLog = () => {
           </div>
 
           <div className="field">
-            <label>{t(language, 'Date')}</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ margin: 0 }}>{t(language, 'Date')}</label>
+              <div style={{ display: 'flex', gap: '3px' }}>
+                {[
+                  { id: 'all', labelBn: 'সব', labelEn: 'All' },
+                  { id: 'today', labelBn: 'আজ', labelEn: 'Today' },
+                  { id: '7days', labelBn: '৭ দিন', labelEn: '7D' },
+                  { id: '30days', labelBn: '৩০ দিন', labelEn: '30D' },
+                  { id: 'this_month', labelBn: 'এই মাস', labelEn: 'Month' },
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const pad = (n) => String(n).padStart(2, '0');
+                      const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+                      if (p.id === 'all') {
+                        setStartDate(''); setEndDate('');
+                      } else if (p.id === 'today') {
+                        setStartDate(todayStr); setEndDate(todayStr);
+                      } else if (p.id === '7days') {
+                        const d = new Date(today); d.setDate(d.getDate() - 7);
+                        const dStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        setStartDate(dStr); setEndDate(todayStr);
+                      } else if (p.id === '30days') {
+                        const d = new Date(today); d.setDate(d.getDate() - 30);
+                        const dStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        setStartDate(dStr); setEndDate(todayStr);
+                      } else if (p.id === 'this_month') {
+                        const dStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
+                        setStartDate(dStr); setEndDate(todayStr);
+                      }
+                    }}
+                    style={{
+                      padding: '1px 5px',
+                      fontSize: '0.68rem',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475563',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {language === 'bn' ? p.labelBn : p.labelEn}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="dates">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} title="From" />
               <span className="text-muted">–</span>

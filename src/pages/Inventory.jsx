@@ -5,6 +5,7 @@ import {
   Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
   AlertTriangle, History, Clock, PackagePlus, ArrowUpCircle, ArrowDownCircle,
+  Calendar,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import ReferenceDataDrawer from '../components/ReferenceDataDrawer';
@@ -90,6 +91,8 @@ const Inventory = () => {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('all');
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
   const [historySubFilter, setHistorySubFilter] = useState('ALL');
 
   // The category tree as the server keeps it: top-level ones, and under each
@@ -379,33 +382,60 @@ const Inventory = () => {
     return days === 1 ? (language === 'bn' ? 'গতকাল' : 'yesterday') : (language === 'bn' ? `${days} দিন আগে` : `${days} days ago`);
   };
 
-  const getDateRangeForFilter = (filter) => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    if (filter === 'today') {
-      return { start_date: todayStr, end_date: todayStr };
-    }
-    if (filter === '7days') {
-      const past = new Date(today);
-      past.setDate(past.getDate() - 7);
-      return { start_date: past.toISOString().split('T')[0], end_date: todayStr };
-    }
-    if (filter === '30days') {
-      const past = new Date(today);
-      past.setDate(past.getDate() - 30);
-      return { start_date: past.toISOString().split('T')[0], end_date: todayStr };
-    }
-    return {};
+  const formatLocalDate = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
-  const loadDamageHistory = useCallback(async (dateFilter = historyDateFilter, search = historySearch) => {
+  const getPresetDates = (presetKey) => {
+    const today = new Date();
+    const todayStr = formatLocalDate(today);
+
+    if (presetKey === 'today') {
+      return { start: todayStr, end: todayStr };
+    }
+    if (presetKey === 'yesterday') {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const yStr = formatLocalDate(y);
+      return { start: yStr, end: yStr };
+    }
+    if (presetKey === '7days') {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 7);
+      return { start: formatLocalDate(past), end: todayStr };
+    }
+    if (presetKey === '30days') {
+      const past = new Date(today);
+      past.setDate(past.getDate() - 30);
+      return { start: formatLocalDate(past), end: todayStr };
+    }
+    if (presetKey === 'this_month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start: formatLocalDate(firstDay), end: todayStr };
+    }
+    return { start: '', end: '' };
+  };
+
+  const HISTORY_DATE_PRESETS = [
+    { id: 'all', bn: 'সব সময়', en: 'All Time' },
+    { id: 'today', bn: 'আজকে', en: 'Today' },
+    { id: 'yesterday', bn: 'গতকাল', en: 'Yesterday' },
+    { id: '7days', bn: '৭ দিন', en: '7 Days' },
+    { id: '30days', bn: '৩০ দিন', en: '30 Days' },
+    { id: 'this_month', bn: 'এই মাস', en: 'This Month' },
+  ];
+
+  const loadDamageHistory = useCallback(async (start = historyStartDate, end = historyEndDate, search = historySearch) => {
     setIsHistoryLoading(true);
-    const dateParams = getDateRangeForFilter(dateFilter);
     const params = {
       movement_type: 'DAMAGE',
       limit: 500,
-      ...dateParams,
     };
+    if (start) params.start_date = start;
+    if (end) params.end_date = end;
     if (search && search.trim()) params.search = search.trim();
     const res = await fetchStockLogs(params);
     if (res?.ok) {
@@ -413,16 +443,16 @@ const Inventory = () => {
       setHistorySummary(res.summary || null);
     }
     setIsHistoryLoading(false);
-  }, [fetchStockLogs, historyDateFilter, historySearch]);
+  }, [fetchStockLogs, historyStartDate, historyEndDate, historySearch]);
 
-  const loadStockInHistory = useCallback(async (dateFilter = historyDateFilter, search = historySearch, subFilter = historySubFilter) => {
+  const loadStockInHistory = useCallback(async (start = historyStartDate, end = historyEndDate, search = historySearch, subFilter = historySubFilter) => {
     setIsHistoryLoading(true);
-    const dateParams = getDateRangeForFilter(dateFilter);
     const params = {
       direction: 'in',
       limit: 500,
-      ...dateParams,
     };
+    if (start) params.start_date = start;
+    if (end) params.end_date = end;
     if (subFilter && subFilter !== 'ALL') {
       params.movement_type = subFilter;
     }
@@ -433,15 +463,17 @@ const Inventory = () => {
       setHistorySummary(res.summary || null);
     }
     setIsHistoryLoading(false);
-  }, [fetchStockLogs, historyDateFilter, historySearch, historySubFilter]);
+  }, [fetchStockLogs, historyStartDate, historyEndDate, historySearch, historySubFilter]);
 
-  const loadProductHistory = useCallback(async (prod, subFilter = historySubFilter) => {
+  const loadProductHistory = useCallback(async (prod = historyProduct, subFilter = historySubFilter, start = historyStartDate, end = historyEndDate) => {
     if (!prod) return;
     setIsHistoryLoading(true);
     const params = {
       product: prod.product_code || prod.id,
       limit: 500,
     };
+    if (start) params.start_date = start;
+    if (end) params.end_date = end;
     if (subFilter === 'DAMAGE') {
       params.movement_type = 'DAMAGE';
     } else {
@@ -460,28 +492,119 @@ const Inventory = () => {
       setHistorySummary(res.summary || null);
     }
     setIsHistoryLoading(false);
-  }, [fetchStockLogs, historySubFilter]);
+  }, [fetchStockLogs, historyProduct, historySubFilter, historyStartDate, historyEndDate]);
+
+  const handleStockInDatePreset = (presetId) => {
+    setHistoryDateFilter(presetId);
+    let start = '';
+    let end = '';
+    if (presetId !== 'all') {
+      const dates = getPresetDates(presetId);
+      start = dates.start;
+      end = dates.end;
+    }
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    loadStockInHistory(start, end, historySearch, historySubFilter);
+  };
+
+  const handleStockInDateChange = (start, end) => {
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    setHistoryDateFilter('custom');
+    loadStockInHistory(start, end, historySearch, historySubFilter);
+  };
+
+  const handleClearStockInDates = () => {
+    setHistoryStartDate('');
+    setHistoryEndDate('');
+    setHistoryDateFilter('all');
+    loadStockInHistory('', '', historySearch, historySubFilter);
+  };
+
+  const handleDamageDatePreset = (presetId) => {
+    setHistoryDateFilter(presetId);
+    let start = '';
+    let end = '';
+    if (presetId !== 'all') {
+      const dates = getPresetDates(presetId);
+      start = dates.start;
+      end = dates.end;
+    }
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    loadDamageHistory(start, end, historySearch);
+  };
+
+  const handleDamageDateChange = (start, end) => {
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    setHistoryDateFilter('custom');
+    loadDamageHistory(start, end, historySearch);
+  };
+
+  const handleClearDamageDates = () => {
+    setHistoryStartDate('');
+    setHistoryEndDate('');
+    setHistoryDateFilter('all');
+    loadDamageHistory('', '', historySearch);
+  };
+
+  const handleProductDatePreset = (presetId) => {
+    setHistoryDateFilter(presetId);
+    let start = '';
+    let end = '';
+    if (presetId !== 'all') {
+      const dates = getPresetDates(presetId);
+      start = dates.start;
+      end = dates.end;
+    }
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    loadProductHistory(historyProduct, historySubFilter, start, end);
+  };
+
+  const handleProductDateChange = (start, end) => {
+    setHistoryStartDate(start);
+    setHistoryEndDate(end);
+    setHistoryDateFilter('custom');
+    loadProductHistory(historyProduct, historySubFilter, start, end);
+  };
+
+  const handleClearProductDates = () => {
+    setHistoryStartDate('');
+    setHistoryEndDate('');
+    setHistoryDateFilter('all');
+    loadProductHistory(historyProduct, historySubFilter, '', '');
+  };
 
   const handleOpenDamageHistory = () => {
     setHistorySearch('');
     setHistoryDateFilter('all');
+    setHistoryStartDate('');
+    setHistoryEndDate('');
     setShowDamageHistoryModal(true);
-    loadDamageHistory('all', '');
+    loadDamageHistory('', '', '');
   };
 
   const handleOpenStockInHistory = () => {
     setHistorySearch('');
     setHistoryDateFilter('all');
+    setHistoryStartDate('');
+    setHistoryEndDate('');
     setHistorySubFilter('ALL');
     setShowStockInHistoryModal(true);
-    loadStockInHistory('all', '', 'ALL');
+    loadStockInHistory('', '', '', 'ALL');
   };
 
   const handleOpenProductHistory = (item) => {
     setHistoryProduct(item);
+    setHistoryDateFilter('all');
+    setHistoryStartDate('');
+    setHistoryEndDate('');
     setHistorySubFilter('IN');
     setShowProductHistoryModal(true);
-    loadProductHistory(item, 'IN');
+    loadProductHistory(item, 'IN', '', '');
   };
 
   const handleImageSelect = (file, isEdit = false) => {
@@ -2426,8 +2549,8 @@ const Inventory = () => {
               </div>
             </div>
 
-            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px' }}>
+            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
                 <div className="search-bar" style={{ margin: 0, width: '100%' }}>
                   <Search size={16} className="text-muted" />
                   <input
@@ -2436,40 +2559,102 @@ const Inventory = () => {
                     value={historySearch}
                     onChange={(e) => {
                       setHistorySearch(e.target.value);
-                      loadDamageHistory(historyDateFilter, e.target.value);
+                      loadDamageHistory(historyStartDate, historyEndDate, e.target.value);
                     }}
                   />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                {[
-                  { id: 'all', bn: 'সব সময়', en: 'All Time' },
-                  { id: 'today', bn: 'আজকে', en: 'Today' },
-                  { id: '7days', bn: 'বিগত ৭ দিন', en: 'Last 7 Days' },
-                  { id: '30days', bn: 'বিগত ৩০ দিন', en: 'Last 30 Days' },
-                ].map(f => (
-                  <button
-                    key={f.id}
-                    type="button"
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px', borderTop: '1px dashed #e2e8f0' }}>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginRight: '2px' }}>
+                    {language === 'bn' ? 'সময়কাল:' : 'Period:'}
+                  </span>
+                  {HISTORY_DATE_PRESETS.map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: historyDateFilter === f.id ? '#dc2626' : '#cbd5e1',
+                        background: historyDateFilter === f.id ? '#fef2f2' : '#ffffff',
+                        color: historyDateFilter === f.id ? '#dc2626' : '#475563',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      onClick={() => handleDamageDatePreset(f.id)}
+                    >
+                      {language === 'bn' ? f.bn : f.en}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Date Range Picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ffffff', padding: '4px 10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <Calendar size={14} style={{ color: '#dc2626' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+                    {language === 'bn' ? 'তারিখ রেঞ্জ:' : 'Range:'}
+                  </span>
+                  <input
+                    type="date"
+                    value={historyStartDate}
+                    onChange={(e) => handleDamageDateChange(e.target.value, historyEndDate)}
                     style={{
-                      padding: '5px 11px',
-                      borderRadius: '20px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 6px',
                       fontSize: '0.78rem',
-                      fontWeight: 600,
-                      border: '1px solid',
-                      borderColor: historyDateFilter === f.id ? '#dc2626' : '#cbd5e1',
-                      background: historyDateFilter === f.id ? '#fef2f2' : '#ffffff',
-                      color: historyDateFilter === f.id ? '#dc2626' : '#475563',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
                       cursor: 'pointer'
                     }}
-                    onClick={() => {
-                      setHistoryDateFilter(f.id);
-                      loadDamageHistory(f.id, historySearch);
+                    title={language === 'bn' ? 'শুরুর তারিখ' : 'Start Date'}
+                  />
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>–</span>
+                  <input
+                    type="date"
+                    value={historyEndDate}
+                    onChange={(e) => handleDamageDateChange(historyStartDate, e.target.value)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 6px',
+                      fontSize: '0.78rem',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
+                      cursor: 'pointer'
                     }}
-                  >
-                    {language === 'bn' ? f.bn : f.en}
-                  </button>
-                ))}
+                    title={language === 'bn' ? 'শেষ তারিখ' : 'End Date'}
+                  />
+                  {(historyStartDate || historyEndDate) && (
+                    <button
+                      type="button"
+                      onClick={handleClearDamageDates}
+                      title={language === 'bn' ? 'তারিখ ফিল্টার মুছুন' : 'Clear date filter'}
+                      style={{
+                        background: '#fee2e2',
+                        border: 'none',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        padding: '2px 5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        gap: '2px'
+                      }}
+                    >
+                      <X size={12} /> {language === 'bn' ? 'মুছুন' : 'Clear'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2491,6 +2676,16 @@ const Inventory = () => {
                   -{historyLogs.reduce((sum, r) => sum + Math.abs(r.quantity_changed || 0), 0)} Pcs
                 </div>
               </div>
+              {(historyStartDate || historyEndDate) && (
+                <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#fff1f2', border: '1px solid #fecdd3', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#be123c', fontWeight: 600, textTransform: 'uppercase' }}>
+                    {language === 'bn' ? 'নির্বাচিত সময়কাল' : 'Selected Period'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#9f1239', marginTop: '2px' }}>
+                    {historyStartDate || 'শুরু'} হতে {historyEndDate || 'বর্তমান'}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
@@ -2600,63 +2795,133 @@ const Inventory = () => {
               </div>
             </div>
 
-            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px' }}>
-                <div className="search-bar" style={{ margin: 0, width: '100%' }}>
-                  <Search size={16} className="text-muted" />
-                  <input
-                    type="text"
-                    placeholder={language === 'bn' ? 'পণ্য বা বারকোড দিয়ে খুঁজুন...' : 'Search by product or barcode...'}
-                    value={historySearch}
+            <div style={{ padding: '12px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Top Row: Search & Subfilter */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px' }}>
+                  <div className="search-bar" style={{ margin: 0, width: '100%' }}>
+                    <Search size={16} className="text-muted" />
+                    <input
+                      type="text"
+                      placeholder={language === 'bn' ? 'পণ্য বা বারকোড দিয়ে খুঁজুন...' : 'Search by product or barcode...'}
+                      value={historySearch}
+                      onChange={(e) => {
+                        setHistorySearch(e.target.value);
+                        loadStockInHistory(historyStartDate, historyEndDate, e.target.value, historySubFilter);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select
+                    value={historySubFilter}
                     onChange={(e) => {
-                      setHistorySearch(e.target.value);
-                      loadStockInHistory(historyDateFilter, e.target.value, historySubFilter);
+                      setHistorySubFilter(e.target.value);
+                      loadStockInHistory(historyStartDate, historyEndDate, historySearch, e.target.value);
                     }}
-                  />
+                    style={{ fontSize: '0.82rem', padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                  >
+                    <option value="ALL">{language === 'bn' ? 'সব ধরণের যোগ (All In)' : 'All Additions'}</option>
+                    <option value="PURCHASE">{language === 'bn' ? 'ক্রয় / প্রারম্ভিক স্টক (Purchases)' : 'Purchases'}</option>
+                    <option value="ADJUSTMENT">{language === 'bn' ? 'ম্যানুয়াল / কুইক যোগ (Adjustments)' : 'Adjustments'}</option>
+                    <option value="CUSTOMER_RETURN">{language === 'bn' ? 'কাস্টমার ফেরত (Returns)' : 'Customer Returns'}</option>
+                  </select>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <select
-                  value={historySubFilter}
-                  onChange={(e) => {
-                    setHistorySubFilter(e.target.value);
-                    loadStockInHistory(historyDateFilter, historySearch, e.target.value);
-                  }}
-                  style={{ fontSize: '0.8rem', padding: '5px 8px', borderRadius: '6px' }}
-                >
-                  <option value="ALL">{language === 'bn' ? 'সব ধরণের যোগ (All In)' : 'All Additions'}</option>
-                  <option value="PURCHASE">{language === 'bn' ? 'ক্রয় / প্রারম্ভিক স্টক (Purchases)' : 'Purchases'}</option>
-                  <option value="ADJUSTMENT">{language === 'bn' ? 'ম্যানুয়াল / কুইক যোগ (Adjustments)' : 'Adjustments'}</option>
-                  <option value="CUSTOMER_RETURN">{language === 'bn' ? 'কাস্টমার ফেরত (Returns)' : 'Customer Returns'}</option>
-                </select>
-                {[
-                  { id: 'all', bn: 'সব সময়', en: 'All Time' },
-                  { id: 'today', bn: 'আজকে', en: 'Today' },
-                  { id: '7days', bn: '৭ দিন', en: '7 Days' },
-                  { id: '30days', bn: '৩০ দিন', en: '30 Days' },
-                ].map(f => (
-                  <button
-                    key={f.id}
-                    type="button"
+
+              {/* Bottom Row: Date Presets & Custom Date Range Filter */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px', borderTop: '1px dashed #e2e8f0' }}>
+                {/* Presets */}
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginRight: '2px' }}>
+                    {language === 'bn' ? 'সময়কাল:' : 'Period:'}
+                  </span>
+                  {HISTORY_DATE_PRESETS.map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: historyDateFilter === f.id ? '#059669' : '#cbd5e1',
+                        background: historyDateFilter === f.id ? '#ecfdf5' : '#ffffff',
+                        color: historyDateFilter === f.id ? '#059669' : '#475563',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      onClick={() => handleStockInDatePreset(f.id)}
+                    >
+                      {language === 'bn' ? f.bn : f.en}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Date Range Picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ffffff', padding: '4px 10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <Calendar size={14} style={{ color: '#059669' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+                    {language === 'bn' ? 'তারিখ রেঞ্জ:' : 'Range:'}
+                  </span>
+                  <input
+                    type="date"
+                    value={historyStartDate}
+                    onChange={(e) => handleStockInDateChange(e.target.value, historyEndDate)}
                     style={{
-                      padding: '5px 11px',
-                      borderRadius: '20px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 6px',
                       fontSize: '0.78rem',
-                      fontWeight: 600,
-                      border: '1px solid',
-                      borderColor: historyDateFilter === f.id ? '#059669' : '#cbd5e1',
-                      background: historyDateFilter === f.id ? '#ecfdf5' : '#ffffff',
-                      color: historyDateFilter === f.id ? '#059669' : '#475563',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
                       cursor: 'pointer'
                     }}
-                    onClick={() => {
-                      setHistoryDateFilter(f.id);
-                      loadStockInHistory(f.id, historySearch, historySubFilter);
+                    title={language === 'bn' ? 'শুরুর তারিখ' : 'Start Date'}
+                  />
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>–</span>
+                  <input
+                    type="date"
+                    value={historyEndDate}
+                    onChange={(e) => handleStockInDateChange(historyStartDate, e.target.value)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 6px',
+                      fontSize: '0.78rem',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
+                      cursor: 'pointer'
                     }}
-                  >
-                    {language === 'bn' ? f.bn : f.en}
-                  </button>
-                ))}
+                    title={language === 'bn' ? 'শেষ তারিখ' : 'End Date'}
+                  />
+                  {(historyStartDate || historyEndDate) && (
+                    <button
+                      type="button"
+                      onClick={handleClearStockInDates}
+                      title={language === 'bn' ? 'তারিখ ফিল্টার মুছুন' : 'Clear date filter'}
+                      style={{
+                        background: '#fee2e2',
+                        border: 'none',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        padding: '2px 5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        gap: '2px'
+                      }}
+                    >
+                      <X size={12} /> {language === 'bn' ? 'মুছুন' : 'Clear'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2678,6 +2943,16 @@ const Inventory = () => {
                   +{historyLogs.reduce((sum, r) => sum + (r.quantity_changed > 0 ? r.quantity_changed : 0), 0)} Pcs
                 </div>
               </div>
+              {(historyStartDate || historyEndDate) && (
+                <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600, textTransform: 'uppercase' }}>
+                    {language === 'bn' ? 'নির্বাচিত সময়কাল' : 'Selected Period'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#166534', marginTop: '2px' }}>
+                    {historyStartDate || 'শুরু'} হতে {historyEndDate || 'বর্তমান'}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
@@ -2828,39 +3103,145 @@ const Inventory = () => {
                   {historyLogs.length}
                 </div>
               </div>
+              {(historyStartDate || historyEndDate) && (
+                <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600, textTransform: 'uppercase' }}>
+                    {language === 'bn' ? 'নির্বাচিত সময়কাল' : 'Selected Period'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#166534', marginTop: '2px' }}>
+                    {historyStartDate || 'শুরু'} হতে {historyEndDate || 'বর্তমান'}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Filter Pills */}
-            <div style={{ padding: '10px 18px', background: '#ffffff', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {[
-                { id: 'IN', labelBn: '📦 সকল পণ্য যোগ (+)', labelEn: 'All Additions (+)' },
-                { id: 'PURCHASE', labelBn: 'ক্রয় / প্রারম্ভিক স্টক', labelEn: 'Purchases / Initial' },
-                { id: 'ADJUSTMENT', labelBn: 'ম্যানুয়াল / কুইক যোগ', labelEn: 'Quick / Manual Add' },
-                { id: 'CUSTOMER_RETURN', labelBn: 'কাস্টমার ফেরত', labelEn: 'Returns' },
-                { id: 'DAMAGE', labelBn: '⚠️ ড্যামেজ হিস্ট্রি (-)', labelEn: 'Damage History (-)' },
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: '20px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    border: '1px solid',
-                    borderColor: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#cbd5e1',
-                    background: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#fef2f2' : '#ecfdf5') : '#ffffff',
-                    color: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#475563',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => {
-                    setHistorySubFilter(tab.id);
-                    loadProductHistory(historyProduct, tab.id);
-                  }}
-                >
-                  {language === 'bn' ? tab.labelBn : tab.labelEn}
-                </button>
-              ))}
+            {/* Filter Pills & Date Filter Range */}
+            <div style={{ padding: '10px 18px', background: '#ffffff', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Type Pills */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'IN', labelBn: '📦 সকল পণ্য যোগ (+)', labelEn: 'All Additions (+)' },
+                  { id: 'PURCHASE', labelBn: 'ক্রয় / প্রারম্ভিক স্টক', labelEn: 'Purchases / Initial' },
+                  { id: 'ADJUSTMENT', labelBn: 'ম্যানুয়াল / কুইক যোগ', labelEn: 'Quick / Manual Add' },
+                  { id: 'CUSTOMER_RETURN', labelBn: 'কাস্টমার ফেরত', labelEn: 'Returns' },
+                  { id: 'DAMAGE', labelBn: '⚠️ ড্যামেজ হিস্ট্রি (-)', labelEn: 'Damage History (-)' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      border: '1px solid',
+                      borderColor: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#cbd5e1',
+                      background: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#fef2f2' : '#ecfdf5') : '#ffffff',
+                      color: historySubFilter === tab.id ? (tab.id === 'DAMAGE' ? '#dc2626' : '#059669') : '#475563',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      setHistorySubFilter(tab.id);
+                      loadProductHistory(historyProduct, tab.id, historyStartDate, historyEndDate);
+                    }}
+                  >
+                    {language === 'bn' ? tab.labelBn : tab.labelEn}
+                  </button>
+                ))}
+              </div>
+
+              {/* Date Presets & Custom Range */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px dashed #e2e8f0' }}>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginRight: '2px' }}>
+                    {language === 'bn' ? 'সময়কাল:' : 'Period:'}
+                  </span>
+                  {HISTORY_DATE_PRESETS.map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      style={{
+                        padding: '3px 9px',
+                        borderRadius: '20px',
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: historyDateFilter === f.id ? '#059669' : '#cbd5e1',
+                        background: historyDateFilter === f.id ? '#ecfdf5' : '#ffffff',
+                        color: historyDateFilter === f.id ? '#059669' : '#475563',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      onClick={() => handleProductDatePreset(f.id)}
+                    >
+                      {language === 'bn' ? f.bn : f.en}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ffffff', padding: '3px 8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <Calendar size={14} style={{ color: '#059669' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+                    {language === 'bn' ? 'তারিখ রেঞ্জ:' : 'Range:'}
+                  </span>
+                  <input
+                    type="date"
+                    value={historyStartDate}
+                    onChange={(e) => handleProductDateChange(e.target.value, historyEndDate)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 5px',
+                      fontSize: '0.78rem',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                    title={language === 'bn' ? 'শুরুর তারিখ' : 'Start Date'}
+                  />
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>–</span>
+                  <input
+                    type="date"
+                    value={historyEndDate}
+                    onChange={(e) => handleProductDateChange(historyStartDate, e.target.value)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '5px',
+                      padding: '2px 5px',
+                      fontSize: '0.78rem',
+                      color: '#0f172a',
+                      background: '#f8fafc',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                    title={language === 'bn' ? 'শেষ তারিখ' : 'End Date'}
+                  />
+                  {(historyStartDate || historyEndDate) && (
+                    <button
+                      type="button"
+                      onClick={handleClearProductDates}
+                      title={language === 'bn' ? 'তারিখ ফিল্টার মুছুন' : 'Clear date filter'}
+                      style={{
+                        background: '#fee2e2',
+                        border: 'none',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        padding: '2px 5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        gap: '2px'
+                      }}
+                    >
+                      <X size={12} /> {language === 'bn' ? 'মুছুন' : 'Clear'}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="drawer-body" style={{ padding: '14px 18px', maxHeight: 'calc(90vh - 230px)', overflowY: 'auto' }}>
@@ -2953,7 +3334,10 @@ const Inventory = () => {
         <div id="printable-damage-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ক্ষতিগ্রস্ত / ড্যামেজ পণ্য রিপোর্ট (Damage Report)</h3>
-          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>তারিখ: {new Date().toLocaleDateString()}</p>
+          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
+            তারিখ: {new Date().toLocaleDateString()}
+            {(historyStartDate || historyEndDate) ? ` · ফিল্টার তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
+          </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
@@ -2983,7 +3367,10 @@ const Inventory = () => {
         <div id="printable-stockin-history" style={{ padding: '2rem', background: '#fff', color: '#000' }}>
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>পণ্য যোগের ইতিহাস রিপোর্ট (Stock In History Report)</h3>
-          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>তারিখ: {new Date().toLocaleDateString()}</p>
+          <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
+            তারিখ: {new Date().toLocaleDateString()}
+            {(historyStartDate || historyEndDate) ? ` · ফিল্টার তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
+          </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
@@ -3019,6 +3406,7 @@ const Inventory = () => {
           </h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
             বর্তমান স্টক: {historyProduct?.stock} {historyProduct?.unit || 'Pcs'} · প্রিন্টের তারিখ: {new Date().toLocaleDateString()}
+            {(historyStartDate || historyEndDate) ? ` · তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
           </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
