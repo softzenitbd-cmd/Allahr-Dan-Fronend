@@ -244,6 +244,7 @@ const DayBook = () => {
   const [loanAdjustTab, setLoanAdjustTab] = useState('old'); // 'old' | 'adjust'
   const [loanHistoryTarget, setLoanHistoryTarget] = useState(null);
   const [loanFilter, setLoanFilter] = useState('all'); // 'all', 'given', 'taken', 'active', 'settled'
+  const [loanViewMode, setLoanViewMode] = useState('grouped'); // 'grouped' (ডিফল্ট: ১ ব্যক্তি ১ সারি) | 'detailed' (আলাদা এন্ট্রি)
   const [loanSearch, setLoanSearch] = useState('');
   const [loanPayTarget, setLoanPayTarget] = useState(null);
   const [loanPayAccount, setLoanPayAccount] = useState('Cash');
@@ -291,17 +292,80 @@ const DayBook = () => {
   const [quickAdjustDate, setQuickAdjustDate] = useState(today);
   const [quickAdjustNote, setQuickAdjustNote] = useState('');
 
+  // Group loans by normalized person name and loan type (one single row per person)
+  const groupedLoans = useMemo(() => {
+    const groups = {};
+
+    loans.forEach((loan) => {
+      const normName = (loan.name || '').trim();
+      if (!normName) return;
+      const key = `${normName.toLowerCase()}___${loan.type}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          id: loan.id,
+          key,
+          name: normName,
+          phone: loan.phone || '',
+          type: loan.type,
+          account: loan.account || 'Cash',
+          date: loan.date || '',
+          note: loan.note || '',
+          amount: 0,
+          paidAmount: 0,
+          remainingAmount: 0,
+          status: 'settled',
+          loans: [],
+          payments: [],
+        };
+      }
+
+      const g = groups[key];
+      g.loans.push(loan);
+
+      if (!g.phone && loan.phone) g.phone = loan.phone;
+      if (loan.date && (!g.date || new Date(loan.date) > new Date(g.date))) {
+        g.date = loan.date;
+      }
+
+      g.amount += Number(loan.amount) || 0;
+      g.paidAmount += Number(loan.paidAmount) || 0;
+      g.remainingAmount += Number(loan.remainingAmount) || 0;
+
+      if (Array.isArray(loan.payments)) {
+        loan.payments.forEach((p) => {
+          g.payments.push({
+            ...p,
+            loanId: loan.id,
+          });
+        });
+      }
+    });
+
+    return Object.values(groups).map((g) => {
+      g.status = g.remainingAmount <= 0.01 ? 'settled' : 'active';
+      g.payments.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return g;
+    });
+  }, [loans]);
+
   // Keep history and quick adjust modals up to date with latest loan data
   useEffect(() => {
     if (loanHistoryTarget) {
-      const refreshed = loans.find(l => l.id === loanHistoryTarget.id);
+      const targetName = (loanHistoryTarget.name || '').trim().toLowerCase();
+      const refreshed = (loanViewMode === 'grouped' ? groupedLoans : loans).find(
+        (l) => (l.name || '').trim().toLowerCase() === targetName && l.type === loanHistoryTarget.type
+      );
       if (refreshed) setLoanHistoryTarget(refreshed);
     }
     if (quickAdjustTarget) {
-      const refreshed = loans.find(l => l.id === quickAdjustTarget.id);
+      const targetName = (quickAdjustTarget.name || '').trim().toLowerCase();
+      const refreshed = (loanViewMode === 'grouped' ? groupedLoans : loans).find(
+        (l) => (l.name || '').trim().toLowerCase() === targetName && l.type === quickAdjustTarget.type
+      );
       if (refreshed) setQuickAdjustTarget(refreshed);
     }
-  }, [loans]);
+  }, [loans, groupedLoans, loanViewMode]);
 
   const handleCreateLoan = async (e) => {
     e.preventDefault();
@@ -529,20 +593,32 @@ const DayBook = () => {
         setSaving(false);
         return;
       }
-      const res = await payLoan(quickAdjustTarget.id, {
-        amount,
-        account: quickAdjustAccount || 'Cash',
-        date: quickAdjustDate || today,
-        note: (quickAdjustNote || '').trim() || (bn ? '[ঋণ হ্রাস / কিস্তি পরিশোধ]' : '[Repayment / Decrease]'),
-      }, { name: quickAdjustTarget.name });
-      setSaving(false);
-      if (res?.ok) {
-        toast.success(bn
-          ? `${quickAdjustTarget.name}-এর ঋণ থেকে ${money(amount)} পরিশোধ / হ্রাস করা হয়েছে`
-          : `Recorded repayment of ${money(amount)} for ${quickAdjustTarget.name}`);
-        setQuickAdjustTarget(null);
-        load(true);
+
+      // Distribute repayment across active sub-loans for this person
+      const subLoans = quickAdjustTarget.loans && quickAdjustTarget.loans.length > 0
+        ? quickAdjustTarget.loans
+        : [quickAdjustTarget];
+      const activeSubs = subLoans.filter(l => (Number(l.remainingAmount) || 0) > 0.001);
+      let toPay = amount;
+
+      for (const targetSub of activeSubs) {
+        if (toPay <= 0.001) break;
+        const chunk = Math.min(toPay, Number(targetSub.remainingAmount) || 0);
+        await payLoan(targetSub.id, {
+          amount: chunk,
+          account: quickAdjustAccount || 'Cash',
+          date: quickAdjustDate || today,
+          note: (quickAdjustNote || '').trim() || (bn ? '[ঋণ হ্রাস / কিস্তি পরিশোধ]' : '[Repayment / Decrease]'),
+        }, { name: quickAdjustTarget.name });
+        toPay -= chunk;
       }
+
+      setSaving(false);
+      toast.success(bn
+        ? `${quickAdjustTarget.name}-এর ঋণ থেকে ${money(amount)} পরিশোধ / হ্রাস করা হয়েছে`
+        : `Recorded repayment of ${money(amount)} for ${quickAdjustTarget.name}`);
+      setQuickAdjustTarget(null);
+      load(true);
     } else {
       const res = await addLoan({
         type: quickAdjustTarget.type,
@@ -552,13 +628,13 @@ const DayBook = () => {
         amount,
         note: (quickAdjustNote || '').trim()
           ? `[কর্জ বৃদ্ধি (+)] ${quickAdjustNote}`
-          : `[কর্জ বৃদ্ধি (+)] আগের ঋণ: ${quickAdjustTarget.id}`,
+          : `[কর্জ বৃদ্ধি (+)] ${quickAdjustTarget.name}`,
         date: quickAdjustDate || today,
       });
       setSaving(false);
       if (res?.ok) {
         toast.success(bn
-          ? `${quickAdjustTarget.name}-এর নামে নতুন ${money(amount)} ঋণ বৃদ্ধি করা হয়েছে`
+          ? `${quickAdjustTarget.name}-এর নামে ${money(amount)} ঋণ বৃদ্ধি করা হয়েছে`
           : `Loan increased by ${money(amount)} for ${quickAdjustTarget.name}`);
         setQuickAdjustTarget(null);
         load(true);
@@ -627,17 +703,21 @@ const DayBook = () => {
   };
 
   const handleDeleteLoan = async (loan) => {
+    const subLoans = loan.loans && loan.loans.length > 0 ? loan.loans : [loan];
     const ok = await showConfirmDialog({
       title: bn ? 'ঋণ রেকর্ডটি মুছে ফেলবেন?' : 'Delete loan record?',
-      text: `${loan.name} — ${money(loan.amount)} (${loan.type === 'given' ? (bn ? 'দেওয়া' : 'Given') : (bn ? 'নেওয়া' : 'Taken')}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স ও লেনদেন স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Main account balance will be restored automatically.'}`,
+      text: `${loan.name} — ${money(loan.amount)} (${subLoans.length > 1 ? `${subLoans.length}টি এন্ট্রি` : (loan.type === 'given' ? (bn ? 'দেওয়া' : 'Given') : (bn ? 'নেওয়া' : 'Taken'))}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স ও লেনদেন স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Main account balance will be restored automatically.'}`,
       confirmButtonText: bn ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: bn ? 'বাতিল' : 'Cancel',
       isDanger: true,
     });
     if (!ok) return;
 
-    const res = await deleteLoan(loan.id, { name: loan.name, amount: loan.amount });
-    if (!res?.ok) return;
+    setSaving(true);
+    for (const sub of subLoans) {
+      await deleteLoan(sub.id, { name: sub.name, amount: sub.amount });
+    }
+    setSaving(false);
     toast.success(bn ? 'ঋণের তথ্য মুছে ফেলা হয়েছে ও একাউন্ট ব্যালেন্স সমন্বয় হয়েছে' : 'Loan record deleted and account balance restored');
     load(true);
   };
@@ -650,7 +730,9 @@ const DayBook = () => {
     let takenRemaining = 0;
     let totalSettledCount = 0;
 
-    loans.forEach((l) => {
+    const baseList = loanViewMode === 'grouped' ? groupedLoans : loans;
+
+    baseList.forEach((l) => {
       if (l.type === 'given') {
         totalGiven += Number(l.amount) || 0;
         givenRemaining += Number(l.remainingAmount) || 0;
@@ -658,7 +740,7 @@ const DayBook = () => {
         totalTaken += Number(l.amount) || 0;
         takenRemaining += Number(l.remainingAmount) || 0;
       }
-      if (l.status === 'settled') {
+      if (l.status === 'settled' || Number(l.remainingAmount) <= 0.01) {
         totalSettledCount += 1;
       }
     });
@@ -669,13 +751,14 @@ const DayBook = () => {
       totalTaken,
       takenRemaining,
       totalSettledCount,
-      activeCount: loans.length - totalSettledCount,
+      activeCount: baseList.length - totalSettledCount,
     };
-  }, [loans]);
+  }, [loans, groupedLoans, loanViewMode]);
 
   const filteredLoans = useMemo(() => {
     const q = loanSearch.trim().toLowerCase();
-    return loans.filter((l) => {
+    const baseList = loanViewMode === 'grouped' ? groupedLoans : loans;
+    return baseList.filter((l) => {
       if (loanFilter === 'given' && l.type !== 'given') return false;
       if (loanFilter === 'taken' && l.type !== 'taken') return false;
       if (loanFilter === 'active' && l.status !== 'active') return false;
@@ -684,7 +767,59 @@ const DayBook = () => {
       if (!q) return true;
       return [l.name, l.phone, l.note, l.id].some((v) => String(v || '').toLowerCase().includes(q));
     });
-  }, [loans, loanFilter, loanSearch]);
+  }, [loans, groupedLoans, loanViewMode, loanFilter, loanSearch]);
+
+  const personLedger = useMemo(() => {
+    if (!loanHistoryTarget) return [];
+    const entries = [];
+    const subLoans = loanHistoryTarget.loans && loanHistoryTarget.loans.length > 0
+      ? loanHistoryTarget.loans
+      : [loanHistoryTarget];
+
+    subLoans.forEach((l) => {
+      entries.push({
+        id: l.id,
+        date: l.date || today,
+        type: 'loan',
+        description: l.type === 'given' ? (bn ? 'কর্জ প্রদান' : 'Loan Given') : (bn ? 'কর্জ গ্রহণ' : 'Loan Taken'),
+        note: l.note || '',
+        account: l.account || 'Cash',
+        amount: Number(l.amount) || 0,
+        rawLoan: l,
+        timestamp: new Date(l.date || today).getTime(),
+      });
+
+      (l.payments || []).forEach((p) => {
+        entries.push({
+          id: p.id,
+          date: p.date || today,
+          type: 'payment',
+          description: bn ? 'কিস্তি পরিশোধ / আদায়' : 'Payment Installment',
+          note: p.note || '',
+          account: p.account || 'Cash',
+          amount: Number(p.amount) || 0,
+          rawLoan: l,
+          rawPayment: p,
+          timestamp: new Date(p.date || today).getTime(),
+        });
+      });
+    });
+
+    entries.sort((a, b) => a.timestamp - b.timestamp);
+
+    let running = 0;
+    return entries.map((e) => {
+      if (e.type === 'loan') {
+        running += e.amount;
+      } else {
+        running = Math.max(0, running - e.amount);
+      }
+      return {
+        ...e,
+        runningBalance: running,
+      };
+    });
+  }, [loanHistoryTarget, bn]);
 
   const sameNameLoans = useMemo(() => {
     if (!quickAdjustTarget) return [];
