@@ -528,7 +528,7 @@ const Inventory = () => {
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
-      const { minStock, initialStock, stockToAdd, ...restEditingItem } = editingItem;
+      const { minStock, initialStock, stockToAdd, image, ...restEditingItem } = editingItem;
       const payload = {
         ...restEditingItem,
         mrp: mrpVal || saleVal,
@@ -539,6 +539,10 @@ const Inventory = () => {
         minStock: minVal,
         ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
       };
+      // If user removed the existing image by clicking "X":
+      if (!editProductImagePreview && editingItem.image) {
+        payload.image = null;
+      }
       res = await updateInventoryItem(editingItem.id, payload);
     }
 

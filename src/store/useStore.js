@@ -72,7 +72,12 @@ const clean = (payload, extra = []) => {
     ...extra,
   ]);
   return Object.fromEntries(
-    Object.entries(payload || {}).filter(([key, value]) => !drop.has(key) && value !== undefined)
+    Object.entries(payload || {}).filter(([key, value]) => {
+      if (drop.has(key) || value === undefined) return false;
+      // Do not send existing image URL strings in JSON payloads
+      if (key === 'image' && typeof value === 'string') return false;
+      return true;
+    })
   );
 };
 
