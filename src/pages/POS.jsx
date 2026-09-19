@@ -33,6 +33,7 @@ const MFS_OPTIONS = [
 
 const POS = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const {
     cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart,
     loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft,

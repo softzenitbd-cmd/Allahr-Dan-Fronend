@@ -96,8 +96,7 @@ const Dashboard = () => {
   const totalCustomers = (customers || []).length;
 
   // Each card carries its own colour, chosen in Settings or falling back to
-  // the default the card ships with. A loss still turns the profit cards red
-  // whatever colour they were given: that signal is not a matter of taste.
+  // the default the card ships with (defaulting to red on loss if not customized).
   const valueByKey = {
     totalBalance: totalBalance,
     todaySales: dailySales,
@@ -119,12 +118,13 @@ const Dashboard = () => {
     const formattedValue = card.key === 'totalCustomers'
       ? `${value.toLocaleString()} ${language === 'bn' ? 'জন' : 'Customers'}`
       : `৳${value.toLocaleString()}`;
+    const userCustomColor = dashboardCardColors?.[card.key];
     return {
       key: card.key,
       label: language === 'bn' ? card.bn : card.en,
       value: formattedValue,
       icon: isLoss ? TrendingDown : iconByKey[card.key],
-      color: isLoss ? '#dc2626' : cardColor(card, dashboardCardColors),
+      color: userCustomColor || (isLoss ? '#dc2626' : card.color),
     };
   });
 

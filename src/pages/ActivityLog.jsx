@@ -33,6 +33,9 @@ import {
   ChevronUp,
   Code,
   ArrowRight,
+  Handshake,
+  Tag,
+  CreditCard,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -47,6 +50,7 @@ const MODULE_OPTIONS = [
   { id: 'EXPENSE', labelEn: 'Expense', labelBn: 'দোকানের খরচ' },
   { id: 'PURCHASE', labelEn: 'Purchase', labelBn: 'ক্রয় ও সাপ্লায়ার' },
   { id: 'HR', labelEn: 'HR & Staff', labelBn: 'কর্মী ও হাজিরা' },
+  { id: 'LOAN', labelEn: 'Loans / Karz', labelBn: 'কর্জ / ঋণ' },
 ];
 
 const ACTION_OPTIONS = [
@@ -58,8 +62,164 @@ const ACTION_OPTIONS = [
   { id: 'SECURITY', labelEn: 'Security', labelBn: 'পাসওয়ার্ড / নিরাপত্তা' },
 ];
 
+/**
+ * Helper to extract and enrich expense details (Category, Staff Name, Amount, Description, Account, Date)
+ * from both structured details and historical/unstructured log descriptions.
+ */
+const getExpenseDetails = (log, staffList = [], expenseList = []) => {
+  if (!log) return null;
+
+  const desc = log.description || '';
+  const details = log.details || {};
+  const isExpenseModule = log.module === 'EXPENSE';
+
+  // Detect whether this log is related to an expense or salary payment
+  const hasExpenseKeywords = /খরচ|বেতন|Salary|Expense|Staff Cost|স্টাফ খরচ/i.test(desc) || 
+    Boolean(details.category) || 
+    Boolean(details.amount !== undefined && (details.staff_name || details.staffId || details.staff_id));
+
+  if (!isExpenseModule && !hasExpenseKeywords) {
+    return null;
+  }
+
+  // 1. Amount
+  let amount = details.amount !== undefined ? Number(details.amount) : null;
+  if (amount === null || isNaN(amount)) {
+    const amtMatch = desc.match(/[৳$]\s*([0-9,]+(?:\.[0-9]+)?)/) || desc.match(/([0-9,]+(?:\.[0-9]+)?)\s*(?:টাকা|tk|bdt)/i);
+    if (amtMatch) {
+      amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    }
+  }
+
+  // 2. Category
+  let category = details.category;
+  if (!category) {
+    const catMatch = desc.match(/\(([^)]+)\)/);
+    if (catMatch && catMatch[1]) {
+      const candidate = catMatch[1].trim();
+      if (!candidate.startsWith('202') && !candidate.startsWith('19')) {
+        category = candidate;
+      }
+    }
+  }
+  if (!category && (/salary|বেতন/i.test(desc))) {
+    category = 'Staff Cost';
+  }
+  if (!category) {
+    category = 'Expense';
+  }
+
+  // 3. Staff Name resolution
+  let staffName = details.staff_name || details.staffName || null;
+
+  // By staff_id / staffId
+  const staffId = details.staff_id || details.staffId || details.staff;
+  if (!staffName && staffId && Array.isArray(staffList)) {
+    const found = staffList.find(s => String(s.id) === String(staffId) || s.staff_code === staffId);
+    if (found) staffName = found.name;
+  }
+
+  // Pattern: "Salary for <Name> (...)"
+  if (!staffName) {
+    const salaryMatch = desc.match(/Salary for\s+([^(]+)/i);
+    if (salaryMatch && salaryMatch[1]) {
+      staffName = salaryMatch[1].trim();
+    }
+  }
+
+  // Pattern: "বেতন পরিশোধ:\s*৳?[0-9,.]*\s*\(([^)]+)\)"
+  if (!staffName) {
+    const bnMatch = desc.match(/(?:বেতন পরিশোধ|স্টাফ খরচ).*?\(([^)]+)\)/);
+    if (bnMatch && bnMatch[1]) {
+      const candidate = bnMatch[1].trim();
+      if (!candidate.includes('Cost') && !candidate.includes('Rent') && !candidate.includes('Bill')) {
+        staffName = candidate;
+      }
+    }
+  }
+
+  // Pattern: "কর্মী: <Name>" or "Staff: <Name>"
+  if (!staffName) {
+    const staffLabelMatch = desc.match(/(?:কর্মী|staff|employee)[:\s]+([^\s(,-]+)/i);
+    if (staffLabelMatch && staffLabelMatch[1]) {
+      staffName = staffLabelMatch[1].trim();
+    }
+  }
+
+  // Match against expenseList in store
+  if (!staffName && Array.isArray(expenseList) && expenseList.length > 0) {
+    const cleanNote = details.description || desc;
+    const candidates = expenseList.filter(e => {
+      if (amount !== null && Math.abs(Number(e.amount) - amount) > 0.01) return false;
+      return true;
+    });
+
+    if (candidates.length === 1) {
+      staffName = candidates[0].staffName || (candidates[0].staff && staffList.find(s => String(s.id) === String(candidates[0].staff) || s.staff_code === candidates[0].staff)?.name);
+    } else if (candidates.length > 1) {
+      const exactMatch = candidates.find(e => {
+        if (e.description && cleanNote.includes(e.description)) return true;
+        if (e.date && log.created_at && log.created_at.startsWith(e.date)) return true;
+        return false;
+      });
+      if (exactMatch) {
+        staffName = exactMatch.staffName || (exactMatch.staff && staffList.find(s => String(s.id) === String(exactMatch.staff) || s.staff_code === exactMatch.staff)?.name);
+      }
+    }
+  }
+
+  // Fallback: check if any staff member's name appears as a distinct word in description
+  if (!staffName && Array.isArray(staffList)) {
+    const foundStaff = staffList.find(s => {
+      if (!s.name || s.name.length < 2) return false;
+      const regex = new RegExp(`(^|[\\s(,-])${s.name}([\\s),-]|$|\\b)`, 'i');
+      return regex.test(desc);
+    });
+    if (foundStaff) {
+      staffName = foundStaff.name;
+    }
+  }
+
+  // 4. User note / cleaned description
+  let userNote = details.description || '';
+  if (!userNote) {
+    userNote = desc
+      .replace(/^নতুন খরচ এন্ট্রি:\s*[৳$]?[0-9,.]+\s*\([^)]*\)\s*-\s*/, '')
+      .replace(/^খরচ এন্ট্রি মুছে ফেলা হয়েছে:\s*[৳$]?[0-9,.]+\s*\([^)]*\)\s*-\s*/, '')
+      .replace(/^খরচ এন্ট্রি আপডেট:\s*[৳$]?[0-9,.]+\s*\([^)]*\)\s*-\s*/, '')
+      .replace(/^স্টাফ খরচ(?: এন্ট্রি| আপডেট)?:\s*[৳$]?[0-9,.]+\s*\([^)]*\)\s*-\s*/, '')
+      .trim();
+  }
+
+  // 5. Account / Method
+  const account = details.account || details.payment_method || details.paymentMethod || details.method || 'Cash';
+
+  // 6. Date
+  const date = details.date || (log.created_at ? log.created_at.split('T')[0] : '');
+
+  const isStaffCost = /Staff Cost|স্টাফ|বেতন|Salary/i.test(category) || Boolean(staffName);
+
+  return {
+    isExpense: true,
+    isStaffCost,
+    amount,
+    category,
+    staffName,
+    staffId,
+    userNote: userNote || desc,
+    account,
+    date,
+  };
+};
+
 const ActivityLog = () => {
-  const { user, language, staff } = useStore();
+  const { user, language, staff, expenses, ensureLoaded } = useStore();
+
+  useEffect(() => {
+    if (typeof ensureLoaded === 'function') {
+      ensureLoaded('staff', 'expenses');
+    }
+  }, [ensureLoaded]);
 
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -248,6 +408,8 @@ const ActivityLog = () => {
         return { icon: <ShoppingBag size={13} />, label: language === 'bn' ? 'ক্রয়' : 'Purchase' };
       case 'HR':
         return { icon: <Users size={13} />, label: 'HR' };
+      case 'LOAN':
+        return { icon: <Handshake size={13} />, label: language === 'bn' ? 'কর্জ / ঋণ' : 'Loans' };
       default:
         return { icon: <Activity size={13} />, label: module };
     }
@@ -267,7 +429,13 @@ const ActivityLog = () => {
   };
 
   const renderLogDetails = (log) => {
-    if (!log || !log.details || Object.keys(log.details).length === 0) {
+    if (!log) return null;
+
+    const expInfo = getExpenseDetails(log, staff, expenses);
+    const details = log.details || {};
+    const hasDetails = details && typeof details === 'object' && Object.keys(details).length > 0;
+
+    if (!expInfo && !hasDetails) {
       return (
         <div style={{ textAlign: 'center', padding: '1.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
           {language === 'bn' ? 'অতিরিক্ত কোনো কারিগরি তথ্য পাওয়া যায়নি।' : 'No additional details recorded for this activity.'}
@@ -275,7 +443,6 @@ const ActivityLog = () => {
       );
     }
 
-    const details = log.details;
     const hasChanges = Array.isArray(details.changes) && details.changes.length > 0;
     const hasStockFlow = details.old_stock !== undefined || details.stock_change !== undefined || details.last_stock !== undefined;
     const hasItems = Array.isArray(details.items) && details.items.length > 0;
@@ -283,13 +450,108 @@ const ActivityLog = () => {
     const handledKeys = new Set([
       'changes', 'items', 'old_stock', 'new_stock', 'stock_change', 'raw_diff',
       'last_stock', 'old_price', 'new_price', 'old_cost_price', 'new_cost_price',
-      'product_code', 'name', 'unit', 'category'
+      'product_code', 'name', 'unit', 'category', 'amount', 'description',
+      'staff_name', 'staffName', 'staff_id', 'staffId', 'staff', 'account', 'date',
+      'expense_id', 'payment_method', 'paymentMethod', 'method', 'month', 'notes', 'type'
     ]);
 
     const remainingKeys = Object.entries(details).filter(([k, v]) => !handledKeys.has(k) && typeof v !== 'object' && v !== null && v !== undefined && v !== '');
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.85rem' }}>
+        {/* Dedicated Expense Information Card */}
+        {expInfo && (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ padding: '0.85rem 1.15rem', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626' }}>
+                  <DollarSign size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    {language === 'bn' ? 'খরচের পূর্ণাঙ্গ বিবরণ ও হিসাব' : 'Expense Details & Audit'}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    {expInfo.isStaffCost ? (language === 'bn' ? 'স্টাফ / কর্মী সম্পর্কিত খরচ' : 'Staff / Payroll Cost') : (language === 'bn' ? 'দোকানের সাধারণ খরচ' : 'General Shop Expense')}
+                  </div>
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: '20px',
+                  background: expInfo.isStaffCost ? '#ede9fe' : '#fef2f2',
+                  color: expInfo.isStaffCost ? '#6d28d9' : '#dc2626',
+                  border: `1px solid ${expInfo.isStaffCost ? '#ddd6fe' : '#fecaca'}`,
+                }}
+              >
+                {expInfo.category}
+              </span>
+            </div>
+
+            {/* 4 Highlighted Summary Blocks */}
+            <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', background: '#fafbfc', borderBottom: '1px solid #f1f5f9' }}>
+              {/* Amount */}
+              <div style={{ background: '#ffffff', padding: '0.75rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {language === 'bn' ? 'খরচের পরিমাণ' : 'Amount'}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#dc2626', marginTop: '3px' }}>
+                  ৳{expInfo.amount !== null ? Number(expInfo.amount).toLocaleString() : '—'}
+                </div>
+              </div>
+
+              {/* Category */}
+              <div style={{ background: '#ffffff', padding: '0.75rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {language === 'bn' ? 'ক্যাটাগরি' : 'Category'}
+                </div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+                  {expInfo.category}
+                </div>
+              </div>
+
+              {/* Staff Member */}
+              <div style={{ background: expInfo.staffName ? '#eff6ff' : '#ffffff', padding: '0.75rem 0.85rem', borderRadius: '8px', border: `1px solid ${expInfo.staffName ? '#bfdbfe' : '#e2e8f0'}` }}>
+                <div style={{ fontSize: '0.72rem', color: expInfo.staffName ? '#1d4ed8' : 'var(--text-muted)', fontWeight: 600 }}>
+                  {language === 'bn' ? 'সম্পৃক্ত কর্মী (Staff)' : 'Staff Member'}
+                </div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: expInfo.staffName ? '#1d4ed8' : '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {expInfo.staffName ? (
+                    <>
+                      <User size={14} />
+                      <span>{expInfo.staffName}</span>
+                    </>
+                  ) : (
+                    <span>—</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Payment Method & Date */}
+              <div style={{ background: '#ffffff', padding: '0.75rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {language === 'bn' ? 'পেমেন্ট মেথড ও তারিখ' : 'Payment & Date'}
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+                  {expInfo.account || 'Cash'} {expInfo.date ? `(${expInfo.date})` : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* Note & Context */}
+            <div style={{ padding: '0.85rem 1.15rem' }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                {language === 'bn' ? 'খরচের পূর্ণ বিবরণ / উদ্দেশ্য:' : 'Expense Purpose / Description:'}
+              </div>
+              <div style={{ fontSize: '0.88rem', color: 'var(--text-main)', background: '#f8fafc', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #e2e8f0', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                {expInfo.userNote || log.description}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Product Information Card */}
         {(details.product_code || details.name) && (
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
@@ -834,6 +1096,7 @@ const ActivityLog = () => {
                 logs.map((log) => {
                   const badge = getActionBadge(log.action);
                   const modBadge = getModuleBadge(log.module);
+                  const expInfo = getExpenseDetails(log, staff, expenses);
 
                   return (
                     <tr key={log.id} style={{ transition: 'background 0.15s ease' }}>
@@ -918,106 +1181,207 @@ const ActivityLog = () => {
                       {/* Description */}
                       <td style={{ fontSize: '0.88rem', lineHeight: 1.4 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <span>{log.description}</span>
-                          {/* Rich inline details indicators */}
-                          {log.details && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
-                              {log.details.stock_change !== undefined && log.details.stock_change !== 0 && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.74rem',
-                                    fontWeight: 700,
-                                    background: log.details.stock_change > 0 ? '#dcfce7' : '#fee2e2',
-                                    color: log.details.stock_change > 0 ? '#15803d' : '#b91c1c',
-                                    border: `1px solid ${log.details.stock_change > 0 ? '#bbf7d0' : '#fecaca'}`,
-                                  }}
-                                >
-                                  {log.details.stock_change > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                                  <span>
-                                    {log.details.stock_change > 0 ? `+${log.details.stock_change}` : log.details.stock_change} {log.details.unit || 'pcs'}
+                          {expInfo ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                                  {expInfo.isStaffCost && expInfo.staffName
+                                    ? (language === 'bn' ? `স্টাফ খরচ: ${expInfo.staffName}` : `Staff Cost: ${expInfo.staffName}`)
+                                    : (language === 'bn' ? `খরচ: ${expInfo.category}` : `Expense: ${expInfo.category}`)}
+                                </span>
+                                {expInfo.userNote && expInfo.userNote !== expInfo.category && expInfo.userNote !== 'Shop Expense' && (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                                    — {expInfo.userNote}
                                   </span>
-                                </span>
-                              )}
-                              {log.details.changes && log.details.changes.length > 0 && (
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                {/* Category Badge */}
                                 <span
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '3px',
-                                    padding: '1px 6px',
+                                    gap: '4px',
+                                    padding: '2px 7px',
                                     borderRadius: '6px',
-                                    fontSize: '0.72rem',
+                                    fontSize: '0.73rem',
                                     fontWeight: 600,
-                                    background: '#f1f5f9',
-                                    color: '#475569',
-                                    border: '1px solid #e2e8f0',
+                                    background: expInfo.isStaffCost ? '#f3e8ff' : '#f1f5f9',
+                                    color: expInfo.isStaffCost ? '#7e22ce' : '#334155',
+                                    border: `1px solid ${expInfo.isStaffCost ? '#d8b4fe' : '#e2e8f0'}`,
                                   }}
                                 >
-                                  <Layers size={11} />
-                                  <span>{log.details.changes.length}টি ফিল্ড পরিবর্তিত</span>
+                                  <Tag size={11} />
+                                  <span>{expInfo.category}</span>
                                 </span>
-                              )}
-                              {log.details.invoice_number && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 600,
-                                    background: '#eff6ff',
-                                    color: '#1d4ed8',
-                                    border: '1px solid #bfdbfe',
-                                  }}
-                                >
-                                  #{log.details.invoice_number}
-                                </span>
-                              )}
-                              {log.details.purchase_number && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 600,
-                                    background: '#fef3c7',
-                                    color: '#b45309',
-                                    border: '1px solid #fde68a',
-                                  }}
-                                >
-                                  #{log.details.purchase_number}
-                                </span>
-                              )}
-                              {(log.details.total_quantity !== undefined || (log.details.items && log.details.items.length > 0)) && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 600,
-                                    background: '#f0fdf4',
-                                    color: '#15803d',
-                                    border: '1px solid #bbf7d0',
-                                  }}
-                                >
-                                  <Package size={11} />
-                                  <span>
-                                    {log.details.items_count || (log.details.items || []).length} প্রকার ({log.details.total_quantity || (log.details.items || []).reduce((a, b) => a + (Number(b.qty) || 0), 0)} পিস)
+
+                                {/* Staff Name Badge */}
+                                {expInfo.staffName && (
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.74rem',
+                                      fontWeight: 700,
+                                      background: '#eff6ff',
+                                      color: '#1d4ed8',
+                                      border: '1px solid #bfdbfe',
+                                    }}
+                                  >
+                                    <User size={11} />
+                                    <span>{language === 'bn' ? 'কর্মী:' : 'Staff:'} {expInfo.staffName}</span>
                                   </span>
-                                </span>
+                                )}
+
+                                {/* Amount Badge */}
+                                {expInfo.amount !== null && (
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      padding: '2px 7px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.74rem',
+                                      fontWeight: 700,
+                                      background: '#fef2f2',
+                                      color: '#dc2626',
+                                      border: '1px solid #fecaca',
+                                    }}
+                                  >
+                                    <span>৳{Number(expInfo.amount).toLocaleString()}</span>
+                                  </span>
+                                )}
+
+                                {/* Account Badge */}
+                                {expInfo.account && (
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: '1px 6px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.71rem',
+                                      fontWeight: 500,
+                                      background: '#f8fafc',
+                                      color: '#64748b',
+                                      border: '1px solid #e2e8f0',
+                                    }}
+                                  >
+                                    <CreditCard size={10} />
+                                    <span>{expInfo.account}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <span>{log.description}</span>
+                              {/* Rich inline details indicators */}
+                              {log.details && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                  {log.details.stock_change !== undefined && log.details.stock_change !== 0 && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.74rem',
+                                        fontWeight: 700,
+                                        background: log.details.stock_change > 0 ? '#dcfce7' : '#fee2e2',
+                                        color: log.details.stock_change > 0 ? '#15803d' : '#b91c1c',
+                                        border: `1px solid ${log.details.stock_change > 0 ? '#bbf7d0' : '#fecaca'}`,
+                                      }}
+                                    >
+                                      {log.details.stock_change > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                                      <span>
+                                        {log.details.stock_change > 0 ? `+${log.details.stock_change}` : log.details.stock_change} {log.details.unit || 'pcs'}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {log.details.changes && log.details.changes.length > 0 && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        background: '#f1f5f9',
+                                        color: '#475569',
+                                        border: '1px solid #e2e8f0',
+                                      }}
+                                    >
+                                      <Layers size={11} />
+                                      <span>{log.details.changes.length}টি ফিল্ড পরিবর্তিত</span>
+                                    </span>
+                                  )}
+                                  {log.details.invoice_number && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        background: '#eff6ff',
+                                        color: '#1d4ed8',
+                                        border: '1px solid #bfdbfe',
+                                      }}
+                                    >
+                                      #{log.details.invoice_number}
+                                    </span>
+                                  )}
+                                  {log.details.purchase_number && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        background: '#fef3c7',
+                                        color: '#b45309',
+                                        border: '1px solid #fde68a',
+                                      }}
+                                    >
+                                      #{log.details.purchase_number}
+                                    </span>
+                                  )}
+                                  {(log.details.total_quantity !== undefined || (log.details.items && log.details.items.length > 0)) && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        background: '#f0fdf4',
+                                        color: '#15803d',
+                                        border: '1px solid #bbf7d0',
+                                      }}
+                                    >
+                                      <Package size={11} />
+                                      <span>
+                                        {log.details.items_count || (log.details.items || []).length} প্রকার ({log.details.total_quantity || (log.details.items || []).reduce((a, b) => a + (Number(b.qty) || 0), 0)} পিস)
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
                               )}
-                            </div>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1133,14 +1497,26 @@ const ActivityLog = () => {
 
             <div className="drawer-body" style={{ padding: '1.25rem', overflowY: 'auto' }}>
               {/* Activity Description Header */}
-              <div style={{ marginBottom: '1rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  {language === 'bn' ? 'কার্যকলাপের বিবরণ' : 'Activity Summary'}
-                </div>
-                <div style={{ fontWeight: 600, fontSize: '0.96rem', marginTop: '4px', lineHeight: 1.45, color: 'var(--text-main)' }}>
-                  {selectedLog.description}
-                </div>
-              </div>
+              {(() => {
+                const selExp = getExpenseDetails(selectedLog, staff, expenses);
+                return (
+                  <div style={{ marginBottom: '1rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+                      {language === 'bn' ? 'কার্যকলাপের বিবরণ' : 'Activity Summary'}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', marginTop: '4px', lineHeight: 1.45, color: 'var(--text-main)' }}>
+                      {selExp && selExp.isStaffCost && selExp.staffName
+                        ? (language === 'bn' ? `স্টাফ খরচ: ${selExp.staffName}` : `Staff Cost: ${selExp.staffName}`)
+                        : selectedLog.description}
+                    </div>
+                    {selExp && selExp.userNote && selExp.userNote !== selectedLog.description && (
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {selectedLog.description}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* High-level metadata */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '0.5rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.75rem 1rem' }}>

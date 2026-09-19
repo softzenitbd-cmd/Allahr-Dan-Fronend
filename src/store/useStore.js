@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 
 import { errorMessage } from '../api/client';
 import {
+  ActivityLogService,
   AuthService,
   CoreService,
   CustomerService,
@@ -1077,8 +1078,37 @@ const useStore = create(
 
       updateExpense: (expenseId, updates) => enqueue(async () => {
         try {
+          let staffName = '';
+          if (updates.staffId || updates.staff) {
+            const st = (get().staff || []).find(s => String(s.id) === String(updates.staffId) || s.staff_code === updates.staffId || String(s.id) === String(updates.staff));
+            if (st) staffName = st.name;
+          }
+
           await ExpenseService.update(expenseId, clean(updates, ['id']));
           await get().refresh('expenses', 'treasury', 'dashboard', 'staff');
+
+          const amountNum = parseFloat(updates.amount) || 0;
+          const isStaff = updates.category === 'Staff Cost' || Boolean(staffName);
+          const descText = isStaff
+            ? `স্টাফ খরচ আপডেট: ৳${amountNum.toLocaleString()} (${staffName || 'Staff'}) - ${updates.description || updates.category}`
+            : `খরচ এন্ট্রি আপডেট: ৳${amountNum.toLocaleString()} (${updates.category}) - ${updates.description || 'খরচ'}`;
+
+          ActivityLogService.logCustom({
+            action: 'UPDATE',
+            module: 'EXPENSE',
+            description: descText,
+            details: {
+              expense_id: expenseId,
+              category: updates.category || (isStaff ? 'Staff Cost' : 'Expense'),
+              amount: amountNum,
+              staff_name: staffName || undefined,
+              staff_id: updates.staffId || updates.staff || undefined,
+              description: updates.description || '',
+              date: updates.date,
+              account: updates.account || 'Cash',
+            }
+          }).catch(() => {});
+
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not update the expense.');
@@ -1185,6 +1215,30 @@ const useStore = create(
             notes: payrollData.notes || '',
           });
           await get().refresh('payrolls', 'expenses', 'treasury', 'staff');
+
+          const payAmt = parseFloat(payrollData.amount) || 0;
+          if (payAmt > 0) {
+            const st = (get().staff || []).find(s => String(s.id) === String(payrollData.staffId) || s.staff_code === payrollData.staffId);
+            const staffName = payrollData.staffName || (st ? st.name : 'Staff');
+
+            ActivityLogService.logCustom({
+              action: 'CREATE',
+              module: 'EXPENSE',
+              description: `বেতন পরিশোধ: ৳${payAmt.toLocaleString()} (${staffName}) - মাস: ${payrollData.month}`,
+              details: {
+                category: 'Staff Cost',
+                amount: payAmt,
+                staff_name: staffName,
+                staff_id: payrollData.staffId,
+                month: payrollData.month,
+                notes: payrollData.notes || '',
+                payment_method: payrollData.paymentMethod || payrollData.method || 'Cash',
+                account: payrollData.paymentMethod || payrollData.method || 'Cash',
+                type: 'Salary'
+              }
+            }).catch(() => {});
+          }
+
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not process the payroll payment.');
@@ -1428,29 +1482,65 @@ const useStore = create(
         try {
           await TreasuryService.createLoan(payload);
           await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          ActivityLogService.logCustom({
+            action: 'CREATE',
+            module: 'LOAN',
+            description: payload.type === 'given'
+              ? `কর্জ প্রদান: ৳${payload.amount} (${payload.name}) - ${payload.account}`
+              : `কর্জ গ্রহণ: ৳${payload.amount} (${payload.name}) - ${payload.account}`,
+            details: { ...payload },
+          }).catch(() => {});
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not record the loan.');
         }
       }),
 
-      payLoan: (loanId, payload) => enqueue(async () => {
+      payLoan: (loanId, payload, meta) => enqueue(async () => {
         try {
           await TreasuryService.payLoan(loanId, payload);
           await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          ActivityLogService.logCustom({
+            action: 'CREATE',
+            module: 'LOAN',
+            description: `কর্জ কিস্তি পরিশোধ: ৳${payload.amount} (${meta?.name || loanId}) - ${payload.account}`,
+            details: { loanId, ...payload, ...meta },
+          }).catch(() => {});
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not record the repayment.');
         }
       }),
 
-      deleteLoan: (loanId) => enqueue(async () => {
+      deleteLoan: (loanId, meta) => enqueue(async () => {
         try {
           await TreasuryService.deleteLoan(loanId);
           await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          ActivityLogService.logCustom({
+            action: 'DELETE',
+            module: 'LOAN',
+            description: `কর্জ ডিলিট: ${meta?.name || loanId}${meta?.amount ? ` (৳${meta.amount})` : ''}`,
+            details: { loanId, ...meta },
+          }).catch(() => {});
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not delete the loan.');
+        }
+      }),
+
+      deleteLoanPayment: (loanId, paymentId, meta) => enqueue(async () => {
+        try {
+          await TreasuryService.deleteLoanPayment(loanId, paymentId);
+          await Promise.all([get().fetchLoans(), get().refresh('treasury', 'dashboard')]);
+          ActivityLogService.logCustom({
+            action: 'DELETE',
+            module: 'LOAN',
+            description: `কর্জ কিস্তি ডিলিট: ${paymentId}${meta?.amount ? ` (৳${meta.amount})` : ''} - (${meta?.name || loanId})`,
+            details: { loanId, paymentId, ...meta },
+          }).catch(() => {});
+          return { ok: true };
+        } catch (error) {
+          return fail(error, 'Could not delete the repayment.');
         }
       }),
 

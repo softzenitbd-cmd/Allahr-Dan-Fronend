@@ -29,7 +29,7 @@ const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 const KINDS = [
   { key: 'customer', en: 'Customer', bn: 'কাস্টমার', Icon: Users },
   { key: 'supplier', en: 'Supplier', bn: 'সাপ্লায়ার', Icon: Truck },
-  { key: 'salesman', en: 'Salesman / Admin', bn: 'সেলসম্যান / এডমিন', Icon: UserCheck },
+  { key: 'salesman', en: 'Staff / Salesman', bn: 'কর্মী / সেলসম্যান', Icon: UserCheck },
 ];
 
 const METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bank'];
@@ -77,6 +77,7 @@ const Pager = ({ pager, bn }) => pager.total <= PAGE_SIZE ? (
 const Ledger = () => {
   const {
     customers, suppliers, staff, language, shopProfile,
+    expenses, payrolls, ensureLoaded,
     fetchPartyLedger, payInvoiceDue, payAll, refresh,
   } = useStore();
   const bn = language === 'bn';
@@ -100,7 +101,10 @@ const Ledger = () => {
   const [expandedPurchases, setExpandedPurchases] = useState({});
   const [viewProductBills, setViewProductBills] = useState(null);
 
-  useEffect(() => { refresh('customers', 'suppliers', 'staff'); }, [refresh]);
+  useEffect(() => {
+    refresh('customers', 'suppliers', 'staff');
+    if (ensureLoaded) ensureLoaded('expenses', 'payrolls');
+  }, [refresh, ensureLoaded]);
 
   // Close the picker when clicking anywhere else.
   useEffect(() => {
@@ -158,10 +162,19 @@ const Ledger = () => {
     if (endDate) params.end_date = endDate;
     const res = await fetchPartyLedger(kind, selectedId, params);
     if (res?.ok) setData(res.data);
+    if (kind === 'salesman' && ensureLoaded) {
+      ensureLoaded('expenses', 'payrolls', 'staff');
+    }
     setLoading(false);
-  }, [fetchPartyLedger, kind, selectedId, startDate, endDate]);
+  }, [fetchPartyLedger, kind, selectedId, startDate, endDate, ensureLoaded]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (kind === 'salesman' && selectedId && String(selectedId).toLowerCase() !== 'admin') {
+      setTab((prev) => (prev === 'primary' || prev === 'due_statement' ? 'due_statement' : prev));
+    }
+  }, [kind, selectedId]);
 
   const switchKind = (k) => {
     setKind(k); setSelectedId(''); setData(null); setPickerText(''); setTab('primary'); setPay(null);
@@ -217,25 +230,225 @@ const Ledger = () => {
     : kind === 'supplier' ? (bn ? 'সাপ্লায়ারকে পরিশোধ' : 'Pay Supplier')
       : (bn ? 'বকেয়া আদায়' : 'Recover Due');
 
+  const isSalesmanAdmin = kind === 'salesman' && (String(selectedId).toLowerCase() === 'admin' || String(data?.party?.id).toLowerCase() === 'admin');
+
+  // ---------------------------------------------------------------- //
+  // Staff Due Statement & Breakdown
+  // Calculates all salary advances, deductions from pay, excess to due, and recoveries
+  // ---------------------------------------------------------------- //
+  const { staffDueStatement, staffDueSummary } = useMemo(() => {
+    if (kind !== 'salesman' || !data || isSalesmanAdmin) {
+      return {
+        staffDueStatement: [],
+        staffDueSummary: { totalAdvance: 0, totalSalaryAdjusted: 0, totalDueAdded: 0, totalRecovered: 0, currentDue: 0, baseSalary: 0 },
+      };
+    }
+
+    const sParty = data.party || {};
+    const sId = String(selectedId || sParty.id || '').toLowerCase();
+    const sCode = String(selected?.staff_code || sParty.id || '').toLowerCase();
+    const sName = String(selected?.name || sParty.name || '').trim().toLowerCase();
+
+    const isMatchingStaff = (objStaffId, objStaffName, objStaffCode) => {
+      const idStr = String(objStaffId || '').toLowerCase();
+      const codeStr = String(objStaffCode || '').toLowerCase();
+      const nameStr = String(objStaffName || '').trim().toLowerCase();
+      if (idStr && (idStr === sId || idStr === sCode)) return true;
+      if (codeStr && (codeStr === sId || codeStr === sCode)) return true;
+      if (nameStr && sName && nameStr === sName) return true;
+      return false;
+    };
+
+    const rawEntries = [];
+    const coveredExpenseKeys = new Set();
+
+    // 1. Payroll payments (salary advances, cost deductions & excess to due)
+    (payrolls || []).forEach((p) => {
+      if (!isMatchingStaff(p.staffId || p.staff, p.staffName, p.staff_code)) return;
+      const pMonth = p.month ? `${p.month} ${p.year || ''}`.trim() : '';
+
+      (p.payments || []).forEach((pay) => {
+        const pDate = pay.date ? String(pay.date).split('T')[0] : (p.paymentDate ? String(p.paymentDate).split('T')[0] : day(p.created_at));
+        const payAmt = Number(pay.amount) || 0;
+        const salaryPortion = Number(pay.salaryPortion) || 0;
+        const duePortion = Number(pay.advanceDuePortion) || 0;
+        const ref = pay.paymentCode || (pay.id ? `PAY-${pay.id}` : `PR-${p.id}`);
+
+        coveredExpenseKeys.add(`${pDate}_${payAmt.toFixed(2)}`);
+        if (pay.notes) coveredExpenseKeys.add(pay.notes.trim().toLowerCase());
+
+        const hasExcess = duePortion > 0.001;
+        rawEntries.push({
+          id: ref,
+          date: pDate,
+          sortDate: pay.created_at || pDate,
+          category: 'salary_advance',
+          badgeText: hasExcess
+            ? (bn ? 'বেতনের অতিরিক্ত বকেয়া' : 'Excess to Due')
+            : (bn ? 'বেতন সমন্বয় (অগ্রিম)' : 'Salary Advance'),
+          badgeClass: hasExcess ? 'badge-danger' : 'badge-info',
+          totalAmount: payAmt,
+          salaryAdjusted: salaryPortion,
+          dueAdded: duePortion,
+          duePaid: 0,
+          description: hasExcess
+            ? (bn
+              ? `স্টাফ খরচ/অগ্রিম ৳${payAmt.toLocaleString()} (বেতন থেকে সমন্বয় ৳${salaryPortion.toLocaleString()}, বাকি ৳${duePortion.toLocaleString()} বকেয়ায় যুক্ত)`
+              : `Staff advance ৳${payAmt.toLocaleString()} (Salary adjusted ৳${salaryPortion.toLocaleString()}, Excess ৳${duePortion.toLocaleString()} added to due)`)
+            : (bn
+              ? `স্টাফ খরচ/অগ্রিম ৳${payAmt.toLocaleString()} (পুরোটাই চলতি মাসের বেতন থেকে সমন্বয়)`
+              : `Staff advance ৳${payAmt.toLocaleString()} (Fully adjusted from monthly salary)`),
+          notes: pay.notes || (pMonth ? `${bn ? 'মাস:' : 'Month:'} ${pMonth}` : ''),
+          ref,
+          method: pay.paymentMethod || 'Cash',
+        });
+      });
+    });
+
+    // 2. Staff Cost expenses from expenses slice (standalone or historical unlinked)
+    (expenses || []).forEach((e) => {
+      const isStaffCost = (e.category || '').toLowerCase() === 'staff cost' || (e.category_ref?.name || '').toLowerCase() === 'staff cost';
+      if (!isStaffCost) return;
+      if (!isMatchingStaff(e.staffId || e.staff, e.staffName, '')) return;
+
+      const eDate = day(e.date);
+      const eAmt = Number(e.amount) || 0;
+      const key = `${eDate}_${eAmt.toFixed(2)}`;
+      const desc = (e.description || '').trim().toLowerCase();
+
+      if (coveredExpenseKeys.has(key) || (desc && coveredExpenseKeys.has(desc))) {
+        return;
+      }
+
+      const ref = e.voucher_number || `EXP-${e.id}`;
+      rawEntries.push({
+        id: ref,
+        date: eDate,
+        sortDate: e.created_at || eDate,
+        category: 'staff_expense',
+        badgeText: bn ? 'স্টাফ খরচ' : 'Staff Cost',
+        badgeClass: 'badge-warning',
+        totalAmount: eAmt,
+        salaryAdjusted: 0,
+        dueAdded: eAmt,
+        duePaid: 0,
+        description: e.description || (bn ? 'স্টাফ খরচ বাবদ' : 'Staff expense'),
+        notes: e.voucher_number || '',
+        ref,
+        method: 'Cash',
+      });
+    });
+
+    // 3. Recoveries / Repayments
+    (data.recoveries || []).forEach((r) => {
+      const amt = Number(r.amount) || 0;
+      if (amt <= 0.001) return;
+      rawEntries.push({
+        id: r.id,
+        date: day(r.date),
+        sortDate: r.date,
+        category: 'recovery',
+        badgeText: bn ? 'বকেয়া পরিশোধ' : 'Due Repaid',
+        badgeClass: 'badge-success',
+        totalAmount: amt,
+        salaryAdjusted: 0,
+        dueAdded: 0,
+        duePaid: amt,
+        description: `${bn ? 'বকেয়া আদায় / পরিশোধ' : 'Due repayment'}${r.method ? ` (${r.method})` : ''}${r.notes ? ` - ${r.notes}` : ''}`,
+        notes: r.notes || '',
+        ref: r.id,
+        method: r.method || 'Cash',
+      });
+    });
+
+    // Sort chronologically (oldest first)
+    rawEntries.sort((a, b) => {
+      const da = String(a.date || '');
+      const db = String(b.date || '');
+      if (da !== db) return da.localeCompare(db);
+      if (a.duePaid !== b.duePaid) return a.duePaid - b.duePaid;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    const currentDue = Number(selected?.due) || Number(sParty.due) || 0;
+    const totalDueAdded = rawEntries.reduce((acc, e) => acc + (e.dueAdded || 0), 0);
+    const totalDuePaid = rawEntries.reduce((acc, e) => acc + (e.duePaid || 0), 0);
+    const netAdded = totalDueAdded - totalDuePaid;
+
+    let openingDue = 0;
+    if (currentDue > netAdded + 0.01) {
+      openingDue = currentDue - netAdded;
+      rawEntries.unshift({
+        id: 'OPENING',
+        date: sParty.since ? day(sParty.since) : '—',
+        sortDate: sParty.since || '0000-00-00',
+        category: 'opening',
+        badgeText: bn ? 'পূর্বের বকেয়া' : 'Opening Due',
+        badgeClass: 'badge-secondary',
+        totalAmount: openingDue,
+        salaryAdjusted: 0,
+        dueAdded: openingDue,
+        duePaid: 0,
+        description: bn ? 'প্রারম্ভিক বকেয়া / পূর্বের বকেয়া হিসাব' : 'Opening / Previous due balance',
+        notes: bn ? 'পূর্বের হিসাব থেকে আনীত' : 'Brought forward',
+        ref: 'INIT',
+        method: '—',
+      });
+    }
+
+    // Forward calculation of running balance
+    let running = 0;
+    const entriesWithBalance = rawEntries.map((e) => {
+      running = running + (e.dueAdded || 0) - (e.duePaid || 0);
+      return {
+        ...e,
+        balance: Math.max(0, running),
+      };
+    });
+
+    const totalAdvance = rawEntries.reduce((acc, e) => acc + (e.category === 'salary_advance' || e.category === 'staff_expense' ? e.totalAmount : 0), 0);
+    const totalSalaryAdjusted = rawEntries.reduce((acc, e) => acc + (e.salaryAdjusted || 0), 0);
+    const totalDueAddedAll = rawEntries.reduce((acc, e) => acc + (e.dueAdded || 0), 0);
+    const totalRecovered = rawEntries.reduce((acc, e) => acc + (e.duePaid || 0), 0);
+
+    return {
+      staffDueStatement: entriesWithBalance,
+      staffDueSummary: {
+        totalAdvance,
+        totalSalaryAdjusted,
+        totalDueAdded: totalDueAddedAll,
+        totalRecovered,
+        currentDue,
+        baseSalary: Number(sParty.baseSalary) || Number(selected?.base_salary) || 0,
+      },
+    };
+  }, [kind, data, isSalesmanAdmin, selectedId, selected, payrolls, expenses, bn]);
+
   // ---------------------------------------------------------------- //
   // Rows for the active tab, paged
   // ---------------------------------------------------------------- //
   const rowsForTab = useMemo(() => {
     if (!data) return [];
     switch (tab) {
+      case 'due_statement': {
+        if (!startDate && !endDate) return staffDueStatement;
+        return staffDueStatement.filter((r) => {
+          if (!r.date || r.date === '—') return true;
+          if (startDate && r.date < startDate) return false;
+          if (endDate && r.date > endDate) return false;
+          return true;
+        });
+      }
       case 'primary': return kind === 'supplier' ? data.purchases : data.invoices;
       case 'payments': return data.payments;
       case 'statement': return data.statement;
       case 'products': return data.products;
       case 'dues': return kind === 'supplier' ? data.duePurchases : data.dueInvoices;
-      case 'sr': return data.srSettlements;
       case 'recoveries': return data.recoveries;
       default: return [];
     }
-  }, [data, tab, kind]);
+  }, [data, tab, kind, staffDueStatement, startDate, endDate]);
   const pager = usePager(rowsForTab, `${selectedId}|${tab}|${startDate}|${endDate}`);
-
-  const isSalesmanAdmin = kind === 'salesman' && (String(selectedId).toLowerCase() === 'admin' || String(data?.party?.id).toLowerCase() === 'admin');
 
   const tabs = useMemo(() => {
     if (!data) return [];
@@ -252,19 +465,24 @@ const Ledger = () => {
       { key: 'statement', l: bn ? 'স্টেটমেন্ট' : 'Statement', n: data.statement.length },
       { key: 'dues', l: bn ? 'বকেয়া ক্রয়' : 'Due Purchases', n: (data.duePurchases || []).length },
     ];
-    const salesmanTabs = [
+    const salesmanTabs = [];
+    if (!isSalesmanAdmin) {
+      salesmanTabs.push({
+        key: 'due_statement',
+        l: bn ? '📋 বকেয়া ও খরচের হিসাব' : '📋 Due & Advance Breakdown',
+        n: staffDueStatement.length,
+      });
+    }
+    salesmanTabs.push(
       { key: 'primary', l: bn ? 'বিক্রয়' : 'Sales', n: data.invoices.length },
       { key: 'products', l: bn ? 'পণ্য' : 'Products', n: data.products.length },
-      { key: 'dues', l: bn ? 'বকেয়া বিক্রয়' : 'Due Sales', n: data.dueInvoices.length },
-    ];
-    if (!isSalesmanAdmin || (data.srSettlements && data.srSettlements.length > 0)) {
-      salesmanTabs.push({ key: 'sr', l: bn ? 'এসআর দিন' : 'SR Days', n: (data.srSettlements || []).length });
-    }
+      { key: 'dues', l: bn ? 'বকেয়া বিক্রয়' : 'Due Sales', n: data.dueInvoices.length }
+    );
     if (!isSalesmanAdmin || (data.recoveries && data.recoveries.length > 0)) {
       salesmanTabs.push({ key: 'recoveries', l: bn ? 'আদায়' : 'Recoveries', n: (data.recoveries || []).length });
     }
     return salesmanTabs;
-  }, [data, kind, bn, isSalesmanAdmin]);
+  }, [data, kind, bn, isSalesmanAdmin, staffDueStatement.length]);
 
   // Lifetime tiles, then the same for the window when one is set.
   const tiles = useMemo(() => {
@@ -306,20 +524,16 @@ const Ledger = () => {
         { l: bn ? 'বাকিতে কেনা' : 'Bought on Credit', v: money(p.dueCreated), c: p.dueCreated ? 'bad' : '' },
       ],
     };
-    return {
-      life: [
+    if (kind === 'salesman') {
+      const salesTiles = [
         { l: bn ? 'বিক্রয় চালান' : 'Sales Invoices', v: t.invoices },
         { l: bn ? 'বিক্রীত ইউনিট' : 'Units Sold', v: t.units },
         { l: bn ? 'মোট বিক্রয়' : 'Total Sales', v: money(t.salesAmount), c: 'info' },
         { l: bn ? 'নগদ আদায়' : 'Cash Collected', v: money(t.cashCollected), c: 'good' },
         { l: bn ? 'কাস্টমারের কাছে বকেয়া' : 'Still Due from Customers', v: money(t.dueOutstanding), c: t.dueOutstanding ? 'bad' : '' },
-        ...(!isSalesmanAdmin ? [
-          { l: bn ? 'এসআর দিন' : 'SR Days', v: t.srDays },
-          { l: bn ? 'দোকানকে দেনা' : 'Owes the Shop', v: money(t.staffDue), c: t.staffDue ? 'bad' : 'good' },
-          { l: bn ? 'আদায় হয়েছে' : 'Recovered', v: money(t.recovered), c: 'good' },
-        ] : []),
-      ],
-      period: [
+      ];
+
+      const periodSalesTiles = [
         { l: bn ? 'চালান' : 'Invoices', v: p.invoices },
         { l: bn ? 'ইউনিট' : 'Units', v: p.units },
         { l: bn ? 'বিক্রয়' : 'Sales', v: money(p.salesAmount), c: 'info' },
@@ -328,9 +542,30 @@ const Ledger = () => {
         ...(!isSalesmanAdmin ? [
           { l: bn ? 'আদায়' : 'Recovered', v: money(p.recovered), c: 'good' },
         ] : []),
-      ],
-    };
-  }, [data, kind, bn, isSalesmanAdmin]);
+      ];
+
+      if (isSalesmanAdmin) {
+        return {
+          life: salesTiles,
+          period: periodSalesTiles,
+        };
+      }
+
+      return {
+        life: [
+          ...salesTiles,
+          { l: bn ? 'দোকানকে দেনা' : 'Owes the Shop', v: money(staffDueSummary.currentDue), c: staffDueSummary.currentDue > 0 ? 'bad' : 'good' },
+          { l: bn ? 'আদায় হয়েছে' : 'Recovered', v: money(staffDueSummary.totalRecovered), c: 'good' },
+          { l: bn ? 'মূল বেতন' : 'Base Salary', v: money(staffDueSummary.baseSalary), c: 'info' },
+          { l: bn ? 'মোট খরচ / অগ্রিম' : 'Total Staff Cost/Advance', v: money(staffDueSummary.totalAdvance) },
+          { l: bn ? 'বেতন থেকে সমন্বিত' : 'Adjusted from Salary', v: money(staffDueSummary.totalSalaryAdjusted), c: 'good' },
+          { l: bn ? 'মোট বকেয়া সৃষ্টি' : 'Total Due Added', v: money(staffDueSummary.totalDueAdded), c: staffDueSummary.totalDueAdded > 0 ? 'bad' : '' },
+        ],
+        period: periodSalesTiles,
+      };
+    }
+    return { life: [], period: [] };
+  }, [data, kind, bn, isSalesmanAdmin, staffDueSummary]);
 
   const shopName = shopProfile?.shop_name || 'Allahr dan gents point';
   const hasWindow = Boolean(startDate || endDate);
@@ -399,7 +634,12 @@ const Ledger = () => {
                   const due = Number(p.due) || 0;
                   return (
                     <button key={p.id} type="button" className={`ll-row ${p.id === selectedId ? 'active' : ''}`}
-                      onClick={() => { setSelectedId(p.id); setPickerOpen(false); setPickerText(''); setTab('primary'); }}>
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        setPickerOpen(false);
+                        setPickerText('');
+                        setTab(kind === 'salesman' && String(p.id).toLowerCase() !== 'admin' ? 'due_statement' : 'primary');
+                      }}>
                       <span className="ll-avatar">{initials(p.name)}</span>
                       <span className="ll-main">
                         <span className="ll-name">{p.name}</span>
@@ -536,6 +776,125 @@ const Ledger = () => {
             </div>
 
             <div className="table-responsive" style={{ marginTop: '1rem', border: 'none' }}>
+              {/* Staff Due & Expense Statement */}
+              {tab === 'due_statement' && (
+                <div>
+                  <div style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '0.85rem 1.1rem',
+                    marginBottom: '1rem',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    fontSize: '0.85rem',
+                    lineHeight: 1.55,
+                    color: '#1e293b'
+                  }}>
+                    <BookOpen size={18} style={{ color: '#0284c7', flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <strong style={{ color: '#0f172a' }}>{bn ? '💡 কর্মীর বকেয়া ও খরচের সমন্বয় পদ্ধতি:' : '💡 Staff Due & Advance Adjustment Logic:'}</strong>
+                      <div style={{ marginTop: '2px', color: '#475569' }}>
+                        {bn
+                          ? 'খরচের পাতা থেকে কর্মীর নামে "Staff Cost" দিলে তা প্রথমে কর্মীর চলতি মাসের বেতন থেকে সমন্বয় (কর্তন) হয়। খরচ যদি অবশিষ্ট বেতনের চেয়ে বেশি হয়, তবে শুধুমাত্র অতিরিক্ত অংশটি কর্মীর বকেয়া (দোকানকে দেনা) হিসেবে যুক্ত হয়। কর্মী বকেয়া পরিশোধ করলে তা দেনা থেকে কর্তন হয়।'
+                          : 'When recording "Staff Cost" for an employee, it first adjusts against their monthly salary. Any amount exceeding remaining salary is added to their Due (owed to shop). Repayments deduct from due.'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>{bn ? 'তারিখ' : 'Date'}</th>
+                        <th>{bn ? 'লেনদেনের ধরন' : 'Type'}</th>
+                        <th>{bn ? 'বিবরণ ও রেফারেন্স' : 'Description & Ref'}</th>
+                        <th className="num">{bn ? 'মোট প্রদান' : 'Total Amount'}</th>
+                        <th className="num">{bn ? 'বেতন সমন্বয়' : 'Salary Adj.'}</th>
+                        <th className="num text-danger">{bn ? 'বকেয়া বৃদ্ধি (+)' : 'Due Added (+)'}</th>
+                        <th className="num text-success">{bn ? 'পরিশোধ (-)' : 'Paid / Rec (-)'}</th>
+                        <th className="num">{bn ? 'চলতি বকেয়া' : 'Running Due'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!hasWindow && staffDueSummary.currentDue > 0 && pager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan="8" className="text-center text-muted" style={{ padding: '1.5rem' }}>
+                            {bn ? 'কোনো লেনদেনের তথ্য পাওয়া যায়নি।' : 'No transaction records found.'}
+                          </td>
+                        </tr>
+                      )}
+                      {pager.slice.length === 0 && staffDueSummary.currentDue <= 0 && (
+                        <tr>
+                          <td colSpan="8" className="text-center text-muted" style={{ padding: '1.5rem' }}>
+                            {bn ? 'এই কর্মীর কোনো বকেয়া বা অগ্রিম খরচ নেই।' : 'No outstanding due or advances for this employee.'}
+                          </td>
+                        </tr>
+                      )}
+                      {pager.slice.map((row) => (
+                        <tr key={`${row.id}-${row.category}-${row.date}`} style={{ verticalAlign: 'middle' }}>
+                          <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{day(row.date)}</td>
+                          <td>
+                            <span
+                              className="badge"
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontWeight: 600,
+                                fontSize: '0.74rem',
+                                display: 'inline-block',
+                                background: row.category === 'recovery' ? '#ecfdf5' : row.dueAdded > 0 ? '#fef2f2' : '#eff6ff',
+                                color: row.category === 'recovery' ? '#065f46' : row.dueAdded > 0 ? '#991b1b' : '#1e40af',
+                                border: `1px solid ${row.category === 'recovery' ? '#a7f3d0' : row.dueAdded > 0 ? '#fecaca' : '#bfdbfe'}`,
+                              }}
+                            >
+                              {row.badgeText}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{row.description}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                              {row.ref && <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#334155' }}>Ref: {row.ref}</span>}
+                              {row.method && <span>• {row.method}</span>}
+                              {row.notes && <span>• {row.notes}</span>}
+                            </div>
+                          </td>
+                          <td className="num" style={{ fontWeight: 600 }}>
+                            {row.totalAmount > 0 ? money(row.totalAmount) : '—'}
+                          </td>
+                          <td className="num" style={{ color: '#0284c7', fontWeight: 600 }}>
+                            {row.salaryAdjusted > 0 ? money(row.salaryAdjusted) : '—'}
+                          </td>
+                          <td className={`num ${row.dueAdded > 0 ? 'text-danger font-bold' : 'text-muted'}`}>
+                            {row.dueAdded > 0 ? `+${money(row.dueAdded)}` : '—'}
+                          </td>
+                          <td className={`num ${row.duePaid > 0 ? 'text-success font-bold' : 'text-muted'}`}>
+                            {row.duePaid > 0 ? `-${money(row.duePaid)}` : '—'}
+                          </td>
+                          <td className="num balance-cell" style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                            <span className={row.balance > 0 ? 'text-danger' : 'text-success'}>
+                              {money(row.balance)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {pager.slice.length > 0 && (
+                      <tfoot>
+                        <tr style={{ background: 'var(--bg-subtle, #f8fafc)', fontWeight: 700 }}>
+                          <td colSpan="3" style={{ textAlign: 'right' }}>{bn ? 'সর্বমোট / বর্তমান ব্যালেন্স:' : 'Total / Current Balance:'}</td>
+                          <td className="num">{money(staffDueSummary.totalAdvance)}</td>
+                          <td className="num" style={{ color: '#0284c7' }}>{money(staffDueSummary.totalSalaryAdjusted)}</td>
+                          <td className="num text-danger">+{money(staffDueSummary.totalDueAdded)}</td>
+                          <td className="num text-success">-{money(staffDueSummary.totalRecovered)}</td>
+                          <td className="num balance-cell text-danger" style={{ fontSize: '1.05rem' }}>{money(staffDueSummary.currentDue)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              )}
+
               {/* invoices / sales / due invoices */}
               {((tab === 'primary' && kind !== 'supplier') || tab === 'dues') && (
                 <table className="data-table">
@@ -849,32 +1208,6 @@ const Ledger = () => {
                 </table>
               ) : null}
 
-              {tab === 'sr' && (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>{bn ? 'তারিখ' : 'Date'}</th><th>{bn ? 'কোড' : 'Code'}</th><th>{bn ? 'অবস্থা' : 'Status'}</th>
-                      <th className="num">{bn ? 'মাল দেওয়া' : 'Issued'}</th><th className="num">{bn ? 'বিক্রি' : 'Sold'}</th>
-                      <th className="num">{bn ? 'নগদ জমা' : 'Cash In'}</th><th className="num">{bn ? 'ঘাটতি' : 'Shortfall'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pager.slice.length === 0 && <tr><td colSpan="7" className="text-center text-muted" style={{ padding: '1.5rem' }}>{bn ? 'এই সময়ে কোনো এসআর দিন নেই।' : 'No SR days in this period.'}</td></tr>}
-                    {pager.slice.map((d) => (
-                      <tr key={d.id}>
-                        <td>{day(d.date)}</td>
-                        <td style={{ fontWeight: 600 }}>{d.id}</td>
-                        <td><span className={`badge ${d.status === 'Settled' ? 'bg-success' : 'bg-warning'}`}>{d.status}</span></td>
-                        <td className="num">{money(d.issuedValue)}</td>
-                        <td className="num">{money(d.salesValue)}</td>
-                        <td className="num text-success">{money(d.cashReceived)}</td>
-                        <td className={`num ${d.shortfall > 0 ? 'text-danger font-bold' : 'text-muted'}`}>{money(d.shortfall)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
               {tab === 'recoveries' && (
                 <table className="data-table">
                   <thead>
@@ -908,7 +1241,13 @@ const Ledger = () => {
                 <div style={{ fontSize: '20px', fontWeight: 800 }}>{shopName}</div>
                 <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
                 <div style={{ marginTop: 6, fontWeight: 700, letterSpacing: '0.1em' }}>
-                  {kind === 'customer' ? 'CUSTOMER STATEMENT' : kind === 'supplier' ? 'SUPPLIER STATEMENT' : 'SALESMAN STATEMENT'}
+                  {kind === 'customer'
+                    ? 'CUSTOMER STATEMENT'
+                    : kind === 'supplier'
+                      ? 'SUPPLIER STATEMENT'
+                      : isSalesmanAdmin
+                        ? 'SALESMAN STATEMENT'
+                        : 'STAFF DUE & ADVANCE STATEMENT'}
                 </div>
                 <div style={{ fontSize: '11px', color: '#4b5563' }}>
                   {hasWindow ? `Period: ${startDate || 'start'} to ${endDate || 'today'}` : 'All transactions'} · printed {new Date().toLocaleDateString('en-GB')}
@@ -957,7 +1296,7 @@ const Ledger = () => {
                     ))}
                   </tbody>
                 </table>
-              ) : (
+              ) : isSalesmanAdmin ? (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                   <thead><tr style={{ background: '#f3f4f6' }}>
                     {['Date', 'Invoice', 'Customer', 'Payment', 'Total', 'Paid', 'Due'].map((h, i) => <th key={h} style={{ ...cell, textAlign: i >= 4 ? 'right' : 'left', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>)}
@@ -973,9 +1312,48 @@ const Ledger = () => {
                     ))}
                   </tbody>
                 </table>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                  <thead><tr style={{ background: '#f3f4f6' }}>
+                    {['Date', 'Type', 'Description & Ref', 'Total Amt', 'Salary Adj.', 'Due Added (+)', 'Paid (-)', 'Due Balance'].map((h, i) => (
+                      <th key={h} style={{ ...cell, textAlign: i >= 3 ? 'right' : 'left', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {staffDueStatement.map((e) => (
+                      <tr key={`${e.id}-${e.category}-${e.date}`}>
+                        <td style={cell}>{day(e.date)}</td>
+                        <td style={cell}><strong>{e.badgeText}</strong></td>
+                        <td style={cell}>
+                          <div>{e.description}</div>
+                          {e.ref && <div style={{ fontSize: '9px', color: '#6b7280' }}>Ref: {e.ref} {e.notes ? `• ${e.notes}` : ''}</div>}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right' }}>{e.totalAmount > 0 ? money(e.totalAmount) : '—'}</td>
+                        <td style={{ ...cell, textAlign: 'right', color: '#0284c7' }}>{e.salaryAdjusted > 0 ? money(e.salaryAdjusted) : '—'}</td>
+                        <td style={{ ...cell, textAlign: 'right', color: e.dueAdded > 0 ? '#b91c1c' : '#6b7280', fontWeight: e.dueAdded > 0 ? 700 : 400 }}>
+                          {e.dueAdded > 0 ? `+${money(e.dueAdded)}` : '—'}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right', color: e.duePaid > 0 ? '#047857' : '#6b7280', fontWeight: e.duePaid > 0 ? 700 : 400 }}>
+                          {e.duePaid > 0 ? `-${money(e.duePaid)}` : '—'}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right', fontWeight: 800, color: e.balance > 0 ? '#b91c1c' : '#047857' }}>{money(e.balance)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: '#f9fafb', fontWeight: 700 }}>
+                      <td colSpan={3} style={{ ...cell, textAlign: 'right' }}>Total / Current Due:</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{money(staffDueSummary.totalAdvance)}</td>
+                      <td style={{ ...cell, textAlign: 'right', color: '#0284c7' }}>{money(staffDueSummary.totalSalaryAdjusted)}</td>
+                      <td style={{ ...cell, textAlign: 'right', color: '#b91c1c' }}>+{money(staffDueSummary.totalDueAdded)}</td>
+                      <td style={{ ...cell, textAlign: 'right', color: '#047857' }}>-{money(staffDueSummary.totalRecovered)}</td>
+                      <td style={{ ...cell, textAlign: 'right', fontSize: '13px', color: '#b91c1c' }}>{money(staffDueSummary.currentDue)}</td>
+                    </tr>
+                  </tbody>
+                </table>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 34, fontSize: '11px' }}>
-                <div style={{ borderTop: '1px solid #111827', paddingTop: 3, width: 160, textAlign: 'center' }}>{kind === 'supplier' ? 'Supplier' : kind === 'salesman' ? 'Salesman' : 'Customer'}</div>
+                <div style={{ borderTop: '1px solid #111827', paddingTop: 3, width: 160, textAlign: 'center' }}>
+                  {kind === 'supplier' ? 'Supplier' : kind === 'salesman' ? (isSalesmanAdmin ? 'Salesman' : 'Staff Member') : 'Customer'}
+                </div>
                 <div style={{ borderTop: '1px solid #111827', paddingTop: 3, width: 160, textAlign: 'center' }}>For {shopName}</div>
               </div>
             </div>

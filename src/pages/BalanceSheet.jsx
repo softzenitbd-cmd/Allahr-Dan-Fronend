@@ -312,7 +312,7 @@ const BalanceSheet = () => {
           <Row label={bn ? 'বাকিতে বিক্রয়' : 'Due Balance (due raised)'} value={money(sales.dueCreated)} variant="sub" />
           <Row label={bn ? 'পুরোনো বকেয়া আদায়' : 'Old dues collected'} value={money(sales.dueCollected)} />
           {sales.staffDueRecovered > 0 && (
-            <Row label={bn ? 'এসআর/কর্মীর কাছ থেকে আদায়' : 'Recovered from SR / staff'} value={money(sales.staffDueRecovered)} />
+            <Row label={bn ? 'কর্মীর কাছ থেকে আদায়' : 'Recovered from staff'} value={money(sales.staffDueRecovered)} />
           )}
           <Row label={bn ? 'সময়কালে মোট আদায়' : 'Total received in period'} value={money(sales.totalReceived)} variant="total" />
 
@@ -487,7 +487,7 @@ const BalanceSheet = () => {
             />
             <Row label={bn ? 'কাস্টমারের কাছে পাওনা' : 'Receivable from customers'} value={money(position.assets.customerDue)} />
             {position.assets.staffDue > 0 && (
-              <Row label={bn ? 'কর্মী/এসআর-এর কাছে পাওনা' : 'Receivable from staff / SR'} value={money(position.assets.staffDue)} />
+              <Row label={bn ? 'কর্মীর কাছে পাওনা' : 'Receivable from staff'} value={money(position.assets.staffDue)} />
             )}
             {position.assets.loansReceivable > 0 && (
               <Row label={bn ? 'কর্জ দেওয়া (পাওনা)' : 'Loans given (receivable)'} value={money(position.assets.loansReceivable)} />

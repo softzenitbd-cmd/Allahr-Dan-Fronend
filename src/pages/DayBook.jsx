@@ -5,10 +5,11 @@ import { toast } from 'react-toastify';
 import {
   ChevronLeft, ChevronRight, CalendarDays, RefreshCcw, Printer, ShoppingCart, Truck,
   DollarSign, Wallet, ArrowDownLeft, ArrowUpRight, RotateCcw, Landmark, Users,
-  TrendingUp, TrendingDown, Banknote, Eye, Trash2, Plus, X, CheckCircle2, Search,
+  TrendingUp, TrendingDown, Banknote, Eye, Trash2, Plus, Minus, Scale, X, CheckCircle2, Search,
   Handshake, Phone, ArrowUpCircle, ArrowDownCircle, FileText, Check, AlertCircle, History, Clock, Download,
 } from 'lucide-react';
 import useStore from '../store/useStore';
+import { ActivityLogService } from '../api/services';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
@@ -39,7 +40,7 @@ const pretty = (iso, bn) => new Date(`${iso}T00:00:00`).toLocaleDateString(bn ? 
 const KINDS = {
   sale: { icon: ShoppingCart, tone: 'success', en: 'Sale', bn: 'বিক্রি' },
   collection: { icon: ArrowDownLeft, tone: 'info', en: 'Due collected', bn: 'বকেয়া আদায়' },
-  recovery: { icon: ArrowDownLeft, tone: 'info', en: 'SR recovery', bn: 'এসআর আদায়' },
+  recovery: { icon: ArrowDownLeft, tone: 'info', en: 'Staff due recovery', bn: 'কর্মী বকেয়া আদায়' },
   sr: { icon: Users, tone: 'info', en: 'SR day', bn: 'এসআর দিন' },
   purchase: { icon: Truck, tone: 'warning', en: 'Purchase', bn: 'ক্রয়' },
   supplier_payment: { icon: ArrowUpRight, tone: 'warning', en: 'Paid supplier', bn: 'সাপ্লায়ার পরিশোধ' },
@@ -96,7 +97,7 @@ const DayBook = () => {
   const {
     user, language, shopProfile, sales, customers, staff, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
-    loans, fetchLoans, addLoan, payLoan, deleteLoan, importLocalLoans,
+    loans, fetchLoans, addLoan, payLoan, deleteLoan, deleteLoanPayment, importLocalLoans,
   } = useStore();
   const navigate = useNavigate();
   const bn = language === 'bn';
@@ -239,6 +240,9 @@ const DayBook = () => {
   }, [isAdmin, fetchLoans, importLocalLoans, bn]);
 
   const [loanDrawer, setLoanDrawer] = useState(false);
+  const [loanAdjustDrawer, setLoanAdjustDrawer] = useState(false);
+  const [loanAdjustTab, setLoanAdjustTab] = useState('old'); // 'old' | 'adjust'
+  const [loanHistoryTarget, setLoanHistoryTarget] = useState(null);
   const [loanFilter, setLoanFilter] = useState('all'); // 'all', 'given', 'taken', 'active', 'settled'
   const [loanSearch, setLoanSearch] = useState('');
   const [loanPayTarget, setLoanPayTarget] = useState(null);
@@ -256,6 +260,36 @@ const DayBook = () => {
     note: '',
     date: today,
   });
+
+  const [oldLoanForm, setOldLoanForm] = useState({
+    type: 'given',
+    name: '',
+    phone: '',
+    amount: '',
+    alreadyPaid: '',
+    account: 'Cash',
+    date: today,
+    note: '',
+    affectCash: false,
+  });
+
+  const [adjustForm, setAdjustForm] = useState({
+    loanId: '',
+    type: 'decrease', // 'decrease' (-) or 'increase' (+)
+    amount: '',
+    account: 'Cash',
+    date: today,
+    note: '',
+    affectCash: true,
+  });
+
+  // Keep history modal up to date with latest loan data
+  useEffect(() => {
+    if (loanHistoryTarget) {
+      const refreshed = loans.find(l => l.id === loanHistoryTarget.id);
+      if (refreshed) setLoanHistoryTarget(refreshed);
+    }
+  }, [loans]);
 
   const handleCreateLoan = async (e) => {
     e.preventDefault();
@@ -303,6 +337,160 @@ const DayBook = () => {
     load(true);
   };
 
+  const handleOldLoanSubmit = async (e) => {
+    e.preventDefault();
+    const name = (oldLoanForm.name || '').trim();
+    const amount = parseFloat(oldLoanForm.amount);
+    const alreadyPaid = parseFloat(oldLoanForm.alreadyPaid) || 0;
+    const account = oldLoanForm.account || 'Cash';
+    const date = oldLoanForm.date || today;
+    const note = (oldLoanForm.note || '').trim();
+
+    if (!name) {
+      toast.error(bn ? 'নাম লিখুন (বাধ্যতামূলক)' : 'Name is required');
+      return;
+    }
+    if (!amount || amount <= 0) {
+      toast.error(bn ? 'সঠিক মূল ঋণের পরিমাণ লিখুন' : 'Valid original amount is required');
+      return;
+    }
+    if (alreadyPaid > amount) {
+      toast.error(bn ? 'ইতোমধ্যে পরিশোধিত টাকা মূল ঋণের চেয়ে বেশি হতে পারে না' : 'Already paid cannot exceed original amount');
+      return;
+    }
+
+    setSaving(true);
+    if (oldLoanForm.affectCash) {
+      const res = await addLoan({
+        type: oldLoanForm.type,
+        account,
+        name,
+        phone: (oldLoanForm.phone || '').trim(),
+        amount,
+        note: note ? `[পুরাতন হিসাব] ${note}` : '[পুরাতন হিসাব]',
+        date,
+      });
+      if (res?.ok && alreadyPaid > 0) {
+        await fetchLoans();
+        const updated = useStore.getState().loans;
+        const created = updated.find(l => l.name === name && Math.abs(l.amount - amount) < 0.01);
+        if (created) {
+          await payLoan(created.id, {
+            amount: alreadyPaid,
+            account,
+            date,
+            note: 'পূর্বে পরিশোধিত কিস্তি',
+          }, { name });
+        }
+      }
+    } else {
+      const oldCode = `LN-OLD-${Date.now().toString().slice(-6)}`;
+      const payments = alreadyPaid > 0 ? [{
+        id: `LP-OLD-${Date.now().toString().slice(-6)}`,
+        amount: alreadyPaid,
+        account,
+        date,
+        note: 'পূর্বে পরিশোধিত কিস্তি',
+      }] : [];
+
+      const res = await importLocalLoans([{
+        id: oldCode,
+        type: oldLoanForm.type,
+        name,
+        phone: (oldLoanForm.phone || '').trim(),
+        amount,
+        account,
+        date,
+        note: note ? `[পুরাতন হিসাব] ${note}` : '[পুরাতন হিসাব / প্রারম্ভিক রেকর্ড]',
+        payments,
+      }]);
+
+      if (res?.ok) {
+        ActivityLogService.logCustom({
+          action: 'CREATE',
+          module: 'LOAN',
+          description: `পুরাতন ঋণ এন্ট্রি: ৳${amount} (${name}) - বকেয়া: ৳${amount - alreadyPaid} [ক্যাশ ড্রয়ার অপরিবর্তিত]`,
+          details: { name, amount, alreadyPaid, type: oldLoanForm.type, affectCash: false },
+        }).catch(() => {});
+      }
+    }
+    setSaving(false);
+
+    toast.success(bn ? 'পুরাতন ঋণের হিসাব সফলভাবে সংরক্ষিত হয়েছে' : 'Old loan record saved successfully');
+    setLoanAdjustDrawer(false);
+    setOldLoanForm({
+      type: 'given',
+      name: '',
+      phone: '',
+      amount: '',
+      alreadyPaid: '',
+      account: 'Cash',
+      date: today,
+      note: '',
+      affectCash: false,
+    });
+    load(true);
+  };
+
+  const handleLoanAdjustSubmit = async (e) => {
+    e.preventDefault();
+    if (!adjustForm.loanId) {
+      toast.error(bn ? 'অনুগ্রহ করে ঋণ নির্বাচন করুন' : 'Please select a loan');
+      return;
+    }
+    const targetLoan = loans.find(l => l.id === adjustForm.loanId);
+    if (!targetLoan) return;
+
+    const amount = parseFloat(adjustForm.amount);
+    if (!amount || amount <= 0) {
+      toast.error(bn ? 'সঠিক টাকার পরিমাণ লিখুন' : 'Valid amount is required');
+      return;
+    }
+
+    setSaving(true);
+    if (adjustForm.type === 'decrease') {
+      if (amount > targetLoan.remainingAmount + 0.001) {
+        toast.error(bn ? `সর্বোচ্চ সমন্বয়যোগ্য বকেয়া ${money(targetLoan.remainingAmount)}` : `Maximum adjustable due is ${money(targetLoan.remainingAmount)}`);
+        setSaving(false);
+        return;
+      }
+      const res = await payLoan(targetLoan.id, {
+        amount,
+        account: adjustForm.account || 'Cash',
+        date: adjustForm.date || today,
+        note: `[ব্যালেন্স হ্রাস / সমন্বয়] ${adjustForm.note || ''}`.trim(),
+      }, { name: targetLoan.name });
+      if (res?.ok) {
+        toast.success(bn ? `ঋণ থেকে ${money(amount)} হ্রাস / সমন্বয় করা হয়েছে` : `Loan reduced by ${money(amount)}`);
+      }
+    } else {
+      const res = await addLoan({
+        type: targetLoan.type,
+        account: adjustForm.account || 'Cash',
+        name: targetLoan.name,
+        phone: targetLoan.phone || '',
+        amount,
+        note: `[ঋণ বৃদ্ধি (+)] মূল ঋণ: ${targetLoan.id} - ${adjustForm.note || ''}`.trim(),
+        date: adjustForm.date || today,
+      });
+      if (res?.ok) {
+        toast.success(bn ? `নতুন করে ${money(amount)} ঋণ বৃদ্ধি করা হয়েছে` : `Loan increased by ${money(amount)}`);
+      }
+    }
+    setSaving(false);
+    setLoanAdjustDrawer(false);
+    setAdjustForm({
+      loanId: '',
+      type: 'decrease',
+      amount: '',
+      account: 'Cash',
+      date: today,
+      note: '',
+      affectCash: true,
+    });
+    load(true);
+  };
+
   const openLoanPay = (loan) => {
     setLoanPayTarget(loan);
     setLoanPayAccount(loan.account || 'Cash');
@@ -334,7 +522,7 @@ const DayBook = () => {
       account,
       date: loanPayDate || today,
       note: (loanPayNote || '').trim(),
-    });
+    }, { name: loanPayTarget.name });
     setSaving(false);
     if (!res?.ok) return;
 
@@ -342,6 +530,24 @@ const DayBook = () => {
       ? `${money(payAmt)} পরিশোধ এবং ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
       : `Payment of ${money(payAmt)} recorded and updated in ${account}`);
     setLoanPayTarget(null);
+    load(true);
+  };
+
+  const handleDeleteLoanPayment = async (loan, payment) => {
+    const ok = await showConfirmDialog({
+      title: bn ? 'কিস্তির রেকর্ডটি মুছে ফেলবেন?' : 'Delete payment installment?',
+      text: `${bn ? 'টাকার পরিমাণ' : 'Amount'}: ${money(payment.amount)} (${bn ? 'তারিখ' : 'Date'}: ${payment.date}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Account balance will be restored automatically.'}`,
+      confirmButtonText: bn ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
+      cancelButtonText: bn ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (!ok) return;
+
+    setSaving(true);
+    const res = await deleteLoanPayment(loan.id, payment.id, { name: loan.name, amount: payment.amount });
+    setSaving(false);
+    if (!res?.ok) return;
+    toast.success(bn ? 'কিস্তির রেকর্ড মুছে ফেলা হয়েছে' : 'Installment record deleted');
     load(true);
   };
 
@@ -355,7 +561,7 @@ const DayBook = () => {
     });
     if (!ok) return;
 
-    const res = await deleteLoan(loan.id);
+    const res = await deleteLoan(loan.id, { name: loan.name, amount: loan.amount });
     if (!res?.ok) return;
     toast.success(bn ? 'ঋণের তথ্য মুছে ফেলা হয়েছে ও একাউন্ট ব্যালেন্স সমন্বয় হয়েছে' : 'Loan record deleted and account balance restored');
     load(true);
@@ -453,9 +659,18 @@ const DayBook = () => {
               </button>
             </>
           ) : (
-            <button className="btn-primary flex-align-gap" onClick={() => setLoanDrawer(true)}>
-              <Plus size={16} /> {bn ? 'নতুন ঋণ / কর্জ যোগ' : 'Add New Loan'}
-            </button>
+            <div className="flex-align-gap">
+              <button
+                className="btn-outline flex-align-gap"
+                onClick={() => printElement('printable-all-loans', `Loans-Report-${date}`)}
+                title={bn ? 'সকল ঋণের রিপোর্ট প্রিন্ট করুন' : 'Print All Loans Report'}
+              >
+                <Printer size={16} /> {bn ? 'ঋণ রিপোর্ট প্রিন্ট' : 'Print Report'}
+              </button>
+              <button className="btn-primary flex-align-gap" onClick={() => setLoanDrawer(true)}>
+                <Plus size={16} /> {bn ? 'নতুন ঋণ / কর্জ যোগ' : 'Add New Loan'}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -721,7 +936,7 @@ const DayBook = () => {
                     <div className="card db-panel">
                       <h3>{bn ? 'মোট বকেয়া (আজ পর্যন্ত)' : 'Outstanding (as of now)'}</h3>
                       <div className="db-line"><span>{bn ? 'কাস্টমারের কাছে পাওনা' : 'Customers owe'}</span><span className="num text-success">{money(data.position.assets.customerDue)}</span></div>
-                      <div className="db-line"><span>{bn ? 'এসআর-এর কাছে পাওনা' : 'SRs owe'}</span><span className="num text-success">{money(data.position.assets.staffDue)}</span></div>
+                      <div className="db-line"><span>{bn ? 'কর্মীর কাছে পাওনা' : 'Staff owes'}</span><span className="num text-success">{money(data.position.assets.staffDue)}</span></div>
                       <div className="db-line"><span>{bn ? 'সাপ্লায়ারকে দেনা' : 'Owed to suppliers'}</span><span className="num text-danger">{money(data.position.liabilities.supplierDue)}</span></div>
                       {loanStats.givenRemaining > 0 && (
                         <div className="db-line"><span>{bn ? 'ব্যক্তিগত কর্জ পাওনা' : 'Loans given (owed to you)'}</span><span className="num text-success">{money(loanStats.givenRemaining)}</span></div>
@@ -870,8 +1085,17 @@ const DayBook = () => {
                     placeholder={bn ? 'নাম, ফোন নম্বর…' : 'Search name, phone…'}
                   />
                 </div>
-                <button className="btn-primary btn-sm flex-align-gap" onClick={() => setLoanDrawer(true)}>
-                  <Plus size={15} /> {bn ? 'নতুন ঋণ' : 'Add Loan'}
+                <button
+                  type="button"
+                  className="btn-outline btn-sm flex-align-gap"
+                  onClick={() => {
+                    setLoanAdjustDrawer(true);
+                    setLoanAdjustTab('old');
+                  }}
+                  style={{ borderColor: 'var(--primary)', color: 'var(--primary)', fontWeight: 600 }}
+                  title={bn ? 'পূর্বের পুরাতন হিসাব লিপিবদ্ধ ও ব্যালেন্স সমন্বয় (+ / -)' : 'Old Accounts & Balance Adjustment (+ / -)'}
+                >
+                  <Scale size={15} /> {bn ? 'পুরাতন হিসাব / সমন্বয় (+ / -)' : 'Old / Adjust (+ / -)'}
                 </button>
               </div>
             </div>
@@ -954,24 +1178,34 @@ const DayBook = () => {
                           </td>
                           <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <button
+                                type="button"
+                                className="btn-icon text-primary"
+                                onClick={() => setLoanHistoryTarget(loan)}
+                                title={bn ? 'ঋণ স্টেটমেন্ট ও কিস্তির হিস্টরি দেখুন' : 'View History & Statement'}
+                              >
+                                <FileText size={16} />
+                              </button>
                               {!isSettled && (
                                 <button
                                   type="button"
                                   className="loan-pay-btn"
                                   onClick={() => openLoanPay(loan)}
-                                  title={bn ? 'টাকা পরিশোধ / জমা আপডেট' : 'Update Payment'}
+                                  title={bn ? 'টাকা পরিশোধ / কিস্তি জমা' : 'Pay Installment'}
                                 >
                                   <DollarSign size={13} /> {bn ? 'Pay' : 'Pay'}
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                className="btn-icon text-danger"
-                                onClick={() => handleDeleteLoan(loan)}
-                                title={bn ? 'মুছুন' : 'Delete'}
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="btn-icon text-danger"
+                                  onClick={() => handleDeleteLoan(loan)}
+                                  title={bn ? 'মুছুন' : 'Delete'}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1257,8 +1491,43 @@ const DayBook = () => {
                     <span className="text-success" style={{ fontWeight: 600 }}>{money(loanPayTarget.paidAmount || 0)}</span>
                   </div>
                   <div>
-                    <span className="text-muted">{bn ? 'অবশিষ্ট পাওনা/দেনা' : 'Remaining Due'}:</span>{' '}
+                    <span className="text-muted">{bn ? 'অবশিষ্ট দেনা/পাওনা' : 'Remaining Due'}:</span>{' '}
                     <strong className="text-danger" style={{ fontSize: '1rem' }}>{money(loanPayTarget.remainingAmount)}</strong>
+                  </div>
+                </div>
+
+                {/* Quick Installment Chips */}
+                <div style={{ marginTop: '0.35rem', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    {bn ? 'দ্রুত কিস্তি নির্বাচন (বা নিচে যেকোনো পরিমাণ লিখুন):' : 'Quick Installment Amount:'}
+                  </div>
+                  <div className="loan-quick-chips">
+                    <button
+                      type="button"
+                      className={`loan-quick-chip ${Number(loanPayAmount) === Number(loanPayTarget.remainingAmount) ? 'active' : ''}`}
+                      onClick={() => setLoanPayAmount(String(loanPayTarget.remainingAmount))}
+                    >
+                      {bn ? 'সম্পূর্ণ বাকি' : 'Full'}: {money(loanPayTarget.remainingAmount)}
+                    </button>
+                    {loanPayTarget.remainingAmount > 100 && (
+                      <button
+                        type="button"
+                        className={`loan-quick-chip ${Number(loanPayAmount) === Math.round(loanPayTarget.remainingAmount / 2) ? 'active' : ''}`}
+                        onClick={() => setLoanPayAmount(String(Math.round(loanPayTarget.remainingAmount / 2)))}
+                      >
+                        {bn ? '৫০% (অর্ধেক)' : '50%'}: {money(Math.round(loanPayTarget.remainingAmount / 2))}
+                      </button>
+                    )}
+                    {[500, 1000, 2000, 5000, 10000].filter(amt => amt < loanPayTarget.remainingAmount).slice(0, 3).map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        className={`loan-quick-chip ${Number(loanPayAmount) === amt ? 'active' : ''}`}
+                        onClick={() => setLoanPayAmount(String(amt))}
+                      >
+                        {money(amt)}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1273,7 +1542,7 @@ const DayBook = () => {
                 </select>
 
                 <label>
-                  {loanPayTarget.type === 'given' ? (bn ? 'আদায়কৃত টাকার পরিমাণ' : 'Amount Received') : (bn ? 'পরিশোধিত টাকার পরিমাণ' : 'Amount Paid')} (BDT) <span className="text-danger">*</span>
+                  {loanPayTarget.type === 'given' ? (bn ? 'আদায়কৃত কিস্তির পরিমাণ' : 'Amount Received') : (bn ? 'পরিশোধিত কিস্তির পরিমাণ' : 'Amount Paid')} (BDT) <span className="text-danger">*</span>
                 </label>
                 <input
                   type="number"
@@ -1282,9 +1551,34 @@ const DayBook = () => {
                   min="1"
                   max={loanPayTarget.remainingAmount}
                   step="any"
+                  placeholder={bn ? 'টাকার পরিমাণ লিখুন (কম বা বেশি)' : 'Enter amount (partial or full)'}
                   required
                   autoFocus
                 />
+
+                {/* Live balance calculation preview */}
+                {(() => {
+                  const entered = parseFloat(loanPayAmount) || 0;
+                  const remAfter = Math.max(0, loanPayTarget.remainingAmount - entered);
+                  const isFullySettled = entered >= loanPayTarget.remainingAmount;
+                  return (
+                    <div style={{ padding: '0.65rem 0.85rem', background: isFullySettled ? 'rgba(16, 185, 129, 0.08)' : 'rgba(37, 99, 235, 0.08)', borderRadius: 'var(--radius-md)', border: `1px solid ${isFullySettled ? '#86efac' : '#93c5fd'}`, marginTop: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                        <span className="text-muted">{bn ? 'এই কিস্তিতে প্রদান:' : 'Paying now:'}</span>
+                        <strong>{money(entered)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', fontWeight: 700 }}>
+                        <span>{bn ? 'পরিশোধ পরবর্তী অবশিষ্ট থাকবে:' : 'Remaining after payment:'}</span>
+                        <span style={{ color: isFullySettled ? '#16a34a' : '#dc2626' }}>{money(remAfter)}</span>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: isFullySettled ? '#16a34a' : 'var(--text-muted)' }}>
+                        {isFullySettled
+                          ? (bn ? '✅ এই পেমেন্টে ঋণটি সম্পূর্ণ পরিশোধিত (Settled) হিসেবে গণ্য হবে।' : '✅ This payment will settle the loan completely.')
+                          : (bn ? `ℹ️ আংশিক কিস্তি। বাকি ${money(remAfter)} চলমান (Active) থাকবে।` : `ℹ️ Partial installment. ${money(remAfter)} will remain active.`)}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <label>{bn ? 'তারিখ' : 'Date'}</label>
                 <input
@@ -1298,7 +1592,7 @@ const DayBook = () => {
                   type="text"
                   value={loanPayNote}
                   onChange={(e) => setLoanPayNote(e.target.value)}
-                  placeholder={bn ? 'নগদ / বিকাশ / ব্যাংক ইত্যাদি (ঐচ্ছিক)' : 'Cash / bKash / bank etc (optional)'}
+                  placeholder={bn ? 'নগদ / কিস্তি নং / রেফারেন্স (ঐচ্ছিক)' : 'Cash / installment ref (optional)'}
                 />
               </div>
 
@@ -1315,6 +1609,582 @@ const DayBook = () => {
         </div>,
         document.body,
       )}
+
+      {/* Loan History & Statement Modal */}
+      {loanHistoryTarget && createPortal(
+        <div className="drawer-overlay" onClick={() => setLoanHistoryTarget(null)}>
+          <div className="drawer-container" style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FileText size={20} />
+                {bn ? 'ঋণ বিবরণী ও কিস্তির হিসাব' : 'Loan Statement & Ledger'}
+              </h2>
+              <div className="flex-align-gap">
+                <button
+                  type="button"
+                  className="btn-outline btn-sm flex-align-gap"
+                  onClick={() => printElement('printable-loan-statement', `Loan-Statement-${loanHistoryTarget.id}`)}
+                  title={bn ? 'স্টেটমেন্ট প্রিন্ট করুন' : 'Print Statement'}
+                >
+                  <Printer size={14} /> {bn ? 'প্রিন্ট' : 'Print'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline btn-sm flex-align-gap"
+                  onClick={() => downloadElementAsPDF('printable-loan-statement', `Loan-Statement-${loanHistoryTarget.id}`)}
+                  title={bn ? 'PDF ডাউনলোড' : 'PDF'}
+                >
+                  <Download size={14} /> PDF
+                </button>
+                <button type="button" className="drawer-close-btn" onClick={() => setLoanHistoryTarget(null)}>
+                  <X size={22} />
+                </button>
+              </div>
+            </div>
+
+            <div className="drawer-body" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {/* Person header card */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1rem', background: 'var(--bg-muted)', padding: '0.85rem', borderRadius: 'var(--radius-md)' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{bn ? 'ব্যক্তির নাম' : 'Person'}</div>
+                  <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-main)' }}>{loanHistoryTarget.name}</div>
+                  {loanHistoryTarget.phone && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.15rem' }}>
+                      <Phone size={11} /> {loanHistoryTarget.phone}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{bn ? 'ঋণের ধরন ও কোড' : 'Type & Code'}</div>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    {loanHistoryTarget.type === 'given' ? (
+                      <span className="loan-badge-given"><ArrowUpCircle size={12} /> {bn ? 'কর্জ দেওয়া' : 'Given'}</span>
+                    ) : (
+                      <span className="loan-badge-taken"><ArrowDownCircle size={12} /> {bn ? 'কর্জ নেওয়া' : 'Taken'}</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{loanHistoryTarget.id}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{bn ? 'শুরুর তারিখ ও মাধ্যম' : 'Date & Account'}</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{loanHistoryTarget.date || '—'}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{loanHistoryTarget.account || 'Cash'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{bn ? 'বর্তমান অবস্থা' : 'Status'}</div>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    {loanHistoryTarget.status === 'settled' || loanHistoryTarget.remainingAmount <= 0.01 ? (
+                      <span className="loan-badge-settled"><CheckCircle2 size={12} /> {bn ? 'পরিশোধিত' : 'Settled'}</span>
+                    ) : (
+                      <span className="loan-badge-active"><Clock size={12} /> {bn ? 'চলমান বকেয়া' : 'Active'}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3 Metric cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem', marginBottom: '1.25rem', textAlign: 'center' }}>
+                <div style={{ padding: '0.65rem', borderRadius: 'var(--radius-md)', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>{bn ? 'মূল ঋণের পরিমাণ' : 'Original Amount'}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, marginTop: '0.2rem' }}>{money(loanHistoryTarget.amount)}</div>
+                </div>
+                <div style={{ padding: '0.65rem', borderRadius: 'var(--radius-md)', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid #86efac' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#15803d', fontWeight: 600 }}>{bn ? 'মোট পরিশোধিত' : 'Total Paid'}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#15803d', marginTop: '0.2rem' }}>{money(loanHistoryTarget.paidAmount || 0)}</div>
+                </div>
+                <div style={{ padding: '0.65rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid #fca5a5' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#b91c1c', fontWeight: 600 }}>{bn ? 'অবশিষ্ট দেনা/পাওনা' : 'Remaining Due'}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#b91c1c', marginTop: '0.2rem' }}>{money(loanHistoryTarget.remainingAmount)}</div>
+                </div>
+              </div>
+
+              {/* Timeline table */}
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <History size={15} /> {bn ? 'লেনদেন ও কিস্তির বিবরণী' : 'Transactions & Installment Ledger'}
+              </h4>
+
+              <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: '1rem' }}>
+                <table className="loan-stmt-table">
+                  <thead>
+                    <tr>
+                      <th>{bn ? 'তারিখ' : 'Date'}</th>
+                      <th>{bn ? 'ধরন ও বিবরণ' : 'Description'}</th>
+                      <th>{bn ? 'মাধ্যম' : 'Account'}</th>
+                      <th style={{ textAlign: 'right' }}>{bn ? 'টাকা' : 'Amount'}</th>
+                      <th style={{ textAlign: 'right' }}>{bn ? 'ব্যালেন্স' : 'Balance'}</th>
+                      {isAdmin && <th style={{ textAlign: 'center', width: '40px' }}></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{loanHistoryTarget.date}</td>
+                      <td>
+                        <strong>{loanHistoryTarget.type === 'given' ? (bn ? 'মূল ঋণ প্রদান' : 'Loan Given') : (bn ? 'মূল ঋণ গ্রহণ' : 'Loan Taken')}</strong>
+                        {loanHistoryTarget.note && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{loanHistoryTarget.note}</div>}
+                      </td>
+                      <td><span className="badge badge-secondary">{loanHistoryTarget.account || 'Cash'}</span></td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
+                      {isAdmin && <td></td>}
+                    </tr>
+                    {(() => {
+                      let running = Number(loanHistoryTarget.amount) || 0;
+                      const sortedPayments = [...(loanHistoryTarget.payments || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+                      return sortedPayments.map((p) => {
+                        running = Math.max(0, running - (Number(p.amount) || 0));
+                        return (
+                          <tr key={p.id}>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.date}</td>
+                            <td>
+                              <span style={{ color: 'var(--success)', fontWeight: 600 }}>{bn ? 'কিস্তি পরিশোধ' : 'Payment Installment'}</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginLeft: '0.35rem' }}>#{p.id}</span>
+                              {p.note && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{p.note}</div>}
+                            </td>
+                            <td><span className="badge badge-secondary">{p.account || 'Cash'}</span></td>
+                            <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>−{money(p.amount)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: running > 0 ? '#b91c1c' : 'var(--text-muted)' }}>{money(running)}</td>
+                            {isAdmin && (
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-icon text-danger"
+                                  style={{ padding: '2px' }}
+                                  onClick={() => handleDeleteLoanPayment(loanHistoryTarget, p)}
+                                  title={bn ? 'এই কিস্তি মুছুন' : 'Delete installment'}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="drawer-footer" style={{ flexShrink: 0, justifyContent: 'space-between' }}>
+              <button type="button" className="btn-outline" onClick={() => setLoanHistoryTarget(null)}>
+                {bn ? 'বন্ধ করুন' : 'Close'}
+              </button>
+              {loanHistoryTarget.remainingAmount > 0.01 && (
+                <button
+                  type="button"
+                  className="btn-primary flex-align-gap"
+                  onClick={() => {
+                    const tgt = loanHistoryTarget;
+                    setLoanHistoryTarget(null);
+                    openLoanPay(tgt);
+                  }}
+                >
+                  <DollarSign size={16} /> {bn ? 'কিস্তি / টাকা জমা নিন' : 'Pay / Collect Installment'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Old Account & Balance Adjustment Drawer */}
+      {loanAdjustDrawer && createPortal(
+        <div className="drawer-overlay" onClick={() => setLoanAdjustDrawer(false)}>
+          <div className="drawer-container" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Scale size={20} />
+                {bn ? 'পুরাতন হিসাব ও ব্যালেন্স সমন্বয় (+ / -)' : 'Old Accounts & Balance Adjustment'}
+              </h2>
+              <button type="button" className="drawer-close-btn" onClick={() => setLoanAdjustDrawer(false)}>
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* Two Tabs: Old Loan vs Adjust Existing */}
+            <div style={{ padding: '0 1.25rem', marginTop: '0.75rem' }}>
+              <div className="loan-adjust-tabs">
+                <button
+                  type="button"
+                  className={`loan-adjust-tab ${loanAdjustTab === 'old' ? 'active' : ''}`}
+                  onClick={() => setLoanAdjustTab('old')}
+                >
+                  {bn ? 'পুরাতন হিসাব যোগ' : 'Add Old Loan'}
+                </button>
+                <button
+                  type="button"
+                  className={`loan-adjust-tab ${loanAdjustTab === 'adjust' ? 'active' : ''}`}
+                  onClick={() => setLoanAdjustTab('adjust')}
+                >
+                  {bn ? 'ব্যালেন্স সমন্বয় (+ / -)' : 'Adjust Balance (+ / -)'}
+                </button>
+              </div>
+            </div>
+
+            {loanAdjustTab === 'old' ? (
+              <form onSubmit={handleOldLoanSubmit} className="db-form" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <div className="drawer-body" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                  <div className="alert-banner" style={{ background: 'rgba(37, 99, 235, 0.08)', border: '1px solid #bfdbfe', borderRadius: 'var(--radius-md)', padding: '0.55rem 0.85rem', fontSize: '0.8rem', color: '#1e40af', marginBottom: '0.75rem' }}>
+                    ℹ️ {bn ? 'সফটওয়্যার ব্যবহারের পূর্বের পুরাতন বা প্রারম্ভিক ঋণ যোগ করতে এটি ব্যবহার করুন। আজকের ক্যাশ ড্রয়ার কমবে না।' : 'Use this to record old loans from before using the software without affecting today\'s cash drawer.'}
+                  </div>
+
+                  <label>{bn ? 'ঋণের ধরন' : 'Loan Type'} *</label>
+                  <div className="loan-type-selector">
+                    <button
+                      type="button"
+                      className={`loan-type-btn ${oldLoanForm.type === 'given' ? 'active-given' : ''}`}
+                      onClick={() => setOldLoanForm({ ...oldLoanForm, type: 'given' })}
+                    >
+                      <ArrowUpCircle size={16} />
+                      {bn ? 'কর্জ দিয়েছিলাম (পাওনা)' : 'Lent (Given)'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`loan-type-btn ${oldLoanForm.type === 'taken' ? 'active-taken' : ''}`}
+                      onClick={() => setOldLoanForm({ ...oldLoanForm, type: 'taken' })}
+                    >
+                      <ArrowDownCircle size={16} />
+                      {bn ? 'কর্জ নিয়েছিলাম (দেনা)' : 'Borrowed (Taken)'}
+                    </button>
+                  </div>
+
+                  <label style={{ marginTop: '0.75rem' }}>{bn ? 'ব্যক্তি বা প্রতিষ্ঠানের নাম' : 'Person Name'} *</label>
+                  <input
+                    type="text"
+                    value={oldLoanForm.name}
+                    onChange={(e) => setOldLoanForm({ ...oldLoanForm, name: e.target.value })}
+                    placeholder={bn ? 'নাম লিখুন (বাধ্যতামূলক)' : 'Enter name (required)'}
+                    required
+                    autoFocus
+                  />
+
+                  <label>{bn ? 'ফোন নম্বর' : 'Phone Number'}</label>
+                  <input
+                    type="tel"
+                    value={oldLoanForm.phone}
+                    onChange={(e) => setOldLoanForm({ ...oldLoanForm, phone: e.target.value })}
+                    placeholder={bn ? '০১৭xxxxxxxx (ঐচ্ছিক)' : '017xxxxxxxx (optional)'}
+                  />
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.4rem' }}>
+                    <div>
+                      <label>{bn ? 'মূল ঋণের পরিমাণ' : 'Original Amount'} *</label>
+                      <input
+                        type="number"
+                        value={oldLoanForm.amount}
+                        onChange={(e) => setOldLoanForm({ ...oldLoanForm, amount: e.target.value })}
+                        min="1"
+                        step="any"
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>{bn ? 'পূর্বে পরিশোধিত (যদি থাকে)' : 'Already Paid'}</label>
+                      <input
+                        type="number"
+                        value={oldLoanForm.alreadyPaid}
+                        onChange={(e) => setOldLoanForm({ ...oldLoanForm, alreadyPaid: e.target.value })}
+                        min="0"
+                        step="any"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  {oldLoanForm.amount && (
+                    <div style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)', marginTop: '0.5rem', fontSize: '0.8125rem' }}>
+                      <span className="text-muted">{bn ? 'বর্তমান অবশিষ্ট বকেয়া থাকবে:' : 'Net Remaining Due:'}</span>{' '}
+                      <strong style={{ color: '#dc2626' }}>{money(Math.max(0, (parseFloat(oldLoanForm.amount) || 0) - (parseFloat(oldLoanForm.alreadyPaid) || 0)))}</strong>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div>
+                      <label>{bn ? 'ঋণ লেনদেনের মাধ্যম' : 'Account'}</label>
+                      <select
+                        value={oldLoanForm.account}
+                        onChange={(e) => setOldLoanForm({ ...oldLoanForm, account: e.target.value })}
+                      >
+                        <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
+                        <option value="Bank">Bank Account (ব্যাংক)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>{bn ? 'ঋণের মূল তারিখ' : 'Original Date'}</label>
+                      <input
+                        type="date"
+                        value={oldLoanForm.date}
+                        onChange={(e) => setOldLoanForm({ ...oldLoanForm, date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <label style={{ marginTop: '0.5rem' }}>{bn ? 'নোট বা বিবরণ' : 'Note / Description'}</label>
+                  <input
+                    type="text"
+                    value={oldLoanForm.note}
+                    onChange={(e) => setOldLoanForm({ ...oldLoanForm, note: e.target.value })}
+                    placeholder={bn ? 'পুরাতন হিসাবের বিবরণ বা তথ্য' : 'Old record reference'}
+                  />
+
+                  <div style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)' }}>
+                    <input
+                      type="checkbox"
+                      id="old-affect-cash"
+                      checked={oldLoanForm.affectCash}
+                      onChange={(e) => setOldLoanForm({ ...oldLoanForm, affectCash: e.target.checked })}
+                      style={{ width: 'auto', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="old-affect-cash" style={{ margin: 0, fontSize: '0.8rem', cursor: 'pointer' }}>
+                      {bn ? 'আজকের ক্যাশ/ব্যাংক ব্যালেন্সে প্রভাব ফেলবে (ডিফল্ট: বন্ধ)' : 'Affect today\'s Cash/Bank balance (Default: Off)'}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="drawer-footer" style={{ flexShrink: 0 }}>
+                  <button type="button" className="btn-outline" onClick={() => setLoanAdjustDrawer(false)}>
+                    {bn ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    {bn ? 'পুরাতন হিসাব সংরক্ষণ' : 'Save Old Loan'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleLoanAdjustSubmit} className="db-form" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <div className="drawer-body" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                  <div className="alert-banner" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '0.55rem 0.85rem', fontSize: '0.8rem', color: '#b45309', marginBottom: '0.75rem' }}>
+                    ℹ️ {bn ? 'বিদ্যমান কোনো ব্যক্তির ঋণের পরিমাণ বৃদ্ধি (+) বা ছাড়/মওকুফ/হ্রাস (-) করার জন্য এটি ব্যবহার করুন।' : 'Use this to increase (+) or discount/decrease (-) an existing person\'s loan balance.'}
+                  </div>
+
+                  <label>{bn ? 'ব্যক্তি বা চলমান ঋণ নির্বাচন করুন' : 'Select Loan / Person'} *</label>
+                  <select
+                    value={adjustForm.loanId}
+                    onChange={(e) => setAdjustForm({ ...adjustForm, loanId: e.target.value })}
+                    required
+                  >
+                    <option value="">{bn ? '-- ঋণ সিলেক্ট করুন --' : '-- Select Loan --'}</option>
+                    {loans.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} — {l.type === 'given' ? (bn ? 'কর্জ দেওয়া' : 'Given') : (bn ? 'কর্জ নেওয়া' : 'Taken')} (বাকি: {money(l.remainingAmount)})
+                      </option>
+                    ))}
+                  </select>
+
+                  <label style={{ marginTop: '0.75rem' }}>{bn ? 'সমন্বয়ের ধরন' : 'Adjustment Type'} *</label>
+                  <div className="loan-type-selector">
+                    <button
+                      type="button"
+                      className={`loan-type-btn ${adjustForm.type === 'decrease' ? 'active-given' : ''}`}
+                      onClick={() => setAdjustForm({ ...adjustForm, type: 'decrease' })}
+                    >
+                      <Minus size={16} />
+                      {bn ? 'ঋণ হ্রাস / ছাড় (−)' : 'Decrease / Discount (−)'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`loan-type-btn ${adjustForm.type === 'increase' ? 'active-taken' : ''}`}
+                      onClick={() => setAdjustForm({ ...adjustForm, type: 'increase' })}
+                    >
+                      <Plus size={16} />
+                      {bn ? 'ঋণ বৃদ্ধি (+)' : 'Increase Loan (+)'}
+                    </button>
+                  </div>
+
+                  <label style={{ marginTop: '0.75rem' }}>{bn ? 'সমন্বয়ের টাকার পরিমাণ' : 'Amount'} (BDT) *</label>
+                  <input
+                    type="number"
+                    value={adjustForm.amount}
+                    onChange={(e) => setAdjustForm({ ...adjustForm, amount: e.target.value })}
+                    min="1"
+                    step="any"
+                    placeholder="0.00"
+                    required
+                  />
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.4rem' }}>
+                    <div>
+                      <label>{bn ? 'মাধ্যম / একাউন্ট' : 'Account'}</label>
+                      <select
+                        value={adjustForm.account}
+                        onChange={(e) => setAdjustForm({ ...adjustForm, account: e.target.value })}
+                      >
+                        <option value="Cash">Cash (নগদ ক্যাশ)</option>
+                        <option value="Bank">Bank (ব্যাংক)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>{bn ? 'তারিখ' : 'Date'}</label>
+                      <input
+                        type="date"
+                        value={adjustForm.date}
+                        onChange={(e) => setAdjustForm({ ...adjustForm, date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <label style={{ marginTop: '0.5rem' }}>{bn ? 'সমন্বয়ের কারণ / নোট' : 'Reason / Note'}</label>
+                  <input
+                    type="text"
+                    value={adjustForm.note}
+                    onChange={(e) => setAdjustForm({ ...adjustForm, note: e.target.value })}
+                    placeholder={bn ? 'ডিসকাউন্ট / মওকুফ / হিসাব মিলকরণ ইত্যাদি' : 'Discount / waiver / balance correction'}
+                  />
+                </div>
+
+                <div className="drawer-footer" style={{ flexShrink: 0 }}>
+                  <button type="button" className="btn-outline" onClick={() => setLoanAdjustDrawer(false)}>
+                    {bn ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    {bn ? 'ব্যালেন্স সমন্বয় করুন' : 'Apply Adjustment'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Printable Single Loan Statement */}
+      {loanHistoryTarget && (
+        <div id="printable-loan-statement" style={{ display: 'none' }}>
+          <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: 16, borderBottom: '2px solid #333', paddingBottom: 10 }}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || shopProfile?.shop_name || 'Allahr dan gents point'}</div>
+              <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8 }}>{bn ? 'ঋণ বিবরণী ও কিস্তির হিসাব (Loan Statement)' : 'Loan Statement & Ledger'}</div>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{bn ? 'প্রিন্টের তারিখ:' : 'Printed Date:'} {new Date().toLocaleDateString('bn-BD')}</div>
+            </div>
+            {/* Details */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 12, background: '#f8fafc', padding: 8, borderRadius: 6 }}>
+              <div>
+                <div><strong>{bn ? 'ব্যক্তির নাম:' : 'Person:'}</strong> {loanHistoryTarget.name}</div>
+                {loanHistoryTarget.phone && <div><strong>{bn ? 'মোবাইল:' : 'Phone:'}</strong> {loanHistoryTarget.phone}</div>}
+                <div><strong>{bn ? 'ঋণের কোড:' : 'Loan Code:'}</strong> {loanHistoryTarget.id}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div><strong>{bn ? 'ধরন:' : 'Type:'}</strong> {loanHistoryTarget.type === 'given' ? (bn ? 'কর্জ দেওয়া (Lent)' : 'Given') : (bn ? 'কর্জ নেওয়া (Borrowed)' : 'Taken')}</div>
+                <div><strong>{bn ? 'তারিখ:' : 'Date:'}</strong> {loanHistoryTarget.date}</div>
+                <div><strong>{bn ? 'স্ট্যাটাস:' : 'Status:'}</strong> {loanHistoryTarget.status === 'settled' || loanHistoryTarget.remainingAmount <= 0.01 ? (bn ? 'পরিশোধিত' : 'Settled') : (bn ? 'চলমান' : 'Active')}</div>
+              </div>
+            </div>
+            {/* KPI Summary in Statement */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, textAlign: 'center' }}>
+              <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4 }}>
+                <div style={{ fontSize: 10, color: '#666' }}>{bn ? 'মূল ঋণ' : 'Original Loan'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</div>
+              </div>
+              <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4, background: '#f0fdf4' }}>
+                <div style={{ fontSize: 10, color: '#166534' }}>{bn ? 'মোট পরিশোধ' : 'Total Paid'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#166534' }}>{money(loanHistoryTarget.paidAmount || 0)}</div>
+              </div>
+              <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4, background: '#fef2f2' }}>
+                <div style={{ fontSize: 10, color: '#991b1b' }}>{bn ? 'অবশিষ্ট পাওনা/দেনা' : 'Remaining Due'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#991b1b' }}>{money(loanHistoryTarget.remainingAmount)}</div>
+              </div>
+            </div>
+            {/* Table of Ledger */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 20 }}>
+              <thead>
+                <tr style={{ background: '#f1f5f9' }}>
+                  <th style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{bn ? 'তারিখ' : 'Date'}</th>
+                  <th style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{bn ? 'বিবরণ' : 'Description'}</th>
+                  <th style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{bn ? 'মাধ্যম' : 'Account'}</th>
+                  <th style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{bn ? 'টাকা' : 'Amount'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{loanHistoryTarget.date}</td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
+                    <strong>{loanHistoryTarget.type === 'given' ? (bn ? 'মূল কর্জ প্রদান' : 'Loan Given') : (bn ? 'মূল কর্জ গ্রহণ' : 'Loan Taken')}</strong>
+                    {loanHistoryTarget.note ? ` (${loanHistoryTarget.note})` : ''}
+                  </td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{loanHistoryTarget.account || 'Cash'}</td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 700 }}>{money(loanHistoryTarget.amount)}</td>
+                </tr>
+                {(loanHistoryTarget.payments || []).map((p, idx) => (
+                  <tr key={p.id || idx}>
+                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{p.date}</td>
+                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
+                      {bn ? 'কিস্তি পরিশোধ' : 'Payment Installment'}
+                      {p.note ? ` (${p.note})` : ''}
+                    </td>
+                    <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{p.account || 'Cash'}</td>
+                    <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', color: '#166534', fontWeight: 600 }}>-{money(p.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {/* Signature */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 40, paddingTop: 10, fontSize: 11 }}>
+              <div style={{ textAlign: 'center', width: '150px', borderTop: '1px dashed #666' }}>{bn ? 'গ্রহীতার স্বাক্ষর' : 'Recipient Signature'}</div>
+              <div style={{ textAlign: 'center', width: '150px', borderTop: '1px dashed #666' }}>{bn ? 'অনুমোদনকারীর স্বাক্ষর' : 'Authorized Signature'}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Printable All Loans Report */}
+      <div id="printable-all-loans" style={{ display: 'none' }}>
+        <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '16px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || shopProfile?.shop_name || 'Allahr dan gents point'}</div>
+            <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginTop: 8 }}>{bn ? 'কর্জ / ঋণ খাতা ও হিসাব বিবরণী' : 'Loan Book & Statement Report'}</div>
+            <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{bn ? 'তারিখ:' : 'Date:'} {pretty(today, bn)}</div>
+          </div>
+          {/* Summary */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16, textAlign: 'center' }}>
+            <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4 }}>
+              <div style={{ fontSize: 10, color: '#666' }}>{bn ? 'মোট কর্জ দেওয়া (Lent)' : 'Total Given'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{money(loanStats.totalGiven)}</div>
+              <div style={{ fontSize: 10, color: '#dc2626' }}>{bn ? 'বাকি:' : 'Due:'} {money(loanStats.givenRemaining)}</div>
+            </div>
+            <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4 }}>
+              <div style={{ fontSize: 10, color: '#666' }}>{bn ? 'মোট কর্জ নেওয়া (Borrowed)' : 'Total Taken'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{money(loanStats.totalTaken)}</div>
+              <div style={{ fontSize: 10, color: '#2563eb' }}>{bn ? 'দেনা:' : 'Due:'} {money(loanStats.takenRemaining)}</div>
+            </div>
+            <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4 }}>
+              <div style={{ fontSize: 10, color: '#666' }}>{bn ? 'চলমান ঋণ' : 'Active Loans'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{loanStats.activeCount} {bn ? 'টি' : ''}</div>
+            </div>
+            <div style={{ border: '1px solid #ccc', padding: 6, borderRadius: 4 }}>
+              <div style={{ fontSize: 10, color: '#666' }}>{bn ? 'পরিশোধিত ঋণ' : 'Settled Loans'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>{loanStats.totalSettledCount} {bn ? 'টি' : ''}</div>
+            </div>
+          </div>
+          {/* Table */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
+            <thead>
+              <tr style={{ background: '#f1f1f1' }}>
+                {['SL', bn ? 'ধরন' : 'Type', bn ? 'তারিখ' : 'Date', bn ? 'নাম ও ফোন' : 'Person', bn ? 'মূল ঋণ' : 'Original', bn ? 'পরিশোধ' : 'Paid', bn ? 'বকেয়া' : 'Remaining', bn ? 'স্ট্যাটাস' : 'Status'].map(h => (
+                  <th key={h} style={{ border: '1px solid #ccc', padding: '6px', textAlign: h.includes('Original') || h.includes('Paid') || h.includes('Remaining') || h.includes('ঋণ') || h.includes('পরিশোধ') || h.includes('বকেয়া') ? 'right' : 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLoans.map((l, idx) => (
+                <tr key={l.id}>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.type === 'given' ? (bn ? 'কর্জ দেওয়া' : 'Given') : (bn ? 'কর্জ নেওয়া' : 'Taken')}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.date}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.name} {l.phone ? `(${l.phone})` : ''}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right' }}>{money(l.amount)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right', color: '#16a34a' }}>{money(l.paidAmount || 0)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>{money(l.remainingAmount)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'center' }}>{l.status === 'settled' || l.remainingAmount <= 0.01 ? (bn ? 'পরিশোধিত' : 'Settled') : (bn ? 'চলমান' : 'Active')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };

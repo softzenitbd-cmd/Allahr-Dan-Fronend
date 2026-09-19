@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X, PieChart, DollarSign, Printer, Eye, Edit, Trash2 } from 'lucide-react';
 
@@ -11,9 +11,19 @@ import { t } from '../utils/i18n';
 const DEFAULT_CATEGORIES = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
 
 const Expenses = () => {
-  const { expenses, expenseCategories, staff, addExpense, updateExpense, deleteExpense, language } = useStore();
+  const {
+    expenses, expenseCategories, staff, payrolls,
+    addExpense, updateExpense, deleteExpense, generatePayslip,
+    ensureLoaded, language,
+  } = useStore();
   const [showModal, setShowModal] = useState(false);
   const todayStr = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    if (typeof ensureLoaded === 'function') {
+      ensureLoaded('expenses', 'staff', 'payrolls');
+    }
+  }, [ensureLoaded]);
 
   // Dynamic Categories from backend and store
   const dynamicCategories = Array.from(new Set([
@@ -30,6 +40,43 @@ const Expenses = () => {
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().substring(0, 7));
   const totalDailyExpense = expenses.filter(e => e.date === todayStr).reduce((acc, curr) => acc + curr.amount, 0);
 
+  // Live calculation for staff cost salary adjustment & excess due
+  const selectedStaffMember = useMemo(() => {
+    if (!newExpense.staffId) return null;
+    return (staff || []).find(s => String(s.id) === String(newExpense.staffId) || s.staff_code === newExpense.staffId) || null;
+  }, [staff, newExpense.staffId]);
+
+  const staffSalaryCalc = useMemo(() => {
+    if (!selectedStaffMember) return null;
+    const baseSalary = Number(selectedStaffMember.baseSalary || selectedStaffMember.base_salary) || 0;
+    const selectedMonth = (newExpense.date || todayStr).substring(0, 7);
+    const currPayroll = (payrolls || []).find(p => 
+      (String(p.staffId) === String(selectedStaffMember.id) || p.staffId === selectedStaffMember.staff_code) && 
+      p.month === selectedMonth
+    );
+
+    const netPay = currPayroll ? Number(currPayroll.netPay || currPayroll.net_pay || 0) : baseSalary;
+    const paidSoFar = currPayroll ? Number(currPayroll.paidAmount || currPayroll.paid_amount || 0) : 0;
+    const remainingSalary = Math.max(0, netPay - paidSoFar);
+    const currentDue = Number(selectedStaffMember.due) || 0;
+
+    const parsedAmt = parseFloat(newExpense.amount) || 0;
+    const adjustedFromSalary = Math.min(parsedAmt, remainingSalary);
+    const addedToDue = Math.max(0, parsedAmt - remainingSalary);
+
+    return {
+      baseSalary,
+      selectedMonth,
+      netPay,
+      paidSoFar,
+      remainingSalary,
+      currentDue,
+      parsedAmt,
+      adjustedFromSalary,
+      addedToDue,
+    };
+  }, [selectedStaffMember, newExpense.date, newExpense.amount, payrolls, todayStr]);
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
     const parsedAmount = parseFloat(newExpense.amount);
@@ -39,19 +86,50 @@ const Expenses = () => {
     }
     const finalDescription = (newExpense.description || '').trim() || newExpense.category || 'Shop Expense';
 
-    const res = await addExpense({
-      ...newExpense,
-      staff: newExpense.staffId || undefined,
-      staffId: newExpense.staffId || undefined,
-      amount: parsedAmount,
-      description: finalDescription,
-      date: newExpense.date || todayStr,
-    });
+    const isStaffCostWithStaff = newExpense.category === 'Staff Cost' && Boolean(newExpense.staffId);
+
+    let res;
+    if (isStaffCostWithStaff) {
+      const selectedMonth = (newExpense.date || todayStr).substring(0, 7);
+      res = await generatePayslip({
+        staffId: newExpense.staffId,
+        month: selectedMonth,
+        year: selectedMonth.split('-')[0],
+        amount: parsedAmount,
+        paymentMethod: 'Cash',
+        notes: finalDescription,
+      });
+    } else {
+      res = await addExpense({
+        ...newExpense,
+        staff: newExpense.staffId || undefined,
+        staffId: newExpense.staffId || undefined,
+        amount: parsedAmount,
+        description: finalDescription,
+        date: newExpense.date || todayStr,
+      });
+    }
 
     if (res?.ok) {
       setShowModal(false);
       setNewExpense({ date: todayStr, category: dynamicCategories[0] || 'Shop Rent', amount: '', description: '', staffId: '' });
-      toast.success(language === 'bn' ? 'খরচ সফলভাবে যুক্ত হয়েছে' : 'Expense recorded successfully');
+      if (isStaffCostWithStaff && staffSalaryCalc) {
+        if (staffSalaryCalc.addedToDue > 0) {
+          toast.success(
+            language === 'bn'
+              ? `স্টাফ খরচ যুক্ত হয়েছে! বেতন থেকে সমন্বয়: ৳${staffSalaryCalc.adjustedFromSalary.toLocaleString()} এবং বকেয়া (Due) জমা: ৳${staffSalaryCalc.addedToDue.toLocaleString()}`
+              : `Expense recorded! Adjusted from salary: ৳${staffSalaryCalc.adjustedFromSalary} & Due added: ৳${staffSalaryCalc.addedToDue}`
+          );
+        } else {
+          toast.success(
+            language === 'bn'
+              ? `স্টাফ খরচ যুক্ত হয়েছে! পুরো ৳${staffSalaryCalc.adjustedFromSalary.toLocaleString()} টাকা এই মাসের বেতন থেকে সমন্বয় হয়েছে।`
+              : `Expense recorded and ৳${staffSalaryCalc.adjustedFromSalary} fully adjusted from salary.`
+          );
+        }
+      } else {
+        toast.success(language === 'bn' ? 'খরচ সফলভাবে যুক্ত হয়েছে' : 'Expense recorded successfully');
+      }
     }
   };
 
@@ -288,10 +366,38 @@ const Expenses = () => {
                         </option>
                       ))}
                     </select>
-                    {newExpense.staffId && (
-                      <p className="text-warning text-xs mt-1" style={{ margin: '0.35rem 0 0 0', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        ⚠️ {language === 'bn' ? 'এই খরচের টাকা কর্মীর বকেয়া (Due) হিসাবে জমা হবে।' : 'This amount will be added to the staff member\'s due balance.'}
-                      </p>
+                    {staffSalaryCalc && (
+                      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.75rem', marginTop: '0.65rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginBottom: '4px' }}>
+                          <span style={{ color: '#475569', fontWeight: 600 }}>
+                            {language === 'bn' ? `চলতি মাসের বাকি বেতন (${staffSalaryCalc.selectedMonth}):` : `Remaining Salary (${staffSalaryCalc.selectedMonth}):`}
+                          </span>
+                          <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.9rem' }}>
+                            ৳{staffSalaryCalc.remainingSalary.toLocaleString()}
+                          </span>
+                        </div>
+                        {staffSalaryCalc.parsedAmt > 0 && (
+                          <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '6px', marginTop: '4px', fontSize: '0.78rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#166534' }}>
+                              <span>{language === 'bn' ? 'বেতন থেকে সমন্বয় হবে:' : 'Adjusted from Salary:'}</span>
+                              <strong style={{ color: '#15803d' }}>৳{staffSalaryCalc.adjustedFromSalary.toLocaleString()}</strong>
+                            </div>
+                            {staffSalaryCalc.addedToDue > 0 ? (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c', marginTop: '3px', fontWeight: 700 }}>
+                                <span>{language === 'bn' ? 'বেতনের অতিরিক্ত (বকেয়া/Due জমা):' : 'Excess (Added to Due):'}</span>
+                                <strong style={{ color: '#dc2626' }}>+৳{staffSalaryCalc.addedToDue.toLocaleString()}</strong>
+                              </div>
+                            ) : (
+                              <div style={{ color: '#15803d', fontSize: '0.73rem', marginTop: '3px', fontWeight: 600 }}>
+                                ✓ {language === 'bn' ? 'পুরো টাকাই চলতি মাসের বেতন থেকে সমন্বয় হবে (কোনো বকেয়া হবে না)' : 'Fully adjusted from salary (no due added)'}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          ℹ️ {language === 'bn' ? 'খরচের টাকা প্রথমে বেতন থেকে কাটা হবে, বেতনের চেয়ে বেশি হলে অতিরিক্ত টাকা বকেয়া (Due) হবে।' : 'Expense will first adjust against monthly salary; excess will become due.'}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
