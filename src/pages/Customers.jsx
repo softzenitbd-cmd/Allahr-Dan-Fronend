@@ -7,6 +7,7 @@ import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
+import { formatDate } from '../utils/date';
 
 const Customers = () => {
   const {
@@ -36,7 +37,7 @@ const Customers = () => {
     user
   } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('Customer'); // Customer, Supplier, or Deleted
+  const [activeTab, setActiveTab] = useState('Customer'); // Customer (list), Due, or Deleted
   const [deletedType, setDeletedType] = useState('Customer'); // Customer or Supplier in Deleted tab
   const [smsModal, setSmsModal] = useState({ show: false, target: null, message: '' });
   const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
@@ -173,11 +174,16 @@ const Customers = () => {
     });
   }
 
+  // The Due tab is the same people, minus anyone square with the shop, and
+  // with the biggest balance first so the calls to make are at the top.
   const currentList = activeTab === 'Customer'
     ? (customers || [])
-    : activeTab === 'Supplier'
-      ? (suppliers || [])
+    : activeTab === 'Due'
+      ? (customers || []).filter((c) => Number(c.due) > 0).sort((a, b) => Number(b.due) - Number(a.due))
       : (!isSalesman && deletedType === 'Customer' ? (deletedCustomers || []) : (!isSalesman ? (deletedSuppliers || []) : []));
+
+  const dueCustomers = (customers || []).filter((c) => Number(c.due) > 0);
+  const totalCustomerDue = dueCustomers.reduce((sum, c) => sum + (Number(c.due) || 0), 0);
 
   const filteredList = currentList.filter(
     (person) =>
@@ -365,8 +371,8 @@ const Customers = () => {
     <div className="customers-page animate-fade-in">
       <div className="page-header">
         <div>
-          <h1>{t(language, 'Customers & Dues')}</h1>
-          <p className="text-muted">{language === 'bn' ? 'কাস্টমার এবং সাপ্লায়ারদের বকেয়া ম্যানেজ করুন।' : 'Manage Baki (Due) for both customers and suppliers. Send SMS reminders.'}</p>
+          <h1>{t(language, 'Customers')}</h1>
+          <p className="text-muted">{language === 'bn' ? 'কাস্টমারের তালিকা ও বকেয়া এক জায়গায় — বকেয়া জমা নিন, এসএমএস পাঠান।' : 'Your customers in one tab, who still owes you in the next — settle a due or send a reminder from either.'}</p>
         </div>
       </div>
 
@@ -377,13 +383,13 @@ const Customers = () => {
               className={activeTab === 'Customer' ? 'active' : ''}
               onClick={() => setActiveTab('Customer')}
             >
-              {t(language, 'Customers Due')} ({customers?.length || 0})
+              {language === 'bn' ? 'কাস্টমার তালিকা' : 'Customer List'} ({customers?.length || 0})
             </button>
             <button
-              className={activeTab === 'Supplier' ? 'active' : ''}
-              onClick={() => setActiveTab('Supplier')}
+              className={activeTab === 'Due' ? 'active' : ''}
+              onClick={() => setActiveTab('Due')}
             >
-              {t(language, 'Suppliers Due')} ({suppliers?.length || 0})
+              {language === 'bn' ? 'বকেয়া' : 'Due'} ({dueCustomers.length})
             </button>
           {!isSalesman && (
             <button
@@ -392,27 +398,11 @@ const Customers = () => {
               style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
             >
               <History size={14} />
-              {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0)) > 0 ? `(${((deletedCustomers?.length || 0) + (deletedSuppliers?.length || 0))})` : ''}
+              {language === 'bn' ? 'মুছে ফেলা হিস্ট্রি' : 'Deleted History'} {deletedCustomers?.length ? `(${deletedCustomers.length})` : ''}
             </button>
           )}
           </div>
 
-          {!isSalesman && activeTab === 'Deleted' && (
-            <div className="segmented-control" style={{ maxWidth: '320px' }}>
-              <button
-                className={deletedType === 'Customer' ? 'active' : ''}
-                onClick={() => setDeletedType('Customer')}
-              >
-                {language === 'bn' ? 'কাস্টমার' : 'Customers'} ({deletedCustomers?.length || 0})
-              </button>
-              <button
-                className={deletedType === 'Supplier' ? 'active' : ''}
-                onClick={() => setDeletedType('Supplier')}
-              >
-                {language === 'bn' ? 'সাপ্লায়ার' : 'Suppliers'} ({deletedSuppliers?.length || 0})
-              </button>
-            </div>
-          )}
 
           <div className="search-bar">
             <Search size={18} className="text-muted" />
@@ -424,7 +414,7 @@ const Customers = () => {
             />
           </div>
           <div className="toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-            {activeTab === 'Customer' && (
+            {activeTab !== 'Deleted' && (
               <button className="btn-primary flex-align-gap" onClick={() => setShowAddModal(true)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 New Customer
@@ -437,6 +427,13 @@ const Customers = () => {
             </button>
           </div>
         </div>
+
+        {activeTab === 'Due' && (
+          <div className="due-summary">
+            <span>{language === 'bn' ? 'মোট বকেয়া কাস্টমার' : 'Customers with due'}: <strong>{dueCustomers.length}</strong></span>
+            <span className="amt">{language === 'bn' ? 'মোট বকেয়া' : 'Total outstanding'}: <strong>৳{totalCustomerDue.toLocaleString()}</strong></span>
+          </div>
+        )}
 
         <div className="table-responsive">
           <table className="data-table">
@@ -958,7 +955,7 @@ const Customers = () => {
                         ? (isSelectedSupplier ? 'Deleted Supplier Due & Transaction Statement' : 'Deleted Customer Due & Transaction Statement')
                         : (isSelectedSupplier ? 'Supplier Due Statement' : 'Due Statement')
                       }<br />
-                      Date: {new Date().toLocaleDateString()}
+                      Date: {formatDate(new Date())}
                     </p>
                     <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
 
@@ -1002,7 +999,7 @@ const Customers = () => {
                         {personLedger.length > 0 ? (
                           personLedger.map((tx) => (
                             <tr key={tx.id}>
-                              <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{new Date(tx.date).toLocaleDateString()}</td>
+                              <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{formatDate(tx.date)}</td>
                               <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{tx.description}</td>
                               <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: tx.type === 'charge' ? 'red' : 'inherit' }}>
                                 {tx.type === 'charge' ? `৳${tx.amount.toLocaleString()}` : '-'}

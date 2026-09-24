@@ -15,6 +15,7 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './DayBook.css';
+import { formatDate, formatLongDate } from '../utils/date';
 
 /**
  * The day book: one date, everything that happened on it.
@@ -34,7 +35,7 @@ const money = (value) => {
 const pad = (n) => String(n).padStart(2, '0');
 const isoLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const shift = (iso, days) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + days); return isoLocal(d); };
-const pretty = (iso, bn) => new Date(`${iso}T00:00:00`).toLocaleDateString(bn ? 'bn-BD' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const pretty = (iso, bn) => formatLongDate(iso, bn, '—');
 
 /** How each kind of row looks: icon, colour, label. */
 const KINDS = {
@@ -701,7 +702,7 @@ const DayBook = () => {
   const handleDeleteLoanPayment = async (loan, payment) => {
     const ok = await showConfirmDialog({
       title: bn ? 'কিস্তির রেকর্ডটি মুছে ফেলবেন?' : 'Delete payment installment?',
-      text: `${bn ? 'টাকার পরিমাণ' : 'Amount'}: ${money(payment.amount)} (${bn ? 'তারিখ' : 'Date'}: ${payment.date}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Account balance will be restored automatically.'}`,
+      text: `${bn ? 'টাকার পরিমাণ' : 'Amount'}: ${money(payment.amount)} (${bn ? 'তারিখ' : 'Date'}: ${formatDate(payment.date)}). ${bn ? 'মেইন একাউন্টের ব্যালেন্স স্বয়ংক্রিয়ভাবে সমন্বয় হয়ে যাবে।' : 'Account balance will be restored automatically.'}`,
       confirmButtonText: bn ? 'হ্যাঁ, মুছুন' : 'Yes, delete',
       cancelButtonText: bn ? 'বাতিল' : 'Cancel',
       isDanger: true,
@@ -1059,9 +1060,19 @@ const DayBook = () => {
                                 {row.method && <span className={`badge ${row.method === 'Baki' ? 'bg-danger' : row.method === 'Partial' ? 'bg-warning' : 'bg-muted'}`}>{row.method}</span>}
                               </div>
                               <div className="db-row-sub">
-                                {row.title}{row.by ? ` · ${bn ? 'বিক্রেতা' : 'by'} ${row.by}` : ''}{row.note ? ` · ${row.note}` : ''}
+                                {row.title}{row.note ? ` · ${row.note}` : ''}
                                 <span className="db-row-id"> · {row.id}</span>
                               </div>
+                            </div>
+                            {/* Who made the sale, in a column of its own so the
+                                day reads down the list rather than across it. */}
+                            <div className="db-row-by" title={row.by || ''}>
+                              {row.by ? (
+                                <>
+                                  <span className="l">{bn ? 'বিক্রেতা' : 'Salesman'}</span>
+                                  <span className="v">{row.by}</span>
+                                </>
+                              ) : <span className="v empty">—</span>}
                             </div>
                             <div className="db-row-right">
                               <div className="db-row-actions">
@@ -1105,6 +1116,26 @@ const DayBook = () => {
                       <div key={r.name} className="db-line">
                         <span><strong>{r.name}</strong> <span className="text-muted">· {r.invoices} {bn ? 'টি' : 'inv'}</span></span>
                         <span className="num">{money(r.total)}{r.due > 0 && <small className="text-danger"> ({bn ? 'বাকি' : 'due'} {money(r.due)})</small>}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Which wallet or drawer the day's money actually moved
+                      through -- sales, dues collected, payments made. */}
+                  <div className="card db-panel">
+                    <h3>{bn ? 'কোন মাধ্যমে কত টাকা' : 'Money by method'}</h3>
+                    {(data.byMethod || []).length === 0 && <div className="text-muted text-sm">{bn ? 'আজ কোনো লেনদেন নেই' : 'No money moved today'}</div>}
+                    {(data.byMethod || []).map((r) => (
+                      <div key={r.method} className="db-line">
+                        <span>
+                          <strong>{r.method}</strong>
+                          <span className="text-muted"> · {r.count} {bn ? 'টি' : 'txn'}</span>
+                        </span>
+                        <span className="num">
+                          {r.in > 0 && <span className="text-success">+{money(r.in)}</span>}
+                          {r.in > 0 && r.out > 0 && <span className="text-muted"> / </span>}
+                          {r.out > 0 && <span className="text-danger">−{money(r.out)}</span>}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1194,7 +1225,7 @@ const DayBook = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
                     <thead>
                       <tr style={{ background: '#f1f1f1' }}>
-                        {['SL', 'Time', 'Type', 'Party', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
+                        {['SL', 'Time', 'Type', 'Party', 'Salesman', 'Details', 'Ref', 'Due', 'Paid', 'Total'].map((h) => <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: h === 'Total' || h === 'Paid' || h === 'Due' ? 'right' : h === 'SL' ? 'center' : 'left' }}>{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -1204,6 +1235,7 @@ const DayBook = () => {
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.by || ''}</td>
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
                           <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
@@ -1419,7 +1451,7 @@ const DayBook = () => {
                             )}
                           </td>
                           <td style={{ fontSize: '0.8125rem', color: 'var(--text-subtle)', whiteSpace: 'nowrap' }}>
-                            {loan.date || '—'}
+                            {formatDate(loan.date, '—')}
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
@@ -2067,7 +2099,7 @@ const DayBook = () => {
                       const isLoanAdd = entry.type === 'loan';
                       return (
                         <tr key={entry.id}>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{entry.date}</td>
+                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatDate(entry.date)}</td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                               <span style={{
@@ -2708,7 +2740,7 @@ const DayBook = () => {
               <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || shopProfile?.shop_name || 'Allahr dan gents point'}</div>
               <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
               <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8 }}>{bn ? 'ঋণ বিবরণী ও কিস্তির হিসাব (Loan Statement)' : 'Loan Statement & Ledger'}</div>
-              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{bn ? 'প্রিন্টের তারিখ:' : 'Printed Date:'} {new Date().toLocaleDateString('bn-BD')}</div>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{bn ? 'প্রিন্টের তারিখ:' : 'Printed Date:'} {formatDate(new Date())}</div>
             </div>
             {/* Details */}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 12, background: '#f8fafc', padding: 8, borderRadius: 6 }}>
@@ -2719,7 +2751,7 @@ const DayBook = () => {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div><strong>{bn ? 'ধরন:' : 'Type:'}</strong> {loanHistoryTarget.type === 'given' ? (bn ? 'কর্জ দেওয়া (Lent)' : 'Given') : (bn ? 'কর্জ নেওয়া (Borrowed)' : 'Taken')}</div>
-                <div><strong>{bn ? 'তারিখ:' : 'Date:'}</strong> {loanHistoryTarget.date}</div>
+                <div><strong>{bn ? 'তারিখ:' : 'Date:'}</strong> {formatDate(loanHistoryTarget.date)}</div>
                 <div><strong>{bn ? 'স্ট্যাটাস:' : 'Status:'}</strong> {loanHistoryTarget.status === 'settled' || loanHistoryTarget.remainingAmount <= 0.01 ? (bn ? 'পরিশোধিত' : 'Settled') : (bn ? 'চলমান' : 'Active')}</div>
               </div>
             </div>
@@ -2753,7 +2785,7 @@ const DayBook = () => {
                   const isLoanAdd = entry.type === 'loan';
                   return (
                     <tr key={entry.id || idx}>
-                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{entry.date}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{formatDate(entry.date)}</td>
                       <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
                         <strong>{entry.description}</strong>
                         {entry.note ? ` (${entry.note})` : ''}
@@ -2826,7 +2858,7 @@ const DayBook = () => {
                 <tr key={l.id}>
                   <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'center' }}>{idx + 1}</td>
                   <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.type === 'given' ? (bn ? 'কর্জ দেওয়া' : 'Given') : (bn ? 'কর্জ নেওয়া' : 'Taken')}</td>
-                  <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.date}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{formatDate(l.date)}</td>
                   <td style={{ border: '1px solid #ccc', padding: '4px 6px' }}>{l.name} {l.phone ? `(${l.phone})` : ''}</td>
                   <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right' }}>{money(l.amount)}</td>
                   <td style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right', color: '#16a34a' }}>{money(l.paidAmount || 0)}</td>

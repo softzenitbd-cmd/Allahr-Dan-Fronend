@@ -139,6 +139,11 @@ const useStore = create(
       accountTransactions: [],
 
       cart: [],
+      // Who the counter is selling as. Kept here rather than in the POS page
+      // so walking to another menu and back does not silently put the sale
+      // back under Admin's name.
+      posSalesmanId: '',
+      setPosSalesmanId: (id) => set({ posSalesmanId: id || '' }),
       offlineSalesQueue: [],
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
       isSyncing: false,
@@ -195,7 +200,7 @@ const useStore = create(
           inventory: [], categories: [], units: [], customers: [], suppliers: [], sales: [], purchases: [],
           returns: [], settlements: [], expenses: [], expenseCategories: [], staff: [], attendance: [],
           leaves: [], payrolls: [], srSettlements: [], drafts: [], accountTransactions: [], dashboardSummary: null,
-          cashBalance: 0, bankBalance: 0, cart: [],
+          cashBalance: 0, bankBalance: 0, cart: [], posSalesmanId: '',
         });
       },
 
@@ -1648,6 +1653,7 @@ const useStore = create(
         themeGradient: state.themeGradient,
         language: state.language,
         cart: state.cart,
+        posSalesmanId: state.posSalesmanId,
         shopProfile: state.shopProfile,
         accentColor: state.accentColor,
         dashboardCardColors: state.dashboardCardColors,

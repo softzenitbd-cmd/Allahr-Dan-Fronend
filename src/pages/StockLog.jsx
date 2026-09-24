@@ -9,6 +9,7 @@ import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import './StockLog.css';
+import { formatDate } from '../utils/date';
 
 /**
  * The stock audit trail.
@@ -384,7 +385,7 @@ const StockLog = () => {
                   return (
                     <tr key={r.id} className={isIn ? 'is-in' : 'is-out'}>
                       <td className="when" style={{ whiteSpace: 'nowrap' }}>
-                        {when.toLocaleDateString()}
+                        {formatDate(when)}
                         <span className="time">
                           {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {relativeTime(r.created_at)}
                         </span>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate, formatTime } from '../utils/date';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 import { takaInWords } from './InvoiceDocument';
 import { ShopPhoneContact } from './ShopContactIcons';
@@ -92,8 +93,8 @@ const PaymentVoucher = ({ sale, shopProfile, domId = 'printable-voucher', langua
           <div><span style={{ color: '#6b7280' }}>Voucher No:</span> <strong>{sale.invoiceNumber}</strong></div>
           <div>
             <span style={{ color: '#6b7280' }}>Date:</span>{' '}
-            {new Date(sale.date).toLocaleDateString('en-GB')}{' '}
-            {new Date(sale.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+            {formatDate(sale.date)}{' '}
+            {formatTime(sale.date)}
           </div>
         </div>
       </div>

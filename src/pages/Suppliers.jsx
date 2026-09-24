@@ -7,6 +7,7 @@ import { printElement } from '../utils/pdfGenerator';
 import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
+import { formatDate } from '../utils/date';
 
 const Suppliers = () => {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ const Suppliers = () => {
     user
   } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('Active'); // Active or Deleted
+  const [activeTab, setActiveTab] = useState('Active'); // Active (list), Due, or Deleted
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
   const [receiptModal, setReceiptModal] = useState({ show: false, settlement: null, party: null });
@@ -130,9 +131,15 @@ const Suppliers = () => {
   const [editingPerson, setEditingPerson] = useState(null);
   const [newSupplier, setNewSupplier] = useState({ name: '', company: '', phone: '', email: '', location: '', notes: '' });
 
+  // The Due tab is the same suppliers, minus the ones already settled, with
+  // the biggest balance first so the next payment to make is at the top.
   const currentList = activeTab === 'Active'
     ? (suppliers || [])
-    : (!isSalesman ? (deletedSuppliers || []) : []);
+    : activeTab === 'Due'
+      ? (suppliers || []).filter((x) => Number(x.due) > 0).sort((a, b) => Number(b.due) - Number(a.due))
+      : (!isSalesman ? (deletedSuppliers || []) : []);
+
+  const dueSuppliers = (suppliers || []).filter((x) => Number(x.due) > 0);
 
   const filteredList = currentList.filter(
     (person) =>
@@ -360,7 +367,13 @@ const Suppliers = () => {
               className={activeTab === 'Active' ? 'active' : ''}
               onClick={() => setActiveTab('Active')}
             >
-              {language === 'bn' ? 'সক্রিয় সাপ্লায়ার' : 'Active Suppliers'} ({suppliers?.length || 0})
+              {language === 'bn' ? 'সাপ্লায়ার তালিকা' : 'Supplier List'} ({suppliers?.length || 0})
+            </button>
+            <button
+              className={activeTab === 'Due' ? 'active' : ''}
+              onClick={() => setActiveTab('Due')}
+            >
+              {language === 'bn' ? 'বকেয়া' : 'Due'} ({dueSuppliers.length})
             </button>
             {!isSalesman && (
               <button
@@ -384,7 +397,7 @@ const Suppliers = () => {
             />
           </div>
           <div className="toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-            {activeTab === 'Active' && (
+            {activeTab !== 'Deleted' && (
               <button className="btn-primary flex-align-gap" onClick={() => setShowAddModal(true)}>
                 <Plus size={16} /> {language === 'bn' ? 'নতুন সাপ্লায়ার' : 'New Supplier'}
               </button>
@@ -394,6 +407,13 @@ const Suppliers = () => {
             </button>
           </div>
         </div>
+
+        {activeTab === 'Due' && (
+          <div className="due-summary">
+            <span>{language === 'bn' ? 'বকেয়া সাপ্লায়ার' : 'Suppliers with due'}: <strong>{dueSuppliers.length}</strong></span>
+            <span className="amt">{language === 'bn' ? 'মোট দেনা' : 'Total payable'}: <strong>৳{totalSupplierDue.toLocaleString()}</strong></span>
+          </div>
+        )}
 
         <div className="table-responsive">
           <table className="data-table">
@@ -459,7 +479,7 @@ const Suppliers = () => {
                           >
                             <Eye size={14} /> Details
                           </button>
-                          {activeTab === 'Active' && (
+                          {activeTab !== 'Deleted' && (
                             <>
                               {person.due > 0 && (
                                 <button
@@ -704,7 +724,7 @@ const Suppliers = () => {
                 <h2 style={{ textAlign: 'center', marginBottom: '0.5rem', color: '#000', fontSize: '1.5rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
                   {(selectedPerson.is_deleted || activeTab === 'Deleted') ? 'Deleted Supplier Due & Transaction Statement' : 'Supplier Statement'}<br />
-                  Date: {new Date().toLocaleDateString()}
+                  Date: {formatDate(new Date())}
                 </p>
                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
 
@@ -759,7 +779,7 @@ const Suppliers = () => {
                         <tbody>
                           {selectedPersonTransactions.map(t => (
                             <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                              <td style={{ padding: '0.5rem' }}>{new Date(t.date).toLocaleDateString()}</td>
+                              <td style={{ padding: '0.5rem' }}>{formatDate(t.date)}</td>
                               <td style={{ padding: '0.5rem' }}>{t.description}</td>
                               <td style={{ padding: '0.5rem', textAlign: 'right', color: t.isCredit ? 'red' : 'green' }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>

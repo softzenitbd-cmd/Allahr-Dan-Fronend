@@ -5,6 +5,7 @@ import useStore from '../store/useStore';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { formatDate, formatDateTime, formatTime } from '../utils/date';
 
 const HR = () => {
   const [activeTab, setActiveTab] = useState('Staff');
@@ -322,7 +323,7 @@ const HR = () => {
                               )}
                             </div>
                           </td>
-                          <td>{s.joinDate}</td>
+                          <td>{formatDate(s.joinDate)}</td>
                           <td>
                             <div className="action-buttons flex-align-gap" style={{ flexWrap: 'nowrap' }}>
                               <button className="btn-icon text-info" title="Edit" onClick={() => setEditingStaff(s)}>
@@ -951,7 +952,7 @@ const HR = () => {
                         const staffMember = staff.find(s => s.id === l.staffId);
                         return (
                           <tr key={l.id}>
-                            <td>{l.date}</td>
+                            <td>{formatDate(l.date)}</td>
                             <td>{staffMember ? staffMember.name : 'Unknown'}</td>
                             <td>{l.type}</td>
                             <td>{l.reason}</td>
@@ -1318,7 +1319,7 @@ const HR = () => {
                   </div>
                   <div style={{ textAlign: 'right', background: '#f8fafc', padding: '1rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                     <p style={{ margin: '0 0 0.25rem', color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Join Date</p>
-                    <p style={{ margin: 0, fontWeight: 'bold', color: '#0f172a', fontSize: '1.2rem' }}>{selectedStaff.joinDate}</p>
+                    <p style={{ margin: 0, fontWeight: 'bold', color: '#0f172a', fontSize: '1.2rem' }}>{formatDate(selectedStaff.joinDate)}</p>
                   </div>
                 </div>
 
@@ -1355,7 +1356,7 @@ const HR = () => {
                 </div>
 
                 <div style={{ textAlign: 'center', marginTop: '3rem', color: '#94a3b8', fontSize: '0.85rem' }}>
-                  Document Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
+                  Document Generated on {formatDate(new Date())} at {formatTime(new Date())}
                 </div>
               </div>
             </div>
@@ -1530,7 +1531,7 @@ const HR = () => {
                       {(viewPayrollDetails.payroll.payments && viewPayrollDetails.payroll.payments.length > 0) ? (
                         viewPayrollDetails.payroll.payments.map((pmt, idx) => (
                           <tr key={pmt.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <td style={{ padding: '0.5rem' }}>{pmt.date}</td>
+                            <td style={{ padding: '0.5rem' }}>{formatDate(pmt.date)}</td>
                             <td style={{ padding: '0.5rem' }}>{pmt.paymentCode || pmt.id}</td>
                             <td style={{ padding: '0.5rem' }}>{pmt.paymentMethod || 'Cash'}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>৳{Number(pmt.amount || 0).toLocaleString()}</td>
@@ -1552,7 +1553,7 @@ const HR = () => {
                 </div>
 
                 <div style={{ textAlign: 'center', marginTop: '2rem', color: '#94a3b8', fontSize: '0.8rem' }}>
-                  Printed on {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                  Printed on {formatDateTime(new Date())}
                 </div>
               </div>
             </div>

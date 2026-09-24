@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
+import { formatDate, formatTime } from '../utils/date';
 
 const getProductImageUrl = (img) => {
   if (!img) return null;
@@ -1446,7 +1447,7 @@ const Inventory = () => {
               <div style={{ color: '#4b5563', fontSize: '11px' }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
               <div style={{ marginTop: '6px', fontWeight: 700, letterSpacing: '0.1em', fontSize: '13px' }}>INVENTORY VALUATION SUMMARY</div>
               <div style={{ fontSize: '11px', color: '#4b5563' }}>
-                As on {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} · Confidential — cost prices
+                As on {formatDate(new Date())} {formatTime(new Date())} · Confidential — cost prices
               </div>
             </div>
 
@@ -2724,9 +2725,9 @@ const Inventory = () => {
                         return (
                           <tr key={r.id}>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontWeight: 600 }}>{formatDate(when)}</div>
                               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                                {formatTime(when)} · {formatTimeAgo(r.created_at)}
                               </div>
                             </td>
                             <td>
@@ -3005,9 +3006,9 @@ const Inventory = () => {
                         return (
                           <tr key={r.id}>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontWeight: 600 }}>{formatDate(when)}</div>
                               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                                {formatTime(when)} · {formatTimeAgo(r.created_at)}
                               </div>
                             </td>
                             <td>
@@ -3289,9 +3290,9 @@ const Inventory = () => {
                         return (
                           <tr key={r.id}>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <div style={{ fontWeight: 600 }}>{when.toLocaleDateString()}</div>
+                              <div style={{ fontWeight: 600 }}>{formatDate(when)}</div>
                               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {formatTimeAgo(r.created_at)}
+                                {formatTime(when)} · {formatTimeAgo(r.created_at)}
                               </div>
                             </td>
                             <td>
@@ -3335,7 +3336,7 @@ const Inventory = () => {
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ক্ষতিগ্রস্ত / ড্যামেজ পণ্য রিপোর্ট (Damage Report)</h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
-            তারিখ: {new Date().toLocaleDateString()}
+            তারিখ: {formatDate(new Date())}
             {(historyStartDate || historyEndDate) ? ` · ফিল্টার তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
           </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
@@ -3368,7 +3369,7 @@ const Inventory = () => {
           <h2 style={{ textAlign: 'center', fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Allahr dan gents point</h2>
           <h3 style={{ textAlign: 'center', fontSize: '1.1rem', marginBottom: '0.5rem' }}>পণ্য যোগের ইতিহাস রিপোর্ট (Stock In History Report)</h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
-            তারিখ: {new Date().toLocaleDateString()}
+            তারিখ: {formatDate(new Date())}
             {(historyStartDate || historyEndDate) ? ` · ফিল্টার তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
           </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
@@ -3405,7 +3406,7 @@ const Inventory = () => {
             পণ্য যোগের ইতিহাস রিপোর্ট (Product Add History): {historyProduct?.name} ({historyProduct?.product_code || historyProduct?.id})
           </h3>
           <p style={{ textAlign: 'center', marginBottom: '1rem', fontSize: '0.85rem' }}>
-            বর্তমান স্টক: {historyProduct?.stock} {historyProduct?.unit || 'Pcs'} · প্রিন্টের তারিখ: {new Date().toLocaleDateString()}
+            বর্তমান স্টক: {historyProduct?.stock} {historyProduct?.unit || 'Pcs'} · প্রিন্টের তারিখ: {formatDate(new Date())}
             {(historyStartDate || historyEndDate) ? ` · তারিখ রেঞ্জ: ${historyStartDate || 'শুরু'} হতে ${historyEndDate || 'বর্তমান'}` : ' · সময়কাল: সব সময়'}
           </p>
           <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', border: '1px solid #ccc' }}>

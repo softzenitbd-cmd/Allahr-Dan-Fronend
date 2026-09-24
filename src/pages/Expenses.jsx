@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, X, PieChart, DollarSign, Printer, Eye, Edit, Trash2 } from 'lucide-react';
 
 import { toast } from 'react-toastify';
+import { formatDate } from '../utils/date';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
@@ -238,7 +239,7 @@ const Expenses = () => {
               <tbody>
                 {expenses.slice(0, 50).map(exp => ( // show only recent 50
                   <tr key={exp.id}>
-                    <td>{exp.date}</td>
+                    <td>{formatDate(exp.date)}</td>
                     <td>
                       <span>{exp.category}</span>
                       {exp.staffName && (
@@ -293,7 +294,7 @@ const Expenses = () => {
             <tbody>
               {expenses.length > 0 ? expenses.map((exp) => (
                 <tr key={exp.id}>
-                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.date}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{formatDate(exp.date)}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.category}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{exp.description}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>৳{exp.amount.toLocaleString()}</td>
@@ -598,7 +599,7 @@ const Expenses = () => {
                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
                   Expense Voucher<br />
                   ID: {selectedExpense.id}<br />
-                  Date: {selectedExpense.date}
+                  Date: {formatDate(selectedExpense.date)}
                 </p>
                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
 

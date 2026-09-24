@@ -11,6 +11,7 @@ import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './Ledger.css';
+import { formatDate } from '../utils/date';
 
 /**
  * The ledger: one party at a time, in full.
@@ -22,7 +23,7 @@ import './Ledger.css';
  */
 
 const money = (v) => `৳${(Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-const day = (v) => (v ? String(v).split('T')[0] : '—');
+const day = (v) => formatDate(v, '—');
 const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('') || '?';
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -1382,7 +1383,7 @@ const Ledger = () => {
                         : 'STAFF DUE & ADVANCE STATEMENT'}
                 </div>
                 <div style={{ fontSize: '11px', color: '#4b5563' }}>
-                  {hasWindow ? `Period: ${startDate || 'start'} to ${endDate || 'today'}` : 'All transactions'} · printed {new Date().toLocaleDateString('en-GB')}
+                  {hasWindow ? `Period: ${startDate || 'start'} to ${endDate || 'today'}` : 'All transactions'} · printed {formatDate(new Date())}
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 4 }}>

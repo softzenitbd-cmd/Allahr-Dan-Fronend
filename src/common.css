@@ -603,3 +603,20 @@ body.dark-mode .data-table th { background: var(--bg-subtle); }
   .drawer-header, .drawer-footer { padding: var(--sp-4); }
   .drawer-body { padding: var(--sp-4); }
 }
+
+/* A due tab that does not say what the dues add up to is half a tab. */
+.due-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  margin-bottom: var(--sp-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.due-summary strong { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.due-summary .amt strong { color: var(--danger); font-size: 1rem; }

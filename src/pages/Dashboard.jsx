@@ -6,6 +6,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { DASHBOARD_CARDS, cardColor } from '../utils/dashboardCards';
 import { hasMenuAccess } from '../utils/navigationConfig';
 import './Dashboard.css';
+import { formatDate, formatTime } from '../utils/date';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -273,10 +274,10 @@ const Dashboard = () => {
           <div className="icon"><Clock size={19} /></div>
           <div>
             <div className="time">
-              {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
+              {formatTime(currentTime)}
             </div>
             <div className="date">
-              {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+              {formatDate(currentTime)}
             </div>
           </div>
         </div>

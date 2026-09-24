@@ -6,6 +6,7 @@ import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Purchase.css';
+import { formatDate } from '../utils/date';
 
 // What has been paid on a purchase is what went out at the time plus every
 // supplier payment filed against it since; the API sends both as totalPaid /
@@ -409,7 +410,7 @@ const Purchase = () => {
               <tbody>
                 {filteredPurchases.map(p => (
                   <tr key={p.id}>
-                    <td>{p.date.split('T')[0]}</td>
+                    <td>{formatDate(p.date)}</td>
                     <td>{p.id}</td>
                     <td>{p.supplierName}</td>
                     <td>
@@ -483,7 +484,7 @@ const Purchase = () => {
                         <tr key={`${purchase.id}-${idx}`}>
                           {idx === 0 && (
                             <>
-                              <td rowSpan={purchase.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{new Date(purchase.date).toLocaleDateString()}</td>
+                              <td rowSpan={purchase.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{formatDate(purchase.date)}</td>
                               <td rowSpan={purchase.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{purchase.id}</td>
                               <td rowSpan={purchase.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{purchase.supplierName || 'N/A'}</td>
                               <td rowSpan={purchase.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{purchase.paymentType}</td>

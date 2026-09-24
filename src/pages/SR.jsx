@@ -5,6 +5,7 @@ import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { formatDate } from '../utils/date';
 
 const money = (n) => `৳${Number(n || 0).toLocaleString()}`;
 
@@ -375,7 +376,7 @@ const SR = () => {
                 ) : (
                   pending.map((s) => (
                     <tr key={s.id}>
-                      <td>{String(s.date).split('T')[0]}</td>
+                      <td>{formatDate(s.date)}</td>
                       <td>{s.id}</td>
                       <td className="font-bold">{s.salesmanName}</td>
                       <td>{s.items.length} items</td>
@@ -448,7 +449,7 @@ const SR = () => {
                 ) : (
                   history.map((s) => (
                     <tr key={s.id}>
-                      <td>{String(s.date).split('T')[0]}</td>
+                      <td>{formatDate(s.date)}</td>
                       <td>{s.id}</td>
                       <td>{s.salesmanName}</td>
                       <td style={{ textAlign: 'right' }}>{money(s.totalIssuedValue)}</td>
@@ -519,7 +520,7 @@ const SR = () => {
                 <tbody>
                   {history.map((s) => (
                     <tr key={s.id}>
-                      <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{String(s.date).split('T')[0]}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{formatDate(s.date)}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{s.id}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{s.salesmanName}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>{money(s.totalIssuedValue)}</td>
@@ -660,7 +661,7 @@ const SR = () => {
                 </h2>
                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
                   SR Consignment Slip: {viewing.id}<br />
-                  Date: {String(viewing.date).split('T')[0]} &middot; Status: {viewing.status}
+                  Date: {formatDate(viewing.date)} &middot; Status: {viewing.status}
                 </p>
                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
                 <p style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>

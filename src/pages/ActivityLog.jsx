@@ -38,6 +38,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { formatDate } from '../utils/date';
 
 const MODULE_OPTIONS = [
   { id: 'All', labelEn: 'All Modules', labelBn: 'সব মডিউল' },
@@ -599,7 +600,7 @@ const ActivityLog = () => {
                   {language === 'bn' ? 'পেমেন্ট মেথড ও তারিখ' : 'Payment & Date'}
                 </div>
                 <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
-                  {expInfo.account || 'Cash'} {expInfo.date ? `(${expInfo.date})` : ''}
+                  {expInfo.account || 'Cash'} {expInfo.date ? `(${formatDate(expInfo.date)})` : ''}
                 </div>
               </div>
             </div>

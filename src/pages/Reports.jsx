@@ -4,6 +4,7 @@ import { BarChart, PieChart, TrendingUp, DollarSign, Users, Package, Calendar, P
 import useStore from '../store/useStore';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
+import { formatDate, formatDateTime } from '../utils/date';
 
 const Reports = () => {
   const [activeTab, setActiveTab] = useState('Sales');
@@ -317,7 +318,7 @@ const Reports = () => {
             <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>
               {activeTab === 'Attendance' && targetStaff ? `${language === 'bn' ? 'কর্মী' : 'Staff'}: ${targetStaff.name} (${targetStaff.role || 'Staff'}) | ` : ''}
               {dateFilter === 'Custom' && startDate && endDate ? `${language === 'bn' ? 'সময়কাল' : 'Range'}: ${startDate} to ${endDate} | ` : ''}
-              {language === 'bn' ? 'তারিখ' : 'Date'}: {new Date().toLocaleDateString('bn-BD')} {new Date().toLocaleTimeString()}
+              {language === 'bn' ? 'তারিখ' : 'Date'}: {formatDateTime(new Date())}
             </p>
           </div>
         </div>
@@ -342,7 +343,7 @@ const Reports = () => {
               <tbody>
                 {filteredSales.map(s => (
                   <tr key={s.id}>
-                    <td>{s.id}</td><td>{s.date.split('T')[0]}</td><td>{s.customerName}</td><td>{s.items.length}</td><td className="text-primary font-bold">৳{s.total.toLocaleString()}</td>
+                    <td>{s.id}</td><td>{formatDate(s.date)}</td><td>{s.customerName}</td><td>{s.items.length}</td><td className="text-primary font-bold">৳{s.total.toLocaleString()}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                         <button className="btn-icon" title="View & Print" onClick={() => { setSelectedInvoice(s); setInvoiceType('Sale'); }}>
@@ -379,7 +380,7 @@ const Reports = () => {
               <tbody>
                 {filteredPurchases.map(p => (
                   <tr key={p.id}>
-                    <td>{p.id}</td><td>{p.date.split('T')[0]}</td><td>{p.supplierName}</td><td>{p.items.reduce((acc, i) => acc + i.quantity, 0)}</td><td className="text-danger font-bold">৳{p.total.toLocaleString()}</td>
+                    <td>{p.id}</td><td>{formatDate(p.date)}</td><td>{p.supplierName}</td><td>{p.items.reduce((acc, i) => acc + i.quantity, 0)}</td><td className="text-danger font-bold">৳{p.total.toLocaleString()}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                         <button className="btn-icon" title="View & Print" onClick={() => { setSelectedInvoice(p); setInvoiceType('Purchase'); }}>
@@ -462,7 +463,7 @@ const Reports = () => {
                 {profitLossDetails.length > 0 ? (
                   profitLossDetails.map((item, idx) => (
                     <tr key={item.id + idx}>
-                      <td>{new Date(item.date).toLocaleDateString()}</td>
+                      <td>{formatDate(item.date)}</td>
                       <td>{item.type}</td>
                       <td style={{ textAlign: 'right', color: item.isRevenue ? '#10b981' : 'inherit', fontWeight: item.isRevenue ? 'bold' : 'normal' }}>
                         {item.isRevenue ? `+৳${item.amount.toLocaleString()}` : '-'}
@@ -835,7 +836,7 @@ const Reports = () => {
                               const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
                               return (
                                 <tr key={attRec.id || idx} style={{ borderBottom: '1px solid #f3f4f6', background: '#ffffff' }}>
-                                  <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111827' }}>{attRec.date}</td>
+                                  <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111827' }}>{formatDate(attRec.date)}</td>
                                   <td style={{ padding: '11px 16px', color: '#6b7280' }}>{dayName}</td>
                                   <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                                     {attRec.status === 'Present' ? (
@@ -1052,7 +1053,7 @@ const Reports = () => {
                     <td>{p.month}</td>
                     <td className="font-bold">৳{p.netPay.toLocaleString()}</td>
                     <td>৳{p.bonus.toLocaleString()}</td>
-                    <td>{p.paymentDate.split('T')[0]}</td>
+                    <td>{formatDate(p.paymentDate)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                         <button className="btn-icon" title="View & Print" onClick={() => { setSelectedInvoice(p); setInvoiceType('Payroll'); }}>
@@ -1098,7 +1099,7 @@ const Reports = () => {
               <tbody>
                 {giftItems.length > 0 ? giftItems.map((g, idx) => (
                   <tr key={idx}>
-                    <td>{new Date(g.date).toLocaleDateString()}</td>
+                    <td>{formatDate(g.date)}</td>
                     <td>{g.invoiceId}</td>
                     <td>
                       {g.customerName || 'N/A'}
@@ -1145,7 +1146,7 @@ const Reports = () => {
                       runBal = runBal + l.debit - l.credit;
                       return (
                         <tr key={i}>
-                          <td>{new Date(l.date).toLocaleDateString()}</td>
+                          <td>{formatDate(l.date)}</td>
                           <td>{l.type}</td>
                           <td>{l.ref}</td>
                           <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{l.debit > 0 ? `৳${l.debit}` : '-'}</td>
@@ -1187,7 +1188,7 @@ const Reports = () => {
                       runBal = runBal + l.debit - l.credit;
                       return (
                         <tr key={i}>
-                          <td>{new Date(l.date).toLocaleDateString()}</td>
+                          <td>{formatDate(l.date)}</td>
                           <td>{l.type}</td>
                           <td>{l.ref}</td>
                           <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{l.debit > 0 ? `৳${l.debit}` : '-'}</td>
@@ -1274,7 +1275,7 @@ const Reports = () => {
                 <p style={{ textAlign: 'center', fontSize: '0.85rem', marginBottom: '1rem', color: '#555' }}>
                   {invoiceType} Document<br />
                   {selectedInvoice.date && `Date: ${new Date(selectedInvoice.date).toLocaleString()}`}
-                  {selectedInvoice.paymentDate && `Date: ${selectedInvoice.paymentDate.split('T')[0]}`}
+                  {selectedInvoice.paymentDate && `Date: ${formatDate(selectedInvoice.paymentDate)}`}
                 </p>
                 <hr style={{ margin: '1rem 0', borderColor: '#eee' }} />
 
@@ -1354,7 +1355,7 @@ const Reports = () => {
                       <tbody>
                         {selectedInvoice.sales && selectedInvoice.sales.map((sale, idx) => (
                           <tr key={idx}>
-                            <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{new Date(sale.date).toLocaleDateString()}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{formatDate(sale.date)}</td>
                             <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{sale.id}</td>
                             <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{sale.customerInfo?.name || sale.customerName || 'N/A'}</td>
                             <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>৳{sale.total.toLocaleString()}</td>

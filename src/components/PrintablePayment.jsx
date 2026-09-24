@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate, formatTime } from '../utils/date';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
@@ -62,10 +63,10 @@ const PrintablePayment = ({
 
   const receiptNo = settlement.receiptNo || settlement.id || settlement.settlement_code || 'REC-' + Date.now().toString().slice(-6);
   const dateStr = settlement.date
-    ? new Date(settlement.date).toLocaleDateString(isBn ? 'bn-BD' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : new Date().toLocaleDateString(isBn ? 'bn-BD' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    ? formatDate(settlement.date)
+    : formatDate(new Date());
 
-  const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const timeStr = formatTime(new Date());
   const paymentMethod = settlement.method || settlement.paymentMethod || settlement.payment_method || 'Cash';
   const notes = settlement.notes || '';
 

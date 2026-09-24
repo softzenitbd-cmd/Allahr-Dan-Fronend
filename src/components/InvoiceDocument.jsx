@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate, formatTime } from '../utils/date';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 import { ShopPhoneContact } from './ShopContactIcons';
 
@@ -286,8 +287,8 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
           </div>
           <div style={{ marginTop: '8px', fontSize: '11px', lineHeight: 1.7 }}>
             <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'চালান নং:' : 'No:'}</span> <strong>{sale.invoiceNumber}</strong></div>
-            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'তারিখ:' : 'Date:'}</span> {new Date(sale.date).toLocaleDateString('en-GB')}</div>
-            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'সময়:' : 'Time:'}</span> {new Date(sale.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
+            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'তারিখ:' : 'Date:'}</span> {formatDate(sale.date)}</div>
+            <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'সময়:' : 'Time:'}</span> {formatTime(sale.date)}</div>
           </div>
         </div>
       </div>
@@ -435,14 +436,14 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={S.cell}>{String(sale.date).split('T')[0]}</td>
+                    <td style={S.cell}>{formatDate(sale.date)}</td>
                     <td style={S.cell}>{sale.invoiceNumber}</td>
                     <td style={S.cell}>{sale.paymentType} (at sale)</td>
                     <td style={{ ...S.cell, textAlign: 'right' }}>{money(sale.paidAtSale)}</td>
                   </tr>
                   {sale.payments.map((p) => (
                     <tr key={p.ref}>
-                      <td style={S.cell}>{String(p.date).split('T')[0]}</td>
+                      <td style={S.cell}>{formatDate(p.date)}</td>
                       <td style={S.cell}>{p.ref}</td>
                       <td style={S.cell}>{p.method}</td>
                       <td style={{ ...S.cell, textAlign: 'right' }}>{money(p.amount)}</td>

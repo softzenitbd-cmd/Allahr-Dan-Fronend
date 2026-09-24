@@ -19,6 +19,7 @@ import { toast } from 'react-toastify';
 import Swal, { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import Expenses from './Expenses';
 import './POS.css';
+import { formatDate } from '../utils/date';
 
 const MFS_OPTIONS = [
   { id: 'bKash', label: 'bKash (বিকাশ)' },
@@ -28,6 +29,7 @@ const MFS_OPTIONS = [
   { id: 'Upay', label: 'Upay (উপায়)' },
   { id: 'Cellfin', label: 'Cellfin (সেলফিন)' },
   { id: 'Tap', label: 'Tap (ট্যাপ)' },
+  { id: 'Bangla QR', label: 'Bangla QR (বাংলা কিউআর)' },
   { id: 'Other', label: 'Other MFS (অন্যান্য)' },
 ];
 
@@ -38,7 +40,8 @@ const POS = () => {
     cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart,
     loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft,
     drafts, sales, customers, language, shopProfile,
-    offlineSalesQueue, isOnline, isSyncing, syncOfflineSales
+    offlineSalesQueue, isOnline, isSyncing, syncOfflineSales,
+    posSalesmanId, setPosSalesmanId
   } = useStore();
   // Editing or deleting a sale reverses stock and balances, which the server
   // only lets an Admin do. Hiding the controls keeps a salesman from
@@ -57,7 +60,10 @@ const POS = () => {
   const [cashReceived, setCashReceived] = useState('');
   const [invoiceDiscount, setInvoiceDiscount] = useState(0);
 
-  const [selectedSalesmanId, setSelectedSalesmanId] = useState('');
+  // The chosen salesman lives in the store, so leaving the POS for another
+  // menu and coming back keeps whoever the counter picked until it is changed.
+  const selectedSalesmanId = posSalesmanId;
+  const setSelectedSalesmanId = setPosSalesmanId;
 
   // The logged-in user as the default salesman
   const loggedInSalesman = useMemo(() => {
@@ -653,11 +659,11 @@ const POS = () => {
         if (match) setMfsProvider(match[1]);
       }
       if (draft.mfsTrxId) setMfsTrxId(draft.mfsTrxId);
-    } else if (draft.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) {
+    } else if (draft.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap', 'Bangla QR'].includes(draft.paymentType)) {
       setPaymentType('Mobile Banking');
       const match = draft.paymentType.match(/Mobile Banking \(([^)]+)\)/);
       if (match) setMfsProvider(match[1]);
-      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(draft.paymentType)) setMfsProvider(draft.paymentType);
+      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap', 'Bangla QR'].includes(draft.paymentType)) setMfsProvider(draft.paymentType);
       if (draft.mfsTrxId) setMfsTrxId(draft.mfsTrxId);
     } else {
       setPaymentType(draft.paymentType || 'Cash');
@@ -685,13 +691,13 @@ const POS = () => {
     if (!cash && !mfs && sale.notes) {
       const cashMatch = sale.notes.match(/Cash[:\s]+৳?\s*([\d,.]+)/i);
       if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
-      const mfsMatch = sale.notes.match(/(?:bKash|Nagad|Rocket|Binimoy|Upay|Cellfin|Tap|MFS)[:\s]+৳?\s*([\d,.]+)/i);
+      const mfsMatch = sale.notes.match(/(?:bKash|Nagad|Rocket|Binimoy|Upay|Cellfin|Tap|Bangla QR|MFS)[:\s]+৳?\s*([\d,.]+)/i);
       if (mfsMatch) mfs = parseFloat(mfsMatch[1].replace(/,/g, '')) || 0;
     }
 
     // If single payment or notes didn't specify split
     if (!cash && !mfs && totalPaid > 0) {
-      if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
+      if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap', 'Bangla QR'].includes(sale.paymentType)) {
         mfs = totalPaid;
       } else {
         cash = totalPaid;
@@ -737,11 +743,11 @@ const POS = () => {
         if (match) setMfsProvider(match[1]);
       }
       if (sale.mfsTrxId) setMfsTrxId(sale.mfsTrxId);
-    } else if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) {
+    } else if (sale.paymentType?.startsWith('Mobile Banking') || ['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap', 'Bangla QR'].includes(sale.paymentType)) {
       setPaymentType('Mobile Banking');
       const match = sale.paymentType.match(/Mobile Banking \(([^)]+)\)/);
       if (match) setMfsProvider(match[1]);
-      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(sale.paymentType)) setMfsProvider(sale.paymentType);
+      else if (['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap', 'Bangla QR'].includes(sale.paymentType)) setMfsProvider(sale.paymentType);
       if (sale.mfsTrxId) setMfsTrxId(sale.mfsTrxId);
       setSplitCash('');
       setSplitMfs('');
@@ -2154,7 +2160,7 @@ const POS = () => {
               <tbody>
                 {filteredSales.map(s => (
                   <tr key={s.id}>
-                    <td>{s.date.split('T')[0]}</td>
+                    <td>{formatDate(s.date)}</td>
                     <td>{s.id}</td>
                     <td>{s.customerName || 'N/A'}</td>
                     <td>{s.items.length} items</td>
@@ -2211,7 +2217,7 @@ const POS = () => {
                         <tr key={`${sale.id}-${idx}`}>
                           {idx === 0 && (
                             <>
-                              <td rowSpan={sale.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{new Date(sale.date).toLocaleDateString()}</td>
+                              <td rowSpan={sale.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{formatDate(sale.date)}</td>
                               <td rowSpan={sale.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{sale.id}</td>
                               <td rowSpan={sale.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{sale.customerName || 'N/A'}</td>
                               <td rowSpan={sale.items.length} style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{sale.paymentType}</td>
@@ -2330,7 +2336,7 @@ const POS = () => {
                 ) : (
                   drafts.map((d) => (
                     <tr key={d.id}>
-                      <td>{String(d.date).split('T')[0]}</td>
+                      <td>{formatDate(d.date)}</td>
                       <td>{d.id}</td>
                       <td>{d.customerInfo?.name || <span className="text-muted">—</span>}</td>
                       <td>{(d.cartItems || []).length} items</td>

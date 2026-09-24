@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate, formatTime } from '../utils/date';
 import { takaInWords } from './InvoiceDocument';
 import defaultLogo from '../assets/allah_dan.jpeg';
 import { DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_NAME, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
@@ -130,9 +131,9 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'তারিখ ও সময়:' : 'Date & Time:'}</span>
             <span style={{ fontWeight: 700, color: '#000000' }}>
-              {sale.date ? new Date(sale.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
+              {formatDate(sale.date)}
               {' '}
-              {sale.date ? new Date(sale.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
+              {formatTime(sale.date)}
             </span>
           </div>
           {(sale.salesman?.name || sale.salesmanName || sale.salesman_name) && (

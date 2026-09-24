@@ -113,7 +113,7 @@ const BalanceSheet = () => {
     );
   }
 
-  const { sales, cogs, expenses, profit, purchases, returns, cashflow, position, period } = data;
+  const { sales, cogs, expenses, profit, purchases, returns, cashflow, position, period, byMethod } = data;
   const isLoss = profit.isLoss;
   const outstanding = position.assets.customerDue;
 
@@ -353,6 +353,42 @@ const BalanceSheet = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="bs-panel-title" style={{ marginTop: '1.25rem' }}>
+            {bn ? 'কোন মাধ্যমে কত টাকা' : 'Money by method'}
+          </div>
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{bn ? 'মাধ্যম' : 'Method'}</th>
+                  <th style={{ textAlign: 'center' }}>{bn ? 'লেনদেন' : 'Txns'}</th>
+                  <th style={{ textAlign: 'right' }}>{bn ? 'এসেছে' : 'In'}</th>
+                  <th style={{ textAlign: 'right' }}>{bn ? 'গেছে' : 'Out'}</th>
+                  <th style={{ textAlign: 'right' }}>{bn ? 'নিট' : 'Net'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(byMethod || []).map((r) => (
+                  <tr key={r.method}>
+                    <td style={{ fontWeight: 600 }}>{r.method}</td>
+                    <td style={{ textAlign: 'center' }}>{r.count}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--success)' }}>{r.in > 0 ? money(r.in) : '—'}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{r.out > 0 ? money(r.out) : '—'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{money(r.net)}</td>
+                  </tr>
+                ))}
+                {(byMethod || []).length === 0 && (
+                  <tr><td colSpan="5" className="text-center text-muted">{bn ? 'এই সময়ে কোনো লেনদেন নেই।' : 'No money moved in this period.'}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="bs-note">
+            {bn
+              ? 'বিক্রয়ের সাথে বকেয়া আদায়, ক্রয় ও খরচও ধরা আছে। ক্যাশ + এমএফএস বিক্রয়ে দুটো অংশ আলাদা গণা হয়।'
+              : 'Sales, dues collected, purchases and expenses together. A Cash + MFS sale is counted as its two halves, not as one label.'}
           </div>
         </div>
       </div>

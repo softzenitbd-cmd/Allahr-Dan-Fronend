@@ -6,6 +6,7 @@ import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import './Returns.css';
+import { formatDate } from '../utils/date';
 
 const Returns = () => {
   const { inventory, processReturn, deleteReturn, returns, user, language } = useStore();
@@ -227,7 +228,7 @@ const Returns = () => {
                 {filteredReturns.map(r => (
                   <tr key={r.id}>
                     <td>{r.id}</td>
-                    <td>{r.date.split('T')[0]}</td>
+                    <td>{formatDate(r.date)}</td>
                     <td>{r.referenceId || '-'}</td>
                     <td>
                       <span className={`badge ${r.returnType === 'Customer' ? 'bg-success text-success' : 'bg-danger text-danger'}`} style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', background: r.returnType === 'Customer' ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)' }}>
@@ -283,7 +284,7 @@ const Returns = () => {
                 <tbody>
                   {filteredReturns.map(r => (
                     <tr key={r.id} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{new Date(r.date).toLocaleDateString()}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{formatDate(r.date)}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.id}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.referenceId || '-'}</td>
                       <td style={{ border: '1px solid #ccc', padding: '0.4rem', verticalAlign: 'top' }}>{r.returnType}</td>

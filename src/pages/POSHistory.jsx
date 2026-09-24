@@ -12,6 +12,7 @@ import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import ThermalReceipt from '../components/ThermalReceipt';
 import { t } from '../utils/i18n';
 import './POSHistory.css';
+import { formatDate } from '../utils/date';
 
 /**
  * Every invoice the counter has filed, and what is still owed on each one.
@@ -315,6 +316,7 @@ const POSHistory = () => {
                 <th>{t(language, 'Date')}</th>
                 <th>{t(language, 'Invoice ID')}</th>
                 <th>{t(language, 'Customer Name')}</th>
+                <th>{language === 'bn' ? 'বিক্রেতা' : 'Salesman'}</th>
                 <th>{language === 'bn' ? 'বিক্রিত পণ্য' : 'Products Sold'}</th>
                 <th>{t(language, 'Payment Method')}</th>
                 <th style={{ textAlign: 'right' }}>{t(language, 'Total')}</th>
@@ -330,7 +332,7 @@ const POSHistory = () => {
                 const settled = remaining <= 0;
                 return (
                   <tr key={s.id}>
-                    <td>{String(s.date).split('T')[0]}</td>
+                    <td>{formatDate(s.date)}</td>
                     <td style={{ fontWeight: 600 }}>{s.id}</td>
                     <td>
                       {s.customerName || 'N/A'}
@@ -338,6 +340,7 @@ const POSHistory = () => {
                         <div className="text-muted" style={{ fontSize: '0.75rem' }}>{s.customer_phone}</div>
                       )}
                     </td>
+                    <td>{s.salesmanName || 'Admin'}</td>
                     <td style={{ minWidth: '180px', maxWidth: '300px' }}>
                       {s.items && s.items.length > 0 ? (
                         <div className="poshistory-products-cell">
@@ -418,7 +421,7 @@ const POSHistory = () => {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan="9" className="text-center text-muted" style={{ padding: '2rem' }}>
+                  <td colSpan="10" className="text-center text-muted" style={{ padding: '2rem' }}>
                     {language === 'bn' ? 'এই ফিল্টারে কোনো চালান পাওয়া যায়নি।' : 'No invoices match these filters.'}
                   </td>
                 </tr>
@@ -442,6 +445,7 @@ const POSHistory = () => {
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Date</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Invoice</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Customer</th>
+                <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Salesman</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Products</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'left' }}>Payment</th>
                 <th style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>Total</th>
@@ -452,9 +456,10 @@ const POSHistory = () => {
             <tbody>
               {filtered.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{String(s.date).split('T')[0]}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{formatDate(s.date)}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.id}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.customerName || 'N/A'}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.salesmanName || 'Admin'}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>
                     {(s.items || []).map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.quantity}`).join(', ') || '—'}
                   </td>
