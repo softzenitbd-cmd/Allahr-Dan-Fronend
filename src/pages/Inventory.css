@@ -312,3 +312,20 @@
 }
 
 .cb-chip.active .cb-count { background: rgba(255, 255, 255, 0.25); color: inherit; }
+
+/* --------------------------------------------------------------------------
+   Table Action Buttons Grid (3 columns x 2 rows)
+   -------------------------------------------------------------------------- */
+.table-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  gap: 4px;
+  align-items: center;
+  width: max-content;
+}
+
+.table-actions .btn-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}

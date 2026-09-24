@@ -1194,7 +1194,7 @@ const Inventory = () => {
                     {language === 'bn' ? 'আসল দাম (Original)' : 'Original Price'}
                   </th>
                 )}
-                <th>{t(language, 'Actions')}</th>
+                <th style={{ width: '110px', minWidth: '110px', whiteSpace: 'nowrap' }}>{t(language, 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1298,7 +1298,7 @@ const Inventory = () => {
                         </span>
                       </td>
                     )}
-                    <td>
+                    <td style={{ width: '110px', minWidth: '110px', whiteSpace: 'nowrap' }}>
                       <div className="table-actions">
                         <button
                           className="btn-icon text-success"
