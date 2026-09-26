@@ -18,6 +18,12 @@ export const AuthService = {
 export const ProductService = {
   list: (params) => apiClient.get(ENDPOINTS.PRODUCTS, { params }),
   create: (payload) => apiClient.post(ENDPOINTS.PRODUCTS, payload),
+  // One product in several sizes: each size its own row, stock and barcode.
+  createWithVariants: (payload) => apiClient.post(ENDPOINTS.PRODUCT_WITH_VARIANTS, payload),
+  // Divide an existing product's stock into sizes.
+  splitVariants: (code, variants) => apiClient.post(ENDPOINTS.PRODUCT_SPLIT_VARIANTS(code), { variants }),
+  // Name, category, prices... changed on every size of a product at once.
+  updateGroup: (code, payload) => apiClient.post(ENDPOINTS.PRODUCT_UPDATE_GROUP(code), payload),
   update: (code, payload) => apiClient.patch(ENDPOINTS.PRODUCT(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.PRODUCT(code)),
   recordDamage: (payload) => apiClient.post(ENDPOINTS.PRODUCT_RECORD_DAMAGE, payload),

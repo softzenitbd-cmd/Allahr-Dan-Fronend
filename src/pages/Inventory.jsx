@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus, PlusCircle, Search, Printer, Edit, Trash2, Settings2, Image as ImageIcon,
-  Upload, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Upload, X, ChevronLeft, ChevronRight, ChevronDown, ChevronsLeft, ChevronsRight,
   Loader2, FileDown, Package, Boxes, BadgeDollarSign, ShieldCheck,
   AlertTriangle, History, Clock, PackagePlus, ArrowUpCircle, ArrowDownCircle,
   Calendar,
@@ -18,6 +18,7 @@ import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 import { formatDate, formatTime } from '../utils/date';
+import VariantStockEditor, { looksLikeVariantList, parseVariantText } from '../components/VariantStockEditor';
 
 const getProductImageUrl = (img) => {
   if (!img) return null;
@@ -29,7 +30,7 @@ const getProductImageUrl = (img) => {
 
 const Inventory = () => {
   const {
-    inventory, categories, units, addInventoryItem, updateInventoryItem,
+    inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup,
     deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user,
   } = useStore();
   // The original/buying price is confidential to the business owner/admin.
@@ -66,6 +67,23 @@ const Inventory = () => {
   const [showReferenceDrawer, setShowReferenceDrawer] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [newProductImage, setNewProductImage] = useState(null);
+  // Sizes with their own pieces (XL 4, L 10). When on, one row per size is
+  // created, each with its own barcode and stock.
+  const [multiVariant, setMultiVariant] = useState(false);
+  const [variantRows, setVariantRows] = useState([]);
+  // Dividing an existing product into sizes, from its Edit form.
+  const [splitRows, setSplitRows] = useState(null);   // null = closed
+  const [splitting, setSplitting] = useState(false);
+  // A product's sizes are listed under it; these are the ones opened up.
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  // Adding sizes (or stock to sizes) from a product's Edit form.
+  const [addSizeRows, setAddSizeRows] = useState(null);
+  const [addingSizes, setAddingSizes] = useState(false);
+  const toggleGroup = (key) => setExpandedGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   const [newProductImagePreview, setNewProductImagePreview] = useState(null);
   const [editProductImage, setEditProductImage] = useState(null);
   const [editProductImagePreview, setEditProductImagePreview] = useState(null);
@@ -172,6 +190,8 @@ const Inventory = () => {
       const params = {
         page: targetPage,
         page_size: pageSize,
+        // One entry per product, its sizes inside.
+        grouped: true,
       };
       if (searchTerm && searchTerm.trim()) params.search = searchTerm.trim();
       // A sub-category narrows to itself; a top-level one brings its subs along
@@ -269,7 +289,9 @@ const Inventory = () => {
       mrp: mrpPrice,
       discount_price: salePrice,
       price: salePrice,
+      ...(item.isGroup ? { groupOriginal: item } : {}),
     });
+    setAddSizeRows(null);
     setEditProductImage(null);
     setEditProductImagePreview(getProductImageUrl(item.image) || null);
   };
@@ -628,6 +650,84 @@ const Inventory = () => {
     }
   };
 
+  /** Move pieces of this product into per-size products. */
+  const handleSplitIntoSizes = async () => {
+    const rows = (splitRows || [])
+      .map((r) => ({ name: String(r.name || '').trim(), stock: parseInt(r.stock, 10) || 0 }))
+      .filter((r) => r.name);
+    const total = rows.reduce((sum, r) => sum + r.stock, 0);
+    if (!rows.length) {
+      toast.error(language === 'bn' ? 'অন্তত একটা সাইজ আর তার পিস দিন' : 'Add at least one size with its pieces');
+      return;
+    }
+    if (total > (Number(editingItem.stock) || 0)) {
+      toast.error(language === 'bn'
+        ? `স্টকে আছে মাত্র ${editingItem.stock}, কিন্তু সাইজগুলোর যোগফল ${total}`
+        : `Only ${editingItem.stock} in stock, but the sizes add up to ${total}`);
+      return;
+    }
+    const ok = await showConfirmDialog({
+      title: language === 'bn' ? 'সাইজে ভাগ করবেন?' : 'Divide into sizes?',
+      text: language === 'bn'
+        ? `${rows.map((r) => `${r.name} ${r.stock}`).join(', ')} — প্রতিটা সাইজ আলাদা বারকোড পাবে। বাকি ${(Number(editingItem.stock) || 0) - total} পিস '${editingItem.name}'-এ থাকবে।`
+        : `${rows.map((r) => `${r.name} ${r.stock}`).join(', ')} — each size gets its own barcode. The other ${(Number(editingItem.stock) || 0) - total} stay on '${editingItem.name}'.`,
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, ভাগ করুন' : 'Yes, divide',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+    });
+    if (!ok) return;
+
+    setSplitting(true);
+    const res = await splitProductIntoVariants(editingItem.product_code || editingItem.id, rows);
+    setSplitting(false);
+    if (!res?.ok) return;
+    const made = [...(res.result?.created || []), ...(res.result?.toppedUp || [])];
+    setSplitRows(null);
+    setEditingItem(null);
+    showSuccessAlert(language === 'bn'
+      ? `ভাগ হয়েছে: ${made.map((m) => `${m.variant} ${m.stock}`).join(', ')}। নতুন বারকোড প্রিন্ট করে সাইজগুলোতে লাগিয়ে দিন।`
+      : `Divided: ${made.map((m) => `${m.variant} ${m.stock}`).join(', ')}. Print the new barcodes for the sizes.`);
+    await refresh('inventory');
+    fetchPaginatedProducts(1);
+  };
+
+  /** New sizes for this product, or more pieces of sizes it already has. */
+  const handleAddSizesToGroup = async () => {
+    const base = editingItem?.groupOriginal || editingItem;
+    const rows = (addSizeRows || [])
+      .map((r) => ({ name: String(r.name || '').trim(), stock: parseInt(r.stock, 10) || 0 }))
+      .filter((r) => r.name);
+    if (!rows.length) {
+      toast.error(language === 'bn' ? 'অন্তত একটা সাইজ আর তার পিস দিন' : 'Add at least one size with its pieces');
+      return;
+    }
+    const sale = Number(base.discount_price) > 0 ? Number(base.discount_price) : Number(base.price) || 0;
+    const minVal = parseInt(base.min_stock ?? 5, 10);
+    setAddingSizes(true);
+    const res = await addProductWithVariants({
+      name: base.name,
+      category: base.category || 'Panjabi',
+      unit: base.unit || 'Pcs',
+      mrp: Number(base.mrp) || sale,
+      discount_price: sale,
+      price: sale,
+      min_stock: minVal,
+      minStock: minVal,
+      ...(isAdmin ? { cost_price: Number(base.cost_price ?? base.costPrice) || 0 } : {}),
+      variants: rows,
+    });
+    setAddingSizes(false);
+    if (!res?.ok) return;
+    const made = res.result?.created || [];
+    const topped = res.result?.toppedUp || [];
+    setAddSizeRows(null);
+    setEditingItem(null);
+    showSuccessAlert(language === 'bn'
+      ? `'${base.name}' — ${made.length ? `নতুন সাইজ: ${made.map((m) => `${m.variant} ${m.stock}`).join(', ')}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `স্টক যোগ: ${topped.map((m) => `${m.variant} (মোট ${m.stock})`).join(', ')}` : ''}`
+      : `'${base.name}' — ${made.length ? `new sizes: ${made.map((m) => `${m.variant} ${m.stock}`).join(', ')}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `stock added: ${topped.map((m) => `${m.variant} (now ${m.stock})`).join(', ')}` : ''}`);
+    await refresh('inventory');
+    fetchPaginatedProducts(currentPage);
+  };
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     let res;
@@ -635,6 +735,42 @@ const Inventory = () => {
     const discVal = parseFloat(editingItem.discount_price) || 0;
     const saleVal = discVal > 0 ? discVal : (parseFloat(editingItem.price) || mrpVal);
     const minVal = parseInt(editingItem.min_stock !== undefined && editingItem.min_stock !== '' ? editingItem.min_stock : 5);
+
+    // A product with sizes: the shared details change on every size; each
+    // size keeps its own stock and barcode.
+    if (editingItem.isGroup) {
+      const shared = {
+        name: editingItem.name,
+        category: editingItem.category || '',
+        unit: editingItem.unit || 'Pcs',
+        mrp: mrpVal || saleVal,
+        discount_price: discVal || saleVal,
+        price: saleVal,
+        min_stock: minVal,
+        minStock: minVal,
+        ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
+      };
+      let payload = shared;
+      if (editProductImage) {
+        payload = new FormData();
+        Object.entries(shared).forEach(([k, v]) => payload.append(k, v));
+        payload.append('image', editProductImage);
+      }
+      const groupRes = await updateProductGroup(editingItem.product_code || editingItem.id, payload);
+      if (groupRes?.ok) {
+        const n = groupRes.result?.updated || editingItem.variants?.length || 0;
+        setEditingItem(null);
+        setAddSizeRows(null);
+        setEditProductImage(null);
+        setEditProductImagePreview(null);
+        showSuccessAlert(language === 'bn'
+          ? `'${shared.name}' আপডেট হয়েছে — ${n}টি সাইজেই।`
+          : `Updated '${shared.name}' on all ${n} sizes.`);
+        await refresh('inventory');
+        fetchPaginatedProducts(currentPage);
+      }
+      return;
+    }
 
     if (editProductImage) {
       const formData = new FormData();
@@ -704,12 +840,82 @@ const Inventory = () => {
     }
   };
 
+  const resetAddForm = () => {
+    setNewProduct({ id: '', name: '', category: 'Panjabi', unit: 'Pcs', variant: '', stock: 0, min_stock: 5, mrp: 0, discount_price: 0, price: 0, cost_price: '' });
+    setNewProductImage(null);
+    setNewProductImagePreview(null);
+    setMultiVariant(false);
+    setVariantRows([]);
+  };
+
+  /** One product in several sizes: each size its own row, barcode and stock. */
+  const handleAddWithVariants = async (finalName) => {
+    const rows = variantRows
+      .map((r) => ({ name: String(r.name || '').trim(), stock: parseInt(r.stock, 10) || 0 }))
+      .filter((r) => r.name);
+    if (!rows.length) {
+      toast.error(language === 'bn' ? 'অন্তত একটা সাইজ আর তার পিস দিন' : 'Add at least one size with its pieces');
+      return;
+    }
+    const seen = new Set();
+    for (const r of rows) {
+      const key = r.name.toLowerCase();
+      if (seen.has(key)) { toast.error(language === 'bn' ? `"${r.name}" দুবার লেখা হয়েছে` : `"${r.name}" is listed twice`); return; }
+      seen.add(key);
+    }
+
+    const mrpVal = parseFloat(newProduct.mrp) || 0;
+    const discVal = parseFloat(newProduct.discount_price) || 0;
+    const saleVal = discVal > 0 ? discVal : (parseFloat(newProduct.price) || mrpVal);
+    const minVal = parseInt(newProduct.min_stock !== undefined && newProduct.min_stock !== '' ? newProduct.min_stock : 5, 10);
+    const shared = {
+      name: finalName,
+      category: newProduct.category || 'Panjabi',
+      unit: newProduct.unit || 'Pcs',
+      mrp: mrpVal || saleVal,
+      discount_price: discVal || saleVal,
+      price: saleVal,
+      min_stock: minVal,
+      minStock: minVal,
+      ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+    };
+
+    let payload;
+    if (newProductImage) {
+      payload = new FormData();
+      Object.entries(shared).forEach(([k, v]) => payload.append(k, v));
+      payload.append('variants', JSON.stringify(rows));
+      payload.append('image', newProductImage);
+    } else {
+      payload = { ...shared, variants: rows };
+    }
+
+    const res = await addProductWithVariants(payload);
+    if (!res?.ok) return;
+    const made = res.result?.created || [];
+    const topped = res.result?.toppedUp || [];
+    setShowAddModal(false);
+    resetAddForm();
+    const madeText = made.map((p) => `${p.variant} ${p.stock}`).join(', ');
+    const toppedText = topped.map((p) => `${p.variant} (${language === 'bn' ? 'মোট' : 'now'} ${p.stock})`).join(', ');
+    showSuccessAlert(language === 'bn'
+      ? `'${finalName}' — ${made.length ? `নতুন সাইজ: ${madeText}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `স্টক যোগ: ${toppedText}` : ''}`
+      : `'${finalName}' — ${made.length ? `new sizes: ${madeText}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `stock added: ${toppedText}` : ''}`);
+    await refresh('inventory');
+    fetchPaginatedProducts(1);
+  };
+
   const handleAddProduct = async (e) => {
     e.preventDefault();
     const finalId = (newProduct.id || '').trim() || getNextProductId();
     const finalName = (newProduct.name || '').trim();
     if (!finalName) {
       toast.error(language === 'bn' ? 'পণ্যের নাম দেওয়া আবশ্যক!' : 'Product name is required!');
+      return;
+    }
+
+    if (multiVariant) {
+      await handleAddWithVariants(finalName);
       return;
     }
 
@@ -860,6 +1066,174 @@ const Inventory = () => {
     const limit = Number(item.min_stock !== undefined && item.min_stock !== null && item.min_stock !== '' ? item.min_stock : (item.minStock ?? 5));
     return Number(item.stock) <= limit;
   }).length;
+
+  // One row of the stock table: a plain product, a product with sizes
+  // ('group', its sizes summed), or one of those sizes ('size').
+  const renderInventoryRow = (item, kind) => (
+                  <tr key={kind === 'group' ? `g-${item.groupKey}` : item.id} className={kind === 'size' ? 'inv-size-row' : kind === 'group' ? 'inv-group-row' : undefined}>
+                    <td style={{ textAlign: 'center' }}>
+                      {item.image ? (
+                        <img
+                          src={getProductImageUrl(item.image)}
+                          alt={item.name}
+                          className="product-table-thumb"
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="product-table-thumb-placeholder">
+                          <ImageIcon size={16} />
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {kind === 'group' ? (
+                        <button type="button" className="inv-group-toggle" onClick={() => toggleGroup(item.groupKey)}>
+                          {expandedGroups.has(item.groupKey) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {item.variants.length} {language === 'bn' ? 'সাইজ' : 'sizes'}
+                        </button>
+                      ) : (
+                        <span className="font-mono" style={{ fontWeight: 'bold' }}>{item.id}</span>
+                      )}
+                    </td>
+                    <td>
+                      {kind === 'size' ? (
+                        <span className="inv-size-name">↳ {item.name}</span>
+                      ) : (
+                        <strong
+                          style={kind === 'group' ? { cursor: 'pointer' } : undefined}
+                          onClick={kind === 'group' ? () => toggleGroup(item.groupKey) : undefined}
+                        >
+                          {item.name}
+                        </strong>
+                      )}
+                    </td>
+                    <td>
+                      <span className="badge badge-secondary">{item.category}</span>
+                    </td>
+                    <td>
+                      {kind === 'group' ? (
+                        <div className="inv-size-chips">
+                          {item.variants.map((v) => (
+                            <span
+                              key={v.id}
+                              className={`inv-size-chip ${Number(v.stock) <= 0 ? 'is-out' : Number(v.stock) <= Number(v.min_stock ?? 5) ? 'is-low' : ''}`}
+                            >
+                              {v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')} <b>{Number(v.stock) || 0}</b>
+                            </span>
+                          ))}
+                        </div>
+                      ) : kind === 'size' ? (
+                        <span className="inv-size-chip">{item.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span>
+                      ) : (item.variant || '-')}
+                    </td>
+                    <td>{item.unit}</td>
+                    <td>
+                      {(() => {
+                        const alertLimit = item.min_stock !== undefined && item.min_stock !== null ? Number(item.min_stock) : 5;
+                        const stockQty = Number(item.stock) || 0;
+                        const isOutOfStock = stockQty <= 0;
+                        // A product with sizes is low when any of its sizes is.
+                        const isLowStock = stockQty > 0 && (kind === 'group' ? item.lowStockSizes > 0 : stockQty <= alertLimit);
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                            <span
+                              className={`badge ${
+                                isOutOfStock
+                                  ? 'badge-danger'
+                                  : isLowStock
+                                  ? 'badge-warning'
+                                  : 'badge-success'
+                              }`}
+                              style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                              title={language === 'bn' ? 'ক্লিক করে দ্রুত স্টক যোগ করুন (+)' : 'Click to quickly add stock (+)'}
+                              onClick={() => (kind === 'group' ? toggleGroup(item.groupKey) : handleOpenQuickStock(item))}
+                            >
+                              {isLowStock && <AlertTriangle size={12} />}
+                              {stockQty}
+                              <PlusCircle size={11} style={{ marginLeft: '2px', opacity: 0.8 }} />
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: isLowStock ? '#d97706' : 'var(--text-muted)' }}>
+                              {kind === 'group'
+                                ? (language === 'bn' ? `মোট · ${item.lowStockSizes ? `${item.lowStockSizes} সাইজ কম` : 'সব ঠিক'}` : `Total · ${item.lowStockSizes ? `${item.lowStockSizes} sizes low` : 'all fine'}`)
+                                : (language === 'bn' ? `এলার্ট: ≤${alertLimit}` : `Alert: ≤${alertLimit}`)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td>
+                      {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            ৳{Number(item.mrp).toLocaleString()}
+                          </span>
+                          <span style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '0.95rem' }}>
+                            ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ fontWeight: 'bold' }}>
+                          ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
+                        </span>
+                      )}
+                    </td>
+                    {isAdmin && (
+                      <td>
+                        <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#059669' }}>
+                          {Number(item.cost_price ?? item.costPrice) > 0
+                            ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}`
+                            : (language === 'bn' ? 'দেওয়া নেই' : '—')}
+                        </span>
+                      </td>
+                    )}
+                    <td style={{ width: '110px', minWidth: '110px', whiteSpace: 'nowrap' }}>
+                      <div className="table-actions">
+                        {kind !== 'group' && (<>
+                        <button
+                          className="btn-icon text-success"
+                          style={{ color: '#059669', background: '#ecfdf5' }}
+                          title={language === 'bn' ? 'স্টক যোগ করুন (+)' : 'Add Stock (+)'}
+                          onClick={() => handleOpenQuickStock(item)}
+                        >
+                          <PlusCircle size={16} />
+                        </button>
+                        <button
+                          className="btn-icon text-danger"
+                          style={{ color: '#dc2626', background: '#fef2f2' }}
+                          title={language === 'bn' ? 'ড্যামেজ পণ্য বাদ দিন (-)' : 'Record Damaged Stock (-)'}
+                          onClick={() => handleOpenDamageModal(item)}
+                        >
+                          <AlertTriangle size={15} />
+                        </button>
+                        <button
+                          className="btn-icon"
+                          style={{ color: '#059669', background: '#ecfdf5' }}
+                          title={language === 'bn' ? 'পণ্য যোগের ইতিহাস দেখুন (+)' : 'View Product Addition History (+)'}
+                          onClick={() => handleOpenProductHistory(item)}
+                        >
+                          <PackagePlus size={15} />
+                        </button>
+                        <button
+                          className="btn-icon text-secondary"
+                          title="Print Barcode"
+                          onClick={() => handlePrintBarcode(item)}
+                        >
+                          <Printer size={16} />
+                        </button>
+                        </>)}
+                        <button className="btn-icon text-primary" title={kind === 'group' ? (language === 'bn' ? 'সব সাইজ একসাথে এডিট' : 'Edit all sizes') : 'Edit'} onClick={() => handleOpenEditModal(item)}>
+                          <Edit size={16} />
+                        </button>
+                        {kind !== 'group' && (
+                        <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
+                          <Trash2 size={16} />
+                        </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+  );
 
   const handleDownloadValuation = () => {
     printElement('printable-valuation', `Inventory-Valuation-${new Date().toISOString().slice(0, 10)}`);
@@ -1214,133 +1588,12 @@ const Inventory = () => {
                   </td>
                 </tr>
               ) : (
-                paginatedProducts.map(item => (
-                  <tr key={item.id}>
-                    <td style={{ textAlign: 'center' }}>
-                      {item.image ? (
-                        <img
-                          src={getProductImageUrl(item.image)}
-                          alt={item.name}
-                          className="product-table-thumb"
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                      ) : (
-                        <div className="product-table-thumb-placeholder">
-                          <ImageIcon size={16} />
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <span className="font-mono" style={{ fontWeight: 'bold' }}>{item.id}</span>
-                    </td>
-                    <td>
-                      <strong>{item.name}</strong>
-                    </td>
-                    <td>
-                      <span className="badge badge-secondary">{item.category}</span>
-                    </td>
-                    <td>{item.variant || '-'}</td>
-                    <td>{item.unit}</td>
-                    <td>
-                      {(() => {
-                        const alertLimit = item.min_stock !== undefined && item.min_stock !== null ? Number(item.min_stock) : 5;
-                        const stockQty = Number(item.stock) || 0;
-                        const isOutOfStock = stockQty <= 0;
-                        const isLowStock = stockQty > 0 && stockQty <= alertLimit;
-
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
-                            <span
-                              className={`badge ${
-                                isOutOfStock
-                                  ? 'badge-danger'
-                                  : isLowStock
-                                  ? 'badge-warning'
-                                  : 'badge-success'
-                              }`}
-                              style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                              title={language === 'bn' ? 'ক্লিক করে দ্রুত স্টক যোগ করুন (+)' : 'Click to quickly add stock (+)'}
-                              onClick={() => handleOpenQuickStock(item)}
-                            >
-                              {isLowStock && <AlertTriangle size={12} />}
-                              {stockQty}
-                              <PlusCircle size={11} style={{ marginLeft: '2px', opacity: 0.8 }} />
-                            </span>
-                            <span style={{ fontSize: '0.72rem', color: isLowStock ? '#d97706' : 'var(--text-muted)' }}>
-                              {language === 'bn' ? `এলার্ট: ≤${alertLimit}` : `Alert: ≤${alertLimit}`}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td>
-                      {item.mrp && Number(item.mrp) > (item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                            ৳{Number(item.mrp).toLocaleString()}
-                          </span>
-                          <span style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '0.95rem' }}>
-                            ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
-                          </span>
-                        </div>
-                      ) : (
-                        <span style={{ fontWeight: 'bold' }}>
-                          ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
-                        </span>
-                      )}
-                    </td>
-                    {isAdmin && (
-                      <td>
-                        <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#059669' }}>
-                          {Number(item.cost_price ?? item.costPrice) > 0
-                            ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}`
-                            : (language === 'bn' ? 'দেওয়া নেই' : '—')}
-                        </span>
-                      </td>
-                    )}
-                    <td style={{ width: '110px', minWidth: '110px', whiteSpace: 'nowrap' }}>
-                      <div className="table-actions">
-                        <button
-                          className="btn-icon text-success"
-                          style={{ color: '#059669', background: '#ecfdf5' }}
-                          title={language === 'bn' ? 'স্টক যোগ করুন (+)' : 'Add Stock (+)'}
-                          onClick={() => handleOpenQuickStock(item)}
-                        >
-                          <PlusCircle size={16} />
-                        </button>
-                        <button
-                          className="btn-icon text-danger"
-                          style={{ color: '#dc2626', background: '#fef2f2' }}
-                          title={language === 'bn' ? 'ড্যামেজ পণ্য বাদ দিন (-)' : 'Record Damaged Stock (-)'}
-                          onClick={() => handleOpenDamageModal(item)}
-                        >
-                          <AlertTriangle size={15} />
-                        </button>
-                        <button
-                          className="btn-icon"
-                          style={{ color: '#059669', background: '#ecfdf5' }}
-                          title={language === 'bn' ? 'পণ্য যোগের ইতিহাস দেখুন (+)' : 'View Product Addition History (+)'}
-                          onClick={() => handleOpenProductHistory(item)}
-                        >
-                          <PackagePlus size={15} />
-                        </button>
-                        <button
-                          className="btn-icon text-secondary"
-                          title="Print Barcode"
-                          onClick={() => handlePrintBarcode(item)}
-                        >
-                          <Printer size={16} />
-                        </button>
-                        <button className="btn-icon text-primary" title="Edit" onClick={() => handleOpenEditModal(item)}>
-                          <Edit size={16} />
-                        </button>
-                        <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                paginatedProducts.flatMap((item) => (item.isGroup
+                  ? [
+                    renderInventoryRow(item, 'group'),
+                    ...(expandedGroups.has(item.groupKey) ? item.variants.map((v) => renderInventoryRow(v, 'size')) : []),
+                  ]
+                  : [renderInventoryRow(item, 'single')]))
               )}
             </tbody>
           </table>
@@ -1588,7 +1841,7 @@ const Inventory = () => {
           <div className="drawer-container">
             <div className="drawer-header">
               <h2>{t(language, 'Add New Item')}</h2>
-              <button className="drawer-close-btn" onClick={() => setShowAddModal(false)}>
+              <button className="drawer-close-btn" onClick={() => { setShowAddModal(false); setMultiVariant(false); setVariantRows([]); }}>
                 <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
               </button>
             </div>
@@ -1644,9 +1897,13 @@ const Inventory = () => {
                     <input
                       type="text"
                       className="w-full"
-                      required
-                      placeholder="e.g. 8941170000013"
-                      value={newProduct.id}
+                      required={!multiVariant}
+                      // With sizes, every size is given its own barcode.
+                      disabled={multiVariant}
+                      placeholder={multiVariant
+                        ? (language === 'bn' ? 'প্রতিটা সাইজ নিজের বারকোড পাবে' : 'Each size gets its own barcode')
+                        : 'e.g. 8941170000013'}
+                      value={multiVariant ? '' : newProduct.id}
                       onChange={(e) => {
                         const val = e.target.value;
                         const match = (inventory || []).find(
@@ -1734,15 +1991,46 @@ const Inventory = () => {
                       {renderCategoryOptions()}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
-                    <input
-                      type="text"
-                      className="w-full"
-                      placeholder="e.g. XL, Red, 42"
-                      value={newProduct.variant}
-                      onChange={(e) => setNewProduct({ ...newProduct, variant: e.target.value })}
-                    />
+                  <div style={multiVariant ? { gridColumn: '1 / -1' } : undefined}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                      <label className="text-muted text-sm block">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
+                      <label className="text-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}>
+                        <input
+                          type="checkbox"
+                          checked={multiVariant}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setMultiVariant(on);
+                            // Carry over whatever was typed in the single box.
+                            if (on && !variantRows.length) {
+                              const parsed = parseVariantText(newProduct.variant);
+                              setVariantRows(parsed || (newProduct.variant ? String(newProduct.variant).split(',').map((v) => ({ name: v.trim(), stock: '' })).filter((r) => r.name) : []));
+                            }
+                          }}
+                          style={{ width: 15, height: 15 }}
+                        />
+                        {language === 'bn' ? 'সাইজ অনুযায়ী আলাদা স্টক' : 'Separate stock per size'}
+                      </label>
+                    </div>
+                    {multiVariant ? (
+                      <VariantStockEditor rows={variantRows} onChange={setVariantRows} bn={language === 'bn'} unit={newProduct.unit || 'Pcs'} />
+                    ) : (
+                      <input
+                        type="text"
+                        className="w-full"
+                        placeholder={language === 'bn' ? 'যেমন: XL — বা একাধিক সাইজ: XL4, L10' : 'e.g. XL — or several sizes: XL4, L10'}
+                        value={newProduct.variant}
+                        onChange={(e) => setNewProduct({ ...newProduct, variant: e.target.value })}
+                        onBlur={(e) => {
+                          // "XL4, L10" typed straight in: switch to sizes-with-pieces.
+                          if (looksLikeVariantList(e.target.value)) {
+                            setVariantRows(parseVariantText(e.target.value));
+                            setMultiVariant(true);
+                            setNewProduct((prev) => ({ ...prev, variant: '' }));
+                          }
+                        }}
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
@@ -1756,7 +2044,7 @@ const Inventory = () => {
                       ))}
                     </select>
                   </div>
-                  <div>
+                  {!multiVariant && <div>
                     {(() => {
                       const match = (inventory || []).find(
                         (p) => newProduct.id && (
@@ -1792,7 +2080,7 @@ const Inventory = () => {
                         </>
                       );
                     })()}
-                  </div>
+                  </div>}
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'স্টক এলার্ট লিমিট (Alert Minimum)' : 'Stock Alert Limit (Min)'} *
@@ -1858,7 +2146,7 @@ const Inventory = () => {
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline flex-1" onClick={() => setShowAddModal(false)}>
+                <button type="button" className="btn-outline flex-1" onClick={() => { setShowAddModal(false); setMultiVariant(false); setVariantRows([]); }}>
                   {t(language, 'Cancel')}
                 </button>
                 <button type="submit" className="btn-primary flex-1">
@@ -1876,8 +2164,8 @@ const Inventory = () => {
         <div className="drawer-overlay">
           <div className="drawer-container">
             <div className="drawer-header">
-              <h2>{t(language, 'Edit Item')}</h2>
-              <button className="drawer-close-btn" onClick={() => setEditingItem(null)}>
+              <h2>{t(language, 'Edit Item')}{editingItem.isGroup ? (language === 'bn' ? ' — সব সাইজ' : ' — all sizes') : ''}</h2>
+              <button className="drawer-close-btn" onClick={() => { setEditingItem(null); setSplitRows(null); setAddSizeRows(null); }}>
                 <Plus size={24} style={{ transform: 'rotate(45deg)' }} />
               </button>
             </div>
@@ -1930,10 +2218,63 @@ const Inventory = () => {
                     )}
                   </div>
 
+                  {editingItem.isGroup ? (
+                    <div className="inv-group-panel">
+                      <div className="inv-group-panel-head">
+                        {language === 'bn' ? 'এই পণ্যের সাইজগুলো' : 'Sizes of this product'}
+                        <span>{language === 'bn' ? 'নাম, ক্যাটাগরি, দাম — সব সাইজে একসাথে বদলাবে' : 'Name, category and prices change on every size'}</span>
+                      </div>
+                      <table className="inv-group-sizes">
+                        <tbody>
+                          {(editingItem.variants || []).map((v) => (
+                            <tr key={v.id}>
+                              <td><span className="inv-size-chip">{v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span></td>
+                              <td className="font-mono">{v.id}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700 }}>{Number(v.stock) || 0} {v.unit || 'Pcs'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan={2}>{language === 'bn' ? 'মোট' : 'Total'}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 800 }}>{Number(editingItem.stock) || 0} {editingItem.unit || 'Pcs'}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                      {addSizeRows ? (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <div className="text-sm" style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
+                            {language === 'bn'
+                              ? 'নতুন সাইজ লিখুন, অথবা আগের সাইজে আরও পিস — যেমন: XL5, M3। আগের সাইজে লিখলে স্টক যোগ হবে।'
+                              : 'Type new sizes, or more pieces of existing ones — e.g. XL5, M3. An existing size gets the pieces added.'}
+                          </div>
+                          <VariantStockEditor rows={addSizeRows} onChange={setAddSizeRows} bn={language === 'bn'} unit={editingItem.unit || 'Pcs'} />
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+                            <button type="button" className="btn-primary" onClick={handleAddSizesToGroup} disabled={addingSizes}>
+                              {addingSizes ? '…' : (language === 'bn' ? 'সাইজ / স্টক যোগ করুন' : 'Add sizes / stock')}
+                            </button>
+                            <button type="button" className="btn-outline" onClick={() => setAddSizeRows(null)}>
+                              {language === 'bn' ? 'বাতিল' : 'Cancel'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button type="button" className="inv-group-add" onClick={() => setAddSizeRows([])}>
+                          <PlusCircle size={14} /> {language === 'bn' ? 'নতুন সাইজ বা স্টক যোগ করুন' : 'Add a size or more stock'}
+                        </button>
+                      )}
+                      <div className="text-sm" style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>
+                        {language === 'bn'
+                          ? 'কোনো একটা সাইজের স্টক বা বারকোড — লিস্টে পণ্যের নামে চাপ দিলে সাইজগুলো খুলবে, সেখান থেকে।'
+                          : "One size's stock or barcode: click the product in the list to open its sizes."}
+                      </div>
+                    </div>
+                  ) : (
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'ID/Barcode' || 'Product ID / Barcode')}</label>
                     <input type="text" className="w-full" disabled value={editingItem.id} />
                   </div>
+                  )}
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Product Name')} *</label>
                     <input
@@ -1954,15 +2295,66 @@ const Inventory = () => {
                       {renderCategoryOptions()}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-muted text-sm block mb-1">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
-                    <input
-                      type="text"
-                      className="w-full"
-                      value={editingItem.variant || ''}
-                      onChange={(e) => setEditingItem({ ...editingItem, variant: e.target.value })}
-                    />
+                  {!editingItem.isGroup && (
+                  <div style={splitRows ? { gridColumn: '1 / -1' } : undefined}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                      <label className="text-muted text-sm block">{t(language, 'Variant' || 'Variant / Size / Color')}</label>
+                      {!splitRows && Number(editingItem.stock) > 0 && (
+                        <button
+                          type="button"
+                          className="text-sm"
+                          style={{ color: 'var(--primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+                          onClick={() => setSplitRows(parseVariantText(editingItem.variant) || [])}
+                        >
+                          {language === 'bn' ? 'সাইজে ভাগ করুন' : 'Divide into sizes'}
+                        </button>
+                      )}
+                    </div>
+                    {splitRows ? (
+                      <>
+                        <div className="text-sm" style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
+                          {language === 'bn'
+                            ? `এখন স্টকে ${editingItem.stock} ${editingItem.unit || 'Pcs'}। যেগুলো কোন সাইজের সেটা লিখুন — প্রতিটা সাইজ আলাদা পণ্য ও বারকোড হবে।`
+                            : `${editingItem.stock} ${editingItem.unit || 'Pcs'} in stock now. Say how many are which size — each size becomes its own product and barcode.`}
+                        </div>
+                        <VariantStockEditor rows={splitRows} onChange={setSplitRows} bn={language === 'bn'} unit={editingItem.unit || 'Pcs'} />
+                        {(() => {
+                          const total = splitRows.reduce((sum, r) => sum + (parseInt(r.stock, 10) || 0), 0);
+                          const left = (Number(editingItem.stock) || 0) - total;
+                          return (
+                            <div className="text-sm" style={{ marginTop: '0.5rem', color: left < 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                              {left < 0
+                                ? (language === 'bn' ? `স্টকের চেয়ে ${-left} বেশি লেখা হয়েছে` : `${-left} more than in stock`)
+                                : (language === 'bn' ? `ভাগের পরে '${editingItem.name}'-এ থাকবে ${left} পিস` : `${left} will stay on '${editingItem.name}' afterwards`)}
+                            </div>
+                          );
+                        })()}
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+                          <button type="button" className="btn-primary" onClick={handleSplitIntoSizes} disabled={splitting}>
+                            {splitting ? '…' : (language === 'bn' ? 'সাইজে ভাগ করুন' : 'Divide into sizes')}
+                          </button>
+                          <button type="button" className="btn-outline" onClick={() => setSplitRows(null)}>
+                            {language === 'bn' ? 'বাতিল' : 'Cancel'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        className="w-full"
+                        value={editingItem.variant || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, variant: e.target.value })}
+                      />
+                    )}
+                    {!splitRows && looksLikeVariantList(editingItem.variant) && (
+                      <div className="text-sm" style={{ marginTop: '0.35rem', color: 'var(--warning)' }}>
+                        {language === 'bn'
+                          ? 'এটা শুধু লেবেল — স্টক ভাগ হয়নি। সাইজ অনুযায়ী আলাদা স্টক চাইলে "সাইজে ভাগ করুন" চাপুন।'
+                          : 'This is only a label — the stock is not divided. Use "Divide into sizes" for separate stock.'}
+                      </div>
+                    )}
                   </div>
+                  )}
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Unit')} *</label>
                     <select
@@ -1975,6 +2367,7 @@ const Inventory = () => {
                       ))}
                     </select>
                   </div>
+                  {!editingItem.isGroup && (
                   <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <span className="text-sm text-muted font-medium">{language === 'bn' ? 'বর্তমান স্টক:' : 'Current Stock:'}</span>
@@ -2068,6 +2461,7 @@ const Inventory = () => {
                       />
                     </div>
                   </div>
+                  )}
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'স্টক এলার্ট লিমিট (Alert Minimum)' : 'Stock Alert Limit (Min)'} *
@@ -2133,7 +2527,7 @@ const Inventory = () => {
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline flex-1" onClick={() => setEditingItem(null)}>
+                <button type="button" className="btn-outline flex-1" onClick={() => { setEditingItem(null); setSplitRows(null); }}>
                   {t(language, 'Cancel')}
                 </button>
                 <button type="submit" className="btn-primary flex-1">

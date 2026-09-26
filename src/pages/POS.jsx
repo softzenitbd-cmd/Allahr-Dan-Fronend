@@ -215,12 +215,49 @@ const POS = () => {
   // scanner types the whole code in one burst and presses Enter, so these
   // suggestions are really for someone searching by hand.
   const searchTerm = barcodeInput.trim().toLowerCase();
-  const searchResults = searchTerm
-    ? inventory.filter(p =>
-      String(p.id).toLowerCase().includes(searchTerm) ||
-      (p.name || '').toLowerCase().includes(searchTerm)
-    ).slice(0, 8)
-    : [];
+
+  // A product in several sizes is one row per size in the catalogue, tied
+  // together by `variant_of`. The counter picks the product, then the size.
+  const sizesByGroup = useMemo(() => {
+    const map = new Map();
+    (inventory || []).forEach((p) => {
+      const key = p.variant_of || p.id;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(p);
+    });
+    // Sizes in shop order: no size label first, then S M L XL..., then numbers.
+    const LETTERS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL'];
+    const rank = (v) => {
+      const t = String(v || '').trim().toUpperCase();
+      if (!t) return [0, 0, ''];
+      const i = LETTERS.indexOf(t);
+      if (i >= 0) return [1, i, t];
+      const n = parseFloat(t);
+      return Number.isFinite(n) ? [2, n, t] : [3, 0, t];
+    };
+    map.forEach((list) => list.sort((a, b) => {
+      const [ga, na, ta] = rank(a.variant);
+      const [gb, nb, tb] = rank(b.variant);
+      return ga - gb || na - nb || ta.localeCompare(tb);
+    }));
+    return map;
+  }, [inventory]);
+  const sizesOf = (product) => sizesByGroup.get(product.variant_of || product.id) || [product];
+
+  const searchResults = useMemo(() => {
+    if (!searchTerm) return [];
+    const groups = [];
+    const seen = new Set();
+    (inventory || []).forEach((p) => {
+      if (!(String(p.id).toLowerCase().includes(searchTerm) || (p.name || '').toLowerCase().includes(searchTerm))) return;
+      const key = p.variant_of || p.id;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const members = sizesByGroup.get(key) || [p];
+      groups.push({ key, lead: members.find((m) => String(m.id) === String(key)) || members[0], members });
+    });
+    return groups.slice(0, 8);
+  }, [searchTerm, inventory, sizesByGroup]);
 
   /**
    * Refuse at the counter what the server would refuse at checkout.
@@ -292,12 +329,21 @@ const POS = () => {
     setScanning(false);
 
     if (product) {
+      // A scanned barcode is one exact size. A typed name of a product that
+      // comes in sizes is not -- leave the list open to pick the size.
+      const exactCode = String(product.id) === term || String(product.product_code || '') === term;
+      if (!exactCode && sizesOf(product).length > 1) {
+        toast.info(language === 'bn' ? `"${product.name}" — সাইজ বেছে নিন` : `"${product.name}" — pick a size`);
+        return;
+      }
       pickProduct(product);
       return;
     }
     // Several partial matches is not a failure: leave them on screen to choose.
-    if (searchResults.length > 1) {
-      toast.info(`${searchResults.length} items match "${term}". Pick one below.`);
+    if (searchResults.length > 1 || (searchResults.length === 1 && searchResults[0].members.length > 1)) {
+      toast.info(searchResults.length > 1
+        ? `${searchResults.length} items match "${term}". Pick one below.`
+        : (language === 'bn' ? `"${searchResults[0].lead.name}" — সাইজ বেছে নিন` : `"${searchResults[0].lead.name}" — pick a size`));
       return;
     }
     setScannedItem(null);
@@ -1011,7 +1057,10 @@ const POS = () => {
                           <div className="sr-hint">
                             {searchResults.length} {language === 'bn' ? 'টি মিলেছে — যোগ করতে চাপুন' : 'matches — tap to add'}
                           </div>
-                          {searchResults.map((item) => (
+                          {searchResults.map(({ key, lead, members }) => {
+                            if (members.length === 1) {
+                              const item = members[0];
+                              return (
                             <button
                               key={item.id}
                               type="button"
@@ -1039,7 +1088,56 @@ const POS = () => {
                                 {item.stock}
                               </span>
                             </button>
-                          ))}
+                              );
+                            }
+                            // One product, several sizes: pick the size here.
+                            const totalStock = members.reduce((sum, m) => sum + (Number(m.stock) || 0), 0);
+                            return (
+                              <div key={`g-${key}`} className={`search-result is-group ${totalStock <= 0 ? 'is-out' : ''}`}>
+                                <div className="sr-group-top">
+                                  <span className="sr-main">
+                                    <span className="sr-name">{lead.name}</span>
+                                    <span className="sr-meta">
+                                      {members.length} {language === 'bn' ? 'সাইজ — একটা বেছে নিন' : 'sizes — pick one'}
+                                      {lead.category ? ` · ${lead.category}` : ''}
+                                    </span>
+                                  </span>
+                                  <span className="sr-price">
+                                    {lead.mrp && Number(lead.mrp) > Number(lead.price) ? (
+                                      <span className="sr-was">৳{Number(lead.mrp).toLocaleString()}</span>
+                                    ) : null}
+                                    ৳{Number(lead.price).toLocaleString()}
+                                  </span>
+                                  <span className={`stock-pill ${totalStock <= 0 ? 'stock-empty' : totalStock <= 10 ? 'stock-low' : 'stock-ok'}`}>
+                                    {totalStock}
+                                  </span>
+                                </div>
+                                <div className="sr-sizes">
+                                  {members.map((m) => {
+                                    const inCart = cart.find((c) => c.id === m.id)?.quantity || 0;
+                                    const out = Number(m.stock) <= 0;
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        className={`sr-size ${inCart ? 'in-cart' : ''}`}
+                                        onClick={() => pickProduct(m)}
+                                        disabled={out}
+                                        title={`${m.id}${out ? (language === 'bn' ? ' — স্টক শেষ' : ' — out of stock') : ''}`}
+                                      >
+                                        {m.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}
+                                        <small>{Number(m.stock) || 0}</small>
+                                        {Number(m.price) !== Number(lead.price) && (
+                                          <small>৳{Number(m.price).toLocaleString()}</small>
+                                        )}
+                                        {inCart > 0 && <em>×{inCart}</em>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </>
                       )}
                     </div>

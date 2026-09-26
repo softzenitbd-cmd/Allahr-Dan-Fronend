@@ -507,3 +507,7 @@ body.dark-mode .swal2-html-container { color: var(--text-muted) !important; }
 }
 
 .swal2-modern-btn:hover { filter: brightness(0.94); }
+
+/* Confirmation popups must sit above the side drawers (z-index 10000),
+   otherwise a confirm opened from inside a drawer is hidden behind it. */
+.swal2-container { z-index: 20000 !important; }

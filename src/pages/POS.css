@@ -739,3 +739,23 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
   cursor: not-allowed;
   background: transparent;
 }
+
+
+/* A product in several sizes: one row, the sizes as buttons under it. */
+.search-result.is-group { flex-direction: column; align-items: stretch; gap: 6px; cursor: default; }
+.search-result.is-group:hover { background: var(--bg-hover); }
+.search-result.is-group.is-out { opacity: 0.55; }
+.sr-group-top { display: flex; align-items: center; gap: var(--sp-3); }
+.sr-sizes { display: flex; flex-wrap: wrap; gap: 6px; }
+.sr-size {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1.5px solid var(--primary); background: var(--bg-card);
+  color: var(--primary); font-weight: 700; font-size: 0.8125rem; cursor: pointer;
+}
+.sr-size small { font-weight: 500; font-size: 0.7rem; opacity: 0.75; }
+.sr-size em { font-style: normal; font-size: 0.7rem; padding: 0 5px; border-radius: 999px; background: var(--primary); color: #fff; }
+.sr-size:hover:not(:disabled) { background: var(--primary); color: #fff; }
+.sr-size:hover:not(:disabled) em { background: #fff; color: var(--primary); }
+.sr-size.in-cart { background: color-mix(in srgb, var(--primary) 10%, var(--bg-card)); }
+.sr-size:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--border-color); color: var(--text-subtle); text-decoration: line-through; }

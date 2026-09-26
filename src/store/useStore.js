@@ -610,6 +610,39 @@ const useStore = create(
         }
       }),
 
+      /** A product in several sizes, each with its own pieces and barcode. */
+      addProductWithVariants: (payload) => enqueue(async () => {
+        try {
+          const result = await ProductService.createWithVariants(payload);
+          await get().refresh('inventory');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not add the product sizes.');
+        }
+      }),
+
+      /** Change what every size of a product shares (name, category, prices). */
+      updateProductGroup: (code, payload) => enqueue(async () => {
+        try {
+          const result = await ProductService.updateGroup(code, payload);
+          await get().refresh('inventory');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not update the product.');
+        }
+      }),
+
+      /** Divide an existing product's stock into sizes, each its own row. */
+      splitProductIntoVariants: (code, variants) => enqueue(async () => {
+        try {
+          const result = await ProductService.splitVariants(code, variants);
+          await get().refresh('inventory');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not divide the product into sizes.');
+        }
+      }),
+
       updateInventoryItem: (id, updates) => enqueue(async () => {
         try {
           await ProductService.update(id, clean(updates, ['id']));
@@ -768,7 +801,11 @@ const useStore = create(
           try {
             const invoice = await SaleService.create(salePayload);
             set({ isOnline: true });
-            await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
+            // The sale is saved: hand the receipt back now. Stock, the sales list
+            // and the dashboard catch up in the background instead of holding
+            // the counter until every list has reloaded.
+            ['sales', 'inventory', 'customers', 'treasury', 'dashboard'].forEach((k) => inFlightRequests.delete(k));
+            get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
             return { ok: true, invoice, isOffline: false };
           } catch (error) {
             if (isOfflineNetwork(error)) {
