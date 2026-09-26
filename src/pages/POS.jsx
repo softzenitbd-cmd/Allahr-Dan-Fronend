@@ -591,6 +591,8 @@ const POS = () => {
       setMfsTrxId('');
       setEditingSaleId(null);
       setEditingSale(null);
+      setScannedItem(null);
+      setBarcodeInput('');
       
       if (res.isOffline) {
         toast.info(language === 'bn' ? 'অফলাইনে সেল সম্পন্ন হয়েছে! ইন্টারনেট সংযোগ পেলে এটি অটো-সিঙ্ক হবে।' : 'Sale completed in offline mode! It will auto-sync when online.');
@@ -715,6 +717,7 @@ const POS = () => {
       name: item.name || 'Product',
       variant: item.variant || '',
       unit: item.unit || 'pcs',
+      mrp: item.mrp ? Number(item.mrp) : undefined,
       price: Number(item.price) || 0,
       quantity: Number(item.quantity) || 1,
       itemDiscount: Number(item.itemDiscount || item.item_discount) || 0,
@@ -872,6 +875,7 @@ const POS = () => {
                     setSplitCash('');
                     setSplitMfs('');
                     setPaymentType('Cash');
+                    setScannedItem(null);
                   }
                 }}
               >
@@ -1050,6 +1054,18 @@ const POS = () => {
                     <Check size={15} />
                     <span className="name">{scannedItem.name}</span>
                     <span className="meta">
+                      {(() => {
+                        const mVal = Number(scannedItem.mrp || inventory.find(p => p.id === scannedItem.id || p.product_code === scannedItem.id)?.mrp || 0);
+                        const pVal = Number(scannedItem.price || 0);
+                        if (mVal > pVal) {
+                          return (
+                            <span style={{ textDecoration: 'line-through', opacity: 0.65, fontSize: '0.85em', marginRight: '5px' }}>
+                              ৳{mVal.toLocaleString()}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                       ৳{Number(scannedItem.price).toLocaleString()}
                       {scannedItem.variant ? ` · ${scannedItem.variant}` : ''}
                       {' · '}{language === 'bn' ? 'স্টক' : 'stock'} {scannedItem.stock}
@@ -1155,7 +1171,21 @@ const POS = () => {
                         </button>
                       </div>
 
-                      <span className="cl-rate">× ৳{Number(item.price).toLocaleString()}</span>
+                      <span className="cl-rate">
+                        × {(() => {
+                          const mVal = Number(item.mrp || inventory.find(p => p.id === item.id || p.product_code === item.id)?.mrp || 0);
+                          const pVal = Number(item.price || 0);
+                          if (mVal > pVal) {
+                            return (
+                              <span style={{ textDecoration: 'line-through', opacity: 0.6, fontSize: '0.82em', marginRight: '3px' }}>
+                                ৳{mVal.toLocaleString()}
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                        ৳{Number(item.price).toLocaleString()}
+                      </span>
 
                       <span className="cl-disc">
                         <span>{language === 'bn' ? 'ছাড়' : 'Disc'}</span>
@@ -2019,6 +2049,7 @@ const POS = () => {
                         setSplitCash('');
                         setSplitMfs('');
                         setPaymentType('Cash');
+                        setScannedItem(null);
                       }}
                     >
                       ✕ {t(language, 'Cancel Edit')}
@@ -2036,7 +2067,7 @@ const POS = () => {
                     <h3>
                       {language === 'bn' ? 'থার্মাল ক্যাশ মেমো' : 'Thermal Receipt'} · {completedSale.invoiceId}
                     </h3>
-                    <button className="drawer-close-btn" onClick={() => setCompletedSale(null)}>
+                    <button className="drawer-close-btn" onClick={() => { setCompletedSale(null); setScannedItem(null); }}>
                       <X size={20} />
                     </button>
                   </div>
@@ -2086,7 +2117,7 @@ const POS = () => {
                   </div>
 
                   <div className="drawer-footer" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                    <button className="btn-outline" onClick={() => setCompletedSale(null)}>
+                    <button className="btn-outline" onClick={() => { setCompletedSale(null); setScannedItem(null); }}>
                       {language === 'bn' ? 'বন্ধ করুন' : 'Close'}
                     </button>
                     <div className="flex-align-gap" style={{ gap: '8px' }}>

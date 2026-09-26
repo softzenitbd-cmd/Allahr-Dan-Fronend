@@ -225,14 +225,29 @@ const getExpenseDetails = (log, staffList = [], expenseList = []) => {
  * For POS / Sales activities, the salesman's name should be displayed instead of the logged-in user (e.g. Admin).
  */
 const getLogActorInfo = (log, salesList = [], staffList = []) => {
-  if (!log) return { name: 'System', role: '', isSalesman: false, loginUser: null };
+  if (!log) {
+    return {
+      loginUser: 'System',
+      loginRole: '',
+      salesmanName: null,
+      staffName: null,
+      isSalesman: false,
+      isStaff: false,
+      name: 'System',
+      role: '',
+    };
+  }
 
+  const loginUser = log.user_name || 'System';
+  const loginRole = log.user_role || '';
+  const details = log.details || {};
+
+  let salesmanName = null;
   const isPosModule = log.module === 'POS' || /বিক্রয়|চালান|Sale|Invoice/i.test(log.description || '');
 
   if (isPosModule) {
-    const details = log.details || {};
     // 1. Check details.salesman_name or details.salesmanName
-    let salesmanName = details.salesman_name || details.salesmanName || null;
+    salesmanName = details.salesman_name || details.salesmanName || null;
 
     // 2. Check details.salesman if object or string
     if (!salesmanName && details.salesman) {
@@ -243,7 +258,7 @@ const getLogActorInfo = (log, salesList = [], staffList = []) => {
     if (!salesmanName && Array.isArray(salesList) && salesList.length > 0) {
       const invNum = details.invoice_number || details.invoiceId || details.invoice_id;
       if (invNum) {
-        const matched = salesList.find(s => s.invoice_number === invNum || s.id === invNum);
+        const matched = salesList.find((s) => s.invoice_number === invNum || s.id === invNum);
         if (matched) {
           salesmanName = matched.salesman_name || matched.salesman?.name || null;
         }
@@ -255,24 +270,43 @@ const getLogActorInfo = (log, salesList = [], staffList = []) => {
       const match = log.description.match(/(?:সেলসম্যান|বিক্রেতা|Salesman)[:\s]+([^\s,)]+)/i);
       if (match && match[1]) salesmanName = match[1];
     }
-
-    // 5. If salesman name was found and is valid:
-    if (salesmanName && salesmanName !== 'null' && salesmanName !== 'undefined' && String(salesmanName).trim()) {
-      const cleanName = String(salesmanName).trim();
-      return {
-        name: cleanName,
-        role: 'Salesman',
-        isSalesman: true,
-        loginUser: log.user_name && log.user_name !== cleanName ? log.user_name : null,
-      };
-    }
   }
 
+  if (salesmanName && (salesmanName === 'null' || salesmanName === 'undefined' || !String(salesmanName).trim())) {
+    salesmanName = null;
+  }
+  if (salesmanName) {
+    salesmanName = String(salesmanName).trim();
+  }
+
+  let staffName = null;
+  if (details.staff_name || details.staffName) {
+    staffName = details.staff_name || details.staffName;
+  } else if (log.module === 'EXPENSES' || /খরচ|Expense/i.test(log.description || '')) {
+    const expInfo = getExpenseDetails(log, staffList);
+    if (expInfo && expInfo.staffName) {
+      staffName = expInfo.staffName;
+    }
+  }
+  if (staffName && (staffName === 'null' || staffName === 'undefined' || !String(staffName).trim())) {
+    staffName = null;
+  }
+  if (staffName) {
+    staffName = String(staffName).trim();
+  }
+
+  const isSalesman = Boolean(salesmanName);
+  const isStaff = Boolean(staffName);
+
   return {
-    name: log.user_name || 'System',
-    role: log.user_role || '',
-    isSalesman: false,
-    loginUser: null,
+    loginUser,
+    loginRole,
+    salesmanName,
+    staffName,
+    isSalesman,
+    isStaff,
+    name: salesmanName || staffName || loginUser,
+    role: isSalesman ? 'Salesman' : isStaff ? 'Staff' : loginRole,
   };
 };
 
@@ -635,19 +669,36 @@ const ActivityLog = () => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.6rem', marginTop: '0.5rem' }}>
-              {/* Salesman */}
+              {/* Logged-in User & Salesman */}
               {(() => {
                 const actor = getLogActorInfo(log, sales, staff);
                 return (
-                  <div style={{ background: '#ecfdf5', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                    <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
-                      {language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman'}
+                  <>
+                    <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        {language === 'bn' ? 'লগইন ব্যবহারকারী' : 'Logged-in User'}
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1e293b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <User size={13} style={{ color: '#2563eb' }} />
+                        <span>{actor.loginUser}</span>
+                        {actor.loginRole && (
+                          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#4338ca', background: '#e0e7ff', padding: '1px 6px', borderRadius: '4px' }}>
+                            {actor.loginRole}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#065f46', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <User size={13} />
-                      <span>{actor.name}</span>
+
+                    <div style={{ background: '#ecfdf5', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
+                        {language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman'}
+                      </div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#065f46', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Tag size={12} />
+                        <span>{actor.salesmanName || actor.name}</span>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 );
               })()}
 
@@ -1216,18 +1267,19 @@ const ActivityLog = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: '170px' }}>{language === 'bn' ? 'তারিখ ও সময়' : 'Timestamp'}</th>
-                <th style={{ width: '130px' }}>{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
-                <th style={{ width: '130px' }}>{language === 'bn' ? 'মডিউল' : 'Module'}</th>
-                <th style={{ width: '160px' }}>{language === 'bn' ? 'ব্যবহারকারী' : 'User / Staff'}</th>
+                <th style={{ width: '160px' }}>{language === 'bn' ? 'তারিখ ও সময়' : 'Timestamp'}</th>
+                <th style={{ width: '120px' }}>{language === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                <th style={{ width: '110px' }}>{language === 'bn' ? 'মডিউল' : 'Module'}</th>
+                <th style={{ width: '160px' }}>{language === 'bn' ? 'লগইন ব্যবহারকারী' : 'Logged-in User'}</th>
+                <th style={{ width: '160px' }}>{language === 'bn' ? 'কর্মী / বিক্রেতা' : 'Staff / Salesman'}</th>
                 <th>{language === 'bn' ? 'কার্যকলাপের বিবরণ' : 'Activity Description'}</th>
-                <th style={{ width: '70px', textAlign: 'center' }}>{language === 'bn' ? 'ডিটেইল' : 'Details'}</th>
+                <th style={{ width: '65px', textAlign: 'center' }}>{language === 'bn' ? 'ডিটেইল' : 'Details'}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--primary)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--primary)' }}>
                     <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                       <RefreshCw size={20} className="animate-spin" />
                       <span>{language === 'bn' ? 'অ্যাক্টিভিটি হিস্ট্রি লোড হচ্ছে…' : 'Loading activity history…'}</span>
@@ -1236,7 +1288,7 @@ const ActivityLog = () => {
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <Info size={32} style={{ margin: '0 auto 0.5rem auto', opacity: 0.5 }} />
                     <p style={{ margin: 0 }}>
                       {language === 'bn' ? 'এই ফিল্টারে কোনো কার্যক্রমের রেকর্ড পাওয়া যায়নি।' : 'No activity records found matching this filter.'}
@@ -1248,6 +1300,8 @@ const ActivityLog = () => {
                   const badge = getActionBadge(log.action);
                   const modBadge = getModuleBadge(log.module);
                   const expInfo = getExpenseDetails(log, staff, expenses);
+                  const actor = getLogActorInfo(log, sales, staff);
+                  const isAdmin = actor.loginRole === 'Admin' || /Admin/i.test(actor.loginRole);
 
                   return (
                     <tr key={log.id} style={{ transition: 'background 0.15s ease' }}>
@@ -1297,56 +1351,149 @@ const ActivityLog = () => {
                         </span>
                       </td>
 
-                      {/* User / Salesman */}
+                      {/* Logged-in User */}
                       <td>
-                        {(() => {
-                          const actor = getLogActorInfo(log, sales, staff);
-                          return (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <div
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              background: isAdmin ? 'rgba(99, 102, 241, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                              color: isAdmin ? '#4f46e5' : '#2563eb',
+                              fontSize: '0.8rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: `1px solid ${isAdmin ? '#c7d2fe' : '#bfdbfe'}`,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {actor.loginUser.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {actor.loginUser}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                              <span
                                 style={{
-                                  width: '26px',
-                                  height: '26px',
-                                  borderRadius: '50%',
-                                  background: actor.isSalesman ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                                  color: actor.isSalesman ? '#059669' : '#2563eb',
-                                  fontSize: '0.78rem',
-                                  fontWeight: 700,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  border: `1px solid ${actor.isSalesman ? '#86efac' : '#bfdbfe'}`,
+                                  fontSize: '0.67rem',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontWeight: 600,
+                                  background: isAdmin ? '#e0e7ff' : '#f1f5f9',
+                                  color: isAdmin ? '#3730a3' : '#475569',
+                                  border: `1px solid ${isAdmin ? '#c7d2fe' : '#e2e8f0'}`,
+                                  display: 'inline-block',
+                                  lineHeight: 1.2,
                                 }}
                               >
-                                {actor.name.charAt(0).toUpperCase()}
+                                {actor.loginRole || 'User'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Staff / Salesman */}
+                      <td>
+                        {actor.isSalesman ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#059669',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid #86efac',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {actor.salesmanName.charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#065f46', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {actor.salesmanName}
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                  {actor.name}
-                                </div>
-                                <div
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                <span
                                   style={{
-                                    fontSize: '0.72rem',
-                                    color: actor.isSalesman ? '#059669' : 'var(--text-muted)',
-                                    fontWeight: actor.isSalesman ? 700 : 500,
-                                    display: 'flex',
+                                    fontSize: '0.67rem',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 700,
+                                    background: '#dcfce7',
+                                    color: '#15803d',
+                                    border: '1px solid #86efac',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '3px',
+                                    lineHeight: 1.2,
                                   }}
                                 >
-                                  {actor.isSalesman ? (
-                                    <>
-                                      <Tag size={10} />
-                                      <span>{language === 'bn' ? 'সেলসম্যান' : 'Salesman'}</span>
-                                    </>
-                                  ) : (
-                                    actor.role || ''
-                                  )}
-                                </div>
+                                  <Tag size={9} />
+                                  <span>{language === 'bn' ? 'সেলসম্যান' : 'Salesman'}</span>
+                                </span>
                               </div>
                             </div>
-                          );
-                        })()}
+                          </div>
+                        ) : actor.isStaff || (expInfo && expInfo.staffName) ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '50%',
+                                background: '#f3e8ff',
+                                color: '#7e22ce',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid #d8b4fe',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {(actor.staffName || expInfo.staffName).charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#6b21a8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {actor.staffName || expInfo.staffName}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.67rem',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 600,
+                                    background: '#f3e8ff',
+                                    color: '#7e22ce',
+                                    border: '1px solid #d8b4fe',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  <User size={9} />
+                                  <span>{language === 'bn' ? 'কর্মী' : 'Staff'}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-subtle)', fontSize: '0.85rem' }}>—</span>
+                        )}
                       </td>
 
                       {/* Description */}
@@ -1719,24 +1866,35 @@ const ActivityLog = () => {
                 {(() => {
                   const actor = getLogActorInfo(selectedLog, sales, staff);
                   return (
-                    <div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        {actor.isSalesman
-                          ? (language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman')
-                          : (language === 'bn' ? 'ব্যবহারকারী' : 'User')}
+                    <>
+                      <div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          {language === 'bn' ? 'লগইন ব্যবহারকারী' : 'Logged-in User'}
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: '2px', color: '#1e293b' }}>
+                          {actor.loginUser}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {actor.loginRole || 'User'}
+                        </div>
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: '2px', color: actor.isSalesman ? '#059669' : 'inherit' }}>
-                        {actor.name}
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: actor.isSalesman ? '#059669' : 'var(--text-muted)', fontWeight: actor.isSalesman ? 600 : 400 }}>
-                        {actor.isSalesman ? (language === 'bn' ? 'সেলসম্যান' : 'Salesman') : (selectedLog.user_role || '')}
-                        {actor.loginUser && (
-                          <span style={{ color: 'var(--text-subtle)', marginLeft: '4px', fontSize: '0.68rem' }}>
-                            ({language === 'bn' ? 'লগইন' : 'login'}: {actor.loginUser})
-                          </span>
-                        )}
-                      </div>
-                    </div>
+
+                      {(actor.isSalesman || actor.isStaff) && (
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: actor.isSalesman ? '#059669' : '#7e22ce' }}>
+                            {actor.isSalesman
+                              ? (language === 'bn' ? 'সেলসম্যান (বিক্রেতা)' : 'Salesman')
+                              : (language === 'bn' ? 'কর্মী' : 'Staff')}
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: '2px', color: actor.isSalesman ? '#065f46' : '#6b21a8' }}>
+                            {actor.salesmanName || actor.staffName}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: actor.isSalesman ? '#059669' : '#7e22ce', fontWeight: 600 }}>
+                            {actor.isSalesman ? (language === 'bn' ? 'সেলসম্যান' : 'Salesman') : (language === 'bn' ? 'স্টাফ' : 'Staff')}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
                 <div>
@@ -1803,20 +1961,29 @@ const ActivityLog = () => {
                 <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Time</th>
                 <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Action</th>
                 <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Module</th>
-                <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>User</th>
+                <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Login User</th>
+                <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Staff / Salesman</th>
                 <th style={{ padding: '8px', textAlign: 'left', border: '1px solid #e2e8f0' }}>Description</th>
               </tr>
             </thead>
             <tbody>
-              {logs.map((l) => (
-                <tr key={l.id}>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{formatLogTime(l.created_at)}</td>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}>{l.action}</td>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.module}</td>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{getLogActorInfo(l, sales, staff).name}</td>
-                  <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.description}</td>
-                </tr>
-              ))}
+              {logs.map((l) => {
+                const act = getLogActorInfo(l, sales, staff);
+                return (
+                  <tr key={l.id}>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{formatLogTime(l.created_at)}</td>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontWeight: 'bold' }}>{l.action}</td>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.module}</td>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>
+                      {act.loginUser} {act.loginRole ? `(${act.loginRole})` : ''}
+                    </td>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>
+                      {act.salesmanName ? `${act.salesmanName} (Salesman)` : (act.staffName ? `${act.staffName} (Staff)` : '—')}
+                    </td>
+                    <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{l.description}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

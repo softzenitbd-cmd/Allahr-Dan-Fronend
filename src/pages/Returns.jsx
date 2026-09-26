@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { RefreshCcw, Search, PackageMinus, PackagePlus, List, Plus, Printer, Eye, Edit, Trash2 } from 'lucide-react';
+import { RefreshCcw, Search, PackageMinus, PackagePlus, List, Plus, Printer, Eye, Edit, Trash2, ChevronDown, X, Check, Box } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
@@ -20,18 +20,50 @@ const Returns = () => {
   const invoiceFromLink = searchParams.get('invoice') || '';
   const bn = language === 'bn';
 
-  // Returns are judged against the latest sales and returns, never a cached
-  // copy: a list from a minute ago can miss the invoice just rung up, or the
-  // return just taken.
-  useEffect(() => { refresh('sales', 'returns'); }, [refresh]);
+  // Returns are judged against the latest sales, returns, and inventory
+  useEffect(() => { refresh('sales', 'returns', 'inventory'); }, [refresh]);
 
   // New Return State
   const [returnType, setReturnType] = useState('Customer');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [product, setProduct] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+  const productDropdownRef = useRef(null);
   const [quantity, setQuantity] = useState(1);
   const [reason, setReason] = useState('');
   const [referenceId, setReferenceId] = useState('');
+
+  // Close product search dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (productDropdownRef.current && !productDropdownRef.current.contains(e.target)) {
+        setIsProductDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Currently selected product details
+  const selectedProductItem = useMemo(() => {
+    if (!product) return null;
+    return (inventory || []).find(i => String(i.id) === String(product) || String(i.product_code) === String(product)) || null;
+  }, [inventory, product]);
+
+  // Filtered products for supplier return search
+  const filteredProducts = useMemo(() => {
+    const list = inventory || [];
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return list.slice(0, 100);
+    return list.filter(item => {
+      const name = String(item.name || '').toLowerCase();
+      const code = String(item.product_code || item.id || '').toLowerCase();
+      const cat = String(item.category || item.category_name || '').toLowerCase();
+      const variant = String(item.variant || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || cat.includes(q) || variant.includes(q);
+    }).slice(0, 100);
+  }, [inventory, productSearch]);
 
   // History State
   const [startDate, setStartDate] = useState('');
@@ -45,7 +77,7 @@ const Returns = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!product) {
-      toast.error('Please select a product');
+      toast.error(bn ? 'দয়া করে একটি পণ্য নির্বাচন করুন।' : 'Please select a product');
       return;
     }
 
@@ -61,6 +93,8 @@ const Returns = () => {
     if (res?.ok) {
       toast.success(`${returnType} Return/Reject processed successfully! Stock has been adjusted.`);
       setProduct('');
+      setProductSearch('');
+      setIsProductDropdownOpen(false);
       setQuantity(1);
       setReason('');
       setReferenceId('');
@@ -88,6 +122,8 @@ const Returns = () => {
     if (window.confirm('Editing will reverse this return from history and load it into the new entry form. Do you want to continue?')) {
       setReturnType(ret.returnType);
       setProduct(ret.productId);
+      setProductSearch('');
+      setIsProductDropdownOpen(false);
       setQuantity(ret.quantity);
       setReason(ret.reason);
       setReferenceId(ret.referenceId || '');
@@ -135,7 +171,12 @@ const Returns = () => {
             <button
               type="button"
               className={returnType === 'Customer' ? 'active' : ''}
-              onClick={() => setReturnType('Customer')}
+              onClick={() => {
+                setReturnType('Customer');
+                setProduct('');
+                setProductSearch('');
+                setIsProductDropdownOpen(false);
+              }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
             >
               <PackagePlus size={16} /> {t(language, 'Customer Return (In)')}
@@ -143,7 +184,12 @@ const Returns = () => {
             <button
               type="button"
               className={returnType === 'Supplier' ? 'active' : ''}
-              onClick={() => setReturnType('Supplier')}
+              onClick={() => {
+                setReturnType('Supplier');
+                setProduct('');
+                setProductSearch('');
+                setIsProductDropdownOpen(false);
+              }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
             >
               <PackageMinus size={16} /> {t(language, 'Supplier Return (Out)')}
@@ -180,14 +226,269 @@ const Returns = () => {
               />
             </div>
 
-            <div className="form-group mb-4">
-              <label>{t(language, 'Item Name' || 'Product')}</label>
-              <select value={product} onChange={(e) => setProduct(e.target.value)} required>
-                <option value="">Select a product...</option>
-                {inventory.map(item => (
-                  <option key={item.id} value={item.id}>{item.name} (Stock: {item.stock})</option>
-                ))}
-              </select>
+            {/* Searchable Product Dropdown for Supplier Return */}
+            <div className="form-group mb-4" ref={productDropdownRef}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem' }}>
+                <label style={{ margin: 0, fontWeight: 600 }}>
+                  {t(language, 'Item Name' || 'Product')} *
+                </label>
+                {selectedProductItem && (
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {bn ? 'বর্তমান স্টক:' : 'Current Stock:'}{' '}
+                    <strong style={{ color: selectedProductItem.stock > 0 ? '#10b981' : '#ef4444' }}>
+                      {selectedProductItem.stock} {selectedProductItem.unit || 'pcs'}
+                    </strong>
+                  </span>
+                )}
+              </div>
+
+              {selectedProductItem && !isProductDropdownOpen ? (
+                /* Selected Product Display Card */
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: 'var(--radius-md, 8px)',
+                  border: '1.5px solid var(--primary)',
+                  background: 'var(--primary-soft, #f0fdf4)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: 'var(--primary)',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <Box size={18} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {selectedProductItem.name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px', fontSize: '0.75rem' }}>
+                        {(selectedProductItem.product_code || selectedProductItem.id) && (
+                          <span style={{ background: 'var(--bg-card, #e2e8f0)', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            #{selectedProductItem.product_code || selectedProductItem.id}
+                          </span>
+                        )}
+                        <span style={{
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                          background: selectedProductItem.stock > 0 ? '#dcfce7' : '#fee2e2',
+                          color: selectedProductItem.stock > 0 ? '#15803d' : '#b91c1c'
+                        }}>
+                          {bn ? 'স্টক:' : 'Stock:'} {selectedProductItem.stock} {selectedProductItem.unit || 'pcs'}
+                        </span>
+                        {selectedProductItem.category && (
+                          <span style={{ color: 'var(--text-muted)' }}>• {selectedProductItem.category}</span>
+                        )}
+                        {selectedProductItem.variant && (
+                          <span style={{ color: 'var(--text-muted)' }}>({selectedProductItem.variant})</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProductDropdownOpen(true);
+                        setProductSearch('');
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        color: 'var(--primary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {bn ? 'বদলান' : 'Change'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProduct('');
+                        setProductSearch('');
+                        setIsProductDropdownOpen(true);
+                      }}
+                      title={bn ? 'পণ্য মুছুন' : 'Clear selection'}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Search Input & Dropdown Menu */
+                <div style={{ position: 'relative' }}>
+                  <div style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}>
+                    <Search size={16} style={{ position: 'absolute', left: '12px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                    <input
+                      type="text"
+                      className="w-full"
+                      style={{ paddingLeft: '36px', paddingRight: '60px' }}
+                      placeholder={bn ? 'পণ্য খুঁজুন (নাম, কোড বা বারকোড দিয়ে)...' : 'Search product by name, code or barcode...'}
+                      value={productSearch}
+                      onChange={(e) => {
+                        setProductSearch(e.target.value);
+                        setIsProductDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsProductDropdownOpen(true)}
+                    />
+                    <div style={{ position: 'absolute', right: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {productSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setProductSearch('')}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsProductDropdownOpen(!isProductDropdownOpen)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                      >
+                        <ChevronDown size={16} style={{ transform: isProductDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dropdown Menu */}
+                  {isProductDropdownOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: 0,
+                      zIndex: 100,
+                      background: 'var(--bg-card, #ffffff)',
+                      border: '1px solid var(--border-color, #e2e8f0)',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+                      maxHeight: '280px',
+                      overflowY: 'auto',
+                    }}>
+                      <div style={{
+                        padding: '6px 12px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: 'var(--text-muted)',
+                        background: 'var(--bg-input, #f8fafc)',
+                        borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span>{bn ? `পণ্য তালিকা (${filteredProducts.length}টি)` : `Products Found (${filteredProducts.length})`}</span>
+                        {product && (
+                          <button
+                            type="button"
+                            onClick={() => { setIsProductDropdownOpen(false); setProductSearch(''); }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600 }}
+                          >
+                            {bn ? 'বাতিল' : 'Cancel'}
+                          </button>
+                        )}
+                      </div>
+
+                      {filteredProducts.length === 0 ? (
+                        <div style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          {bn ? 'কোনো পণ্য পাওয়া যায়নি।' : 'No products found.'}
+                        </div>
+                      ) : (
+                        filteredProducts.map((item) => {
+                          const isSelected = String(item.id) === String(product);
+                          return (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                setProduct(item.id);
+                                setIsProductDropdownOpen(false);
+                                setProductSearch('');
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                                background: isSelected ? 'var(--primary-soft, #f0fdf4)' : 'transparent',
+                                transition: 'background 0.15s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
+                                <div style={{ fontWeight: isSelected ? 700 : 600, fontSize: '0.85rem', color: isSelected ? 'var(--primary)' : 'var(--text-main)' }}>
+                                  {item.name}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  {(item.product_code || item.id) && (
+                                    <span style={{ background: 'var(--bg-input, #e2e8f0)', padding: '0 5px', borderRadius: '3px', fontWeight: 500 }}>
+                                      #{item.product_code || item.id}
+                                    </span>
+                                  )}
+                                  {item.category && <span>{item.category}</span>}
+                                  {item.variant && <span>({item.variant})</span>}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <span style={{
+                                  padding: '2px 7px',
+                                  borderRadius: '10px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  background: item.stock > 0 ? '#dcfce7' : '#fee2e2',
+                                  color: item.stock > 0 ? '#15803d' : '#b91c1c'
+                                }}>
+                                  {bn ? 'স্টক:' : 'Stock:'} {item.stock} {item.unit || ''}
+                                </span>
+                                {isSelected && <Check size={16} style={{ color: 'var(--primary)' }} />}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="form-group mb-4">
@@ -199,6 +500,13 @@ const Returns = () => {
                 onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
                 required
               />
+              {selectedProductItem && quantity > selectedProductItem.stock && (
+                <small style={{ color: '#d97706', fontSize: '0.75rem', marginTop: '3px', display: 'block' }}>
+                  {bn
+                    ? `সতর্কতা: বর্তমান স্টকের চেয়ে (${selectedProductItem.stock}) ফেরতের পরিমাণ বেশি।`
+                    : `Warning: Return quantity exceeds current stock (${selectedProductItem.stock}).`}
+                </small>
+              )}
             </div>
 
             <div className="form-group mb-4">

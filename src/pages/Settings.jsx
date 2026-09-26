@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
 import { COLOR_PLATE } from '../utils/accent';
-import { Check, RotateCcw, ShieldCheck, CheckSquare, Square, Save, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Check, RotateCcw, ShieldCheck, CheckSquare, Square, Save, Lock, Eye, EyeOff, KeyRound, User } from 'lucide-react';
 import ColorPicker from '../components/ColorPicker';
 import { DASHBOARD_CARDS, cardColor } from '../utils/dashboardCards';
 import './Settings.css';
@@ -60,6 +60,8 @@ const Settings = () => {
 
   const user = useStore((state) => state.user);
   const changePassword = useStore((state) => state.changePassword);
+  const [adminName, setAdminName] = useState(user?.name || '');
+  const [adminUsername, setAdminUsername] = useState(user?.username || '');
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
@@ -68,34 +70,69 @@ const Settings = () => {
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
 
+  useEffect(() => {
+    if (user?.name) setAdminName(user.name);
+    if (user?.username) setAdminUsername(user.username);
+  }, [user?.name, user?.username]);
+
   const handlePasswordChangeSubmit = async (e) => {
     e.preventDefault();
-    if (!oldPwd.trim()) {
-      toast.warning(bn ? 'বর্তমান পাসওয়ার্ড দিন।' : 'Please enter current password.');
+    const trimmedName = adminName.trim();
+    const trimmedUsername = adminUsername.trim();
+
+    if (!trimmedUsername) {
+      toast.warning(bn ? 'ইউজারনেম খালি রাখা যাবে না।' : 'Username cannot be empty.');
       return;
     }
-    if (!newPwd.trim()) {
-      toast.warning(bn ? 'নতুন পাসওয়ার্ড দিন।' : 'Please enter new password.');
+
+    const isChangingPwd = Boolean(newPwd.trim() || confirmPwd.trim() || oldPwd.trim());
+
+    if (isChangingPwd) {
+      if (!oldPwd.trim()) {
+        toast.warning(bn ? 'পাসওয়ার্ড পরিবর্তনের জন্য বর্তমান পাসওয়ার্ড দিন।' : 'Please enter current password to set a new password.');
+        return;
+      }
+      if (!newPwd.trim()) {
+        toast.warning(bn ? 'নতুন পাসওয়ার্ড দিন।' : 'Please enter new password.');
+        return;
+      }
+      if (newPwd.length < 4) {
+        toast.warning(bn ? 'নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।' : 'New password must be at least 4 characters.');
+        return;
+      }
+      if (newPwd !== confirmPwd) {
+        toast.error(bn ? 'নতুন পাসওয়ার্ড ও কনফার্ম পাসওয়ার্ড মিলছে না।' : 'Passwords do not match.');
+        return;
+      }
+    }
+
+    const nameChanged = trimmedName !== (user?.name || '').trim();
+    const usernameChanged = trimmedUsername.toLowerCase() !== (user?.username || '').toLowerCase();
+
+    if (!nameChanged && !usernameChanged && !isChangingPwd) {
+      toast.info(bn ? 'কোনো পরিবর্তন করা হয়নি।' : 'No changes detected.');
       return;
     }
-    if (newPwd.length < 4) {
-      toast.warning(bn ? 'নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।' : 'New password must be at least 4 characters.');
-      return;
-    }
-    if (newPwd !== confirmPwd) {
-      toast.error(bn ? 'নতুন পাসওয়ার্ড ও কনফার্ম পাসওয়ার্ড মিলছে না।' : 'Passwords do not match.');
-      return;
-    }
+
     setSavingPwd(true);
-    const res = await changePassword(oldPwd.trim(), newPwd.trim(), confirmPwd.trim());
+    const res = await changePassword(
+      isChangingPwd ? oldPwd.trim() : undefined,
+      isChangingPwd ? newPwd.trim() : undefined,
+      isChangingPwd ? confirmPwd.trim() : undefined,
+      {
+        name: trimmedName,
+        username: trimmedUsername,
+      }
+    );
     setSavingPwd(false);
+
     if (res.ok) {
-      toast.success(res.message || (bn ? 'পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!' : 'Password changed successfully!'));
+      toast.success(res.message || (bn ? 'প্রোফাইল তথ্য সফলভাবে সংরক্ষণ করা হয়েছে!' : 'Profile updated successfully!'));
       setOldPwd('');
       setNewPwd('');
       setConfirmPwd('');
     } else {
-      toast.error(res.message || (bn ? 'পাসওয়ার্ড পরিবর্তন ব্যর্থ হয়েছে।' : 'Failed to change password.'));
+      toast.error(res.message || (bn ? 'আপডেট ব্যর্থ হয়েছে।' : 'Update failed.'));
     }
   };
 
@@ -656,76 +693,114 @@ const Settings = () => {
           <div>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
               <Lock size={20} style={{ color: 'var(--primary)' }} />
-              {bn ? 'নিরাপত্তা ও পাসওয়ার্ড পরিবর্তন' : 'Security & Change Password'}
+              {bn ? 'নিরাপত্তা, ইউজার ও পাসওয়ার্ড পরিবর্তন' : 'Admin Profile & Security Settings'}
             </h3>
             <p className="text-muted" style={{ margin: '0.35rem 0 0 0', fontSize: '0.85rem' }}>
               {bn
-                ? 'আপনার একাউন্টের লগইন পাসওয়ার্ড সুরক্ষিত রাখতে এখান থেকে পরিবর্তন করতে পারেন।'
-                : 'Keep your login password secure by updating it regularly.'}
+                ? 'এডমিন একাউন্টের নাম, লগইন ইউজারনেম এবং পাসওয়ার্ড এখান থেকে পরিবর্তন করতে পারেন।'
+                : 'Update admin name, login username, and secure your login password.'}
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-              {bn ? 'ব্যবহারকারী' : 'User'}: <strong>{user?.username}</strong> ({user?.role || 'Admin'})
+              {bn ? 'বর্তমান ইউজার' : 'Current User'}: <strong>{user?.username}</strong> ({user?.role || 'Admin'})
             </span>
           </div>
         </div>
 
-        <form onSubmit={handlePasswordChangeSubmit} style={{ maxWidth: '560px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
-                {bn ? 'বর্তমান পাসওয়ার্ড *' : 'Current Password *'}
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type={showOldPwd ? 'text' : 'password'}
-                  required
-                  className="w-full"
-                  placeholder={bn ? 'আপনার বর্তমান পাসওয়ার্ড দিন' : 'Enter current password'}
-                  value={oldPwd}
-                  onChange={(e) => setOldPwd(e.target.value)}
-                  style={{ paddingRight: '2.5rem', height: '42px', boxSizing: 'border-box' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowOldPwd(!showOldPwd)}
-                  style={{
-                    position: 'absolute',
-                    right: '10px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: '#94a3b8',
-                    padding: 0,
-                  }}
-                >
-                  {showOldPwd ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
+        <form onSubmit={handlePasswordChangeSubmit} style={{ maxWidth: '640px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Admin Name & Username inputs */}
+            <div style={{
+              background: 'var(--bg-muted, #f8fafc)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              borderRadius: 'var(--radius-md, 8px)',
+              padding: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                <User size={16} style={{ color: 'var(--primary)' }} />
+                <span>{bn ? 'এডমিন প্রোফাইল তথ্য' : 'Admin Profile Info'}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    {bn ? 'এডমিনের নাম (Full Name) *' : 'Full Name *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full"
+                    placeholder={bn ? 'এডমিনের নাম দিন' : 'Enter full name'}
+                    value={adminName}
+                    onChange={(e) => setAdminName(e.target.value)}
+                    style={{ height: '42px', boxSizing: 'border-box' }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '3px', fontSize: '0.72rem' }}>
+                    {bn ? 'রসিদ ও সিস্টেমে প্রদর্শিত নাম' : 'Displayed on receipts and system logs'}
+                  </small>
+                </div>
+
+                <div>
+                  <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    {bn ? 'লগইন ইউজারনেম (Username) *' : 'Login Username *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full"
+                    placeholder={bn ? 'লগইন ইউজারনেম দিন' : 'Enter login username'}
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    style={{ height: '42px', boxSizing: 'border-box' }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '3px', fontSize: '0.72rem' }}>
+                    {bn ? 'লগইন করার সময় এই ইউজারনেম দিতে হবে' : 'Used when logging in to the system'}
+                  </small>
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+            {/* Password Section */}
+            <div style={{
+              background: 'var(--bg-muted, #f8fafc)',
+              border: '1px solid var(--border-color, #e2e8f0)',
+              borderRadius: 'var(--radius-md, 8px)',
+              padding: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  <Lock size={16} style={{ color: 'var(--primary)' }} />
+                  <span>{bn ? 'পাসওয়ার্ড পরিবর্তন' : 'Password Change'}</span>
+                </div>
+                <small className="text-muted" style={{ display: 'block', marginTop: '2px', fontSize: '0.75rem' }}>
+                  {bn ? '(পাসওয়ার্ড পরিবর্তন করতে না চাইলে এই ঘরগুলো খালি রাখুন)' : '(Leave blank if you do not want to change password)'}
+                </small>
+              </div>
+
               <div>
                 <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
-                  {bn ? 'নতুন পাসওয়ার্ড *' : 'New Password *'}
+                  {bn ? 'বর্তমান পাসওয়ার্ড' : 'Current Password'} {newPwd ? '*' : ''}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
-                    type={showNewPwd ? 'text' : 'password'}
-                    required
-                    minLength={4}
+                    type={showOldPwd ? 'text' : 'password'}
                     className="w-full"
-                    placeholder={bn ? 'কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড' : 'Min 4 characters'}
-                    value={newPwd}
-                    onChange={(e) => setNewPwd(e.target.value)}
+                    placeholder={bn ? 'আপনার বর্তমান পাসওয়ার্ড দিন' : 'Enter current password'}
+                    value={oldPwd}
+                    onChange={(e) => setOldPwd(e.target.value)}
                     style={{ paddingRight: '2.5rem', height: '42px', boxSizing: 'border-box' }}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowNewPwd(!showNewPwd)}
+                    onClick={() => setShowOldPwd(!showOldPwd)}
                     style={{
                       position: 'absolute',
                       right: '10px',
@@ -738,67 +813,102 @@ const Settings = () => {
                       padding: 0,
                     }}
                   >
-                    {showNewPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                    {showOldPwd ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
               </div>
 
-              <div>
-                <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
-                  {bn ? 'পাসওয়ার্ড নিশ্চিত করুন *' : 'Confirm Password *'}
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showConfirmPwd ? 'text' : 'password'}
-                    required
-                    className="w-full"
-                    placeholder={bn ? 'পুনরায় নতুন পাসওয়ার্ড লিখুন' : 'Re-enter new password'}
-                    value={confirmPwd}
-                    onChange={(e) => setConfirmPwd(e.target.value)}
-                    style={{ paddingRight: '2.5rem', height: '42px', boxSizing: 'border-box' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPwd(!showConfirmPwd)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: '#94a3b8',
-                      padding: 0,
-                    }}
-                  >
-                    {showConfirmPwd ? <EyeOff size={17} /> : <Eye size={17} />}
-                  </button>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    {bn ? 'নতুন পাসওয়ার্ড' : 'New Password'}
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNewPwd ? 'text' : 'password'}
+                      minLength={4}
+                      className="w-full"
+                      placeholder={bn ? 'কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড' : 'Min 4 characters'}
+                      value={newPwd}
+                      onChange={(e) => setNewPwd(e.target.value)}
+                      style={{ paddingRight: '2.5rem', height: '42px', boxSizing: 'border-box' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPwd(!showNewPwd)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#94a3b8',
+                        padding: 0,
+                      }}
+                    >
+                      {showNewPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-muted text-sm" style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    {bn ? 'পাসওয়ার্ড নিশ্চিত করুন' : 'Confirm Password'}
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showConfirmPwd ? 'text' : 'password'}
+                      className="w-full"
+                      placeholder={bn ? 'পুনরায় নতুন পাসওয়ার্ড লিখুন' : 'Re-enter new password'}
+                      value={confirmPwd}
+                      onChange={(e) => setConfirmPwd(e.target.value)}
+                      style={{ paddingRight: '2.5rem', height: '42px', boxSizing: 'border-box' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#94a3b8',
+                        padding: 0,
+                      }}
+                    >
+                      {showConfirmPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {confirmPwd && newPwd && (
+                <div style={{ fontSize: '0.8rem' }}>
+                  {confirmPwd === newPwd ? (
+                    <span style={{ color: '#16a34a' }}>✓ {bn ? 'পাসওয়ার্ড মিলেছে' : 'Passwords match'}</span>
+                  ) : (
+                    <span style={{ color: '#dc2626' }}>✗ {bn ? 'পাসওয়ার্ড মিলছে না' : 'Passwords do not match'}</span>
+                  )}
+                </div>
+              )}
             </div>
-
-            {confirmPwd && newPwd && (
-              <div style={{ fontSize: '0.8rem' }}>
-                {confirmPwd === newPwd ? (
-                  <span style={{ color: '#16a34a' }}>✓ {bn ? 'পাসওয়ার্ড মিলেছে' : 'Passwords match'}</span>
-                ) : (
-                  <span style={{ color: '#dc2626' }}>✗ {bn ? 'পাসওয়ার্ড মিলছে না' : 'Passwords do not match'}</span>
-                )}
-              </div>
-            )}
 
             <div>
               <button
                 type="submit"
                 className="btn-primary"
                 disabled={savingPwd}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.4rem' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1.6rem', fontSize: '0.9rem', fontWeight: 600 }}
               >
-                <Lock size={15} />
+                <Save size={16} />
                 {savingPwd
-                  ? (bn ? 'পরিবর্তন হচ্ছে…' : 'Updating…')
-                  : (bn ? 'পাসওয়ার্ড সংরক্ষণ করুন' : 'Change Password')}
+                  ? (bn ? 'সংরক্ষণ হচ্ছে…' : 'Saving…')
+                  : (bn ? 'এডমিন প্রোফাইল সংরক্ষণ করুন' : 'Save Admin Profile')}
               </button>
             </div>
           </div>

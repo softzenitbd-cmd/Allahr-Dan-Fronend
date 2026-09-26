@@ -174,17 +174,27 @@ const useStore = create(
 
       login: (userData) => set({ user: userData }),
 
-      changePassword: async (oldPassword, newPassword, confirmPassword) => {
+      changePassword: async (oldPassword, newPassword, confirmPassword, extra = {}) => {
         try {
           const res = await AuthService.changePassword({
             oldPassword,
             newPassword,
             confirmPassword,
+            username: extra?.username,
+            name: extra?.name,
             language: get().language,
           });
-          return { ok: true, message: res?.message || 'Password changed successfully.' };
+          if (res?.user) {
+            set((state) => ({
+              user: {
+                ...state.user,
+                ...res.user,
+              }
+            }));
+          }
+          return { ok: true, message: res?.message || 'Updated successfully.', user: res?.user };
         } catch (error) {
-          const errMsg = error?.response?.data?.error || error?.response?.data?.message || 'Failed to change password.';
+          const errMsg = error?.response?.data?.error || error?.response?.data?.message || 'Failed to update.';
           return fail(error, errMsg);
         }
       },
@@ -930,6 +940,7 @@ const useStore = create(
         try {
           const res = await LedgerService.settleDue({
             targetId: customerId, type: 'Customer', amount,
+            discount: opts.discount !== undefined && opts.discount !== null ? Number(opts.discount) : undefined,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
             method: opts.method || undefined,
             notes: opts.notes || undefined,
@@ -945,6 +956,7 @@ const useStore = create(
         try {
           const res = await LedgerService.settleDue({
             targetId: supplierId, type: 'Supplier', amount,
+            discount: opts.discount !== undefined && opts.discount !== null ? Number(opts.discount) : undefined,
             date: dateStr ? String(dateStr).split('T')[0] : undefined,
             method: opts.method || undefined,
             notes: opts.notes || undefined,

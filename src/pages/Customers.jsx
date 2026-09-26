@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History, Receipt, X } from 'lucide-react';
+import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History, Receipt, X, Tag, DollarSign } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
@@ -40,7 +40,7 @@ const Customers = () => {
   const [activeTab, setActiveTab] = useState('Customer'); // Customer (list), Due, or Deleted
   const [deletedType, setDeletedType] = useState('Customer'); // Customer or Supplier in Deleted tab
   const [smsModal, setSmsModal] = useState({ show: false, target: null, message: '' });
-  const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
+  const [settleModal, setSettleModal] = useState({ show: false, target: null, amount: '', discount: '', date: '', method: 'Cash', notes: '' });
   const [receiptModal, setReceiptModal] = useState({ show: false, settlement: null, party: null });
   const [selectedPerson, setSelectedPerson] = useState(null);
 
@@ -202,14 +202,31 @@ const Customers = () => {
 
   const handleSettle = async (e) => {
     e.preventDefault();
-    const amount = parseFloat(settleModal.amount);
-    if (!amount || amount <= 0) {
-      toast.error(language === 'bn' ? 'অনুগ্রহ করে সঠিক পরিমাণ লিখুন।' : 'Please enter a valid amount to settle.');
+    const targetObj = { ...settleModal.target };
+    const previousDue = Number(targetObj.due || 0);
+    const amount = parseFloat(settleModal.amount) || 0;
+    const discount = parseFloat(settleModal.discount) || 0;
+    const totalSettle = Math.round((amount + discount + Number.EPSILON) * 100) / 100;
+
+    if (totalSettle <= 0) {
+      toast.error(language === 'bn' ? 'অনুগ্রহ করে পরিশোধের পরিমাণ অথবা ছাড় লিখুন।' : 'Please enter an amount to settle or discount.');
       return;
     }
 
-    const previousDue = Number(settleModal.target?.due || 0);
-    const targetObj = { ...settleModal.target };
+    if (amount < 0 || discount < 0) {
+      toast.error(language === 'bn' ? 'টাকার পরিমাণ বা ছাড় ঋণাত্মক হতে পারবে না।' : 'Amount or discount cannot be negative.');
+      return;
+    }
+
+    if (totalSettle > previousDue + 0.005) {
+      toast.error(
+        language === 'bn'
+          ? `মোট সমন্বয় (৳${totalSettle.toLocaleString()}) বর্তমান বকেয়া (৳${previousDue.toLocaleString()})-এর চেয়ে বেশি হতে পারবে না।`
+          : `Total settlement (৳${totalSettle}) cannot exceed current due (৳${previousDue}).`
+      );
+      return;
+    }
+
     const dateToUse = settleModal.date || new Date().toISOString().split('T')[0];
     const methodToUse = settleModal.method || 'Cash';
     const notesToUse = settleModal.notes || '';
@@ -217,21 +234,29 @@ const Customers = () => {
     const isCustomer = activeTab === 'Customer' || (!activeTab.includes('Supplier') && !targetObj.supplier_code);
 
     const res = isCustomer
-      ? await settleCustomerDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse })
-      : await settleSupplierDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse });
+      ? await settleCustomerDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse, discount })
+      : await settleSupplierDue(targetObj.id, amount, dateToUse, { method: methodToUse, notes: notesToUse, discount });
 
     if (res?.ok) {
-      toast.success(
-        language === 'bn'
-          ? `${targetObj.name}-এর ৳${amount.toLocaleString()} সফলভাবে সমন্বয় করা হয়েছে!`
-          : `Successfully settled ৳${amount.toLocaleString()} for ${targetObj.name}`
-      );
+      const successMsg = discount > 0
+        ? (language === 'bn'
+            ? `${targetObj.name}-এর ৳${amount.toLocaleString()} পরিশোধ ও ৳${discount.toLocaleString()} ছাড় সহ সফলভাবে সমন্বয় করা হয়েছে!`
+            : `Successfully settled ৳${amount.toLocaleString()} with ৳${discount.toLocaleString()} discount for ${targetObj.name}!`)
+        : (language === 'bn'
+            ? `${targetObj.name}-এর ৳${amount.toLocaleString()} সফলভাবে সমন্বয় করা হয়েছে!`
+            : `Successfully settled ৳${amount.toLocaleString()} for ${targetObj.name}!`);
+
+      toast.success(successMsg);
+
+      const remainingDue = Math.max(0, Math.round((previousDue - totalSettle + Number.EPSILON) * 100) / 100);
 
       const settlementObj = {
         id: res.data?.id || res.data?.settlement_code || 'REC-' + Date.now().toString().slice(-6),
         amount,
+        discount,
+        totalSettled: totalSettle,
         previousDue,
-        remainingDue: Math.max(0, previousDue - amount),
+        remainingDue,
         date: dateToUse,
         method: methodToUse,
         notes: notesToUse,
@@ -240,7 +265,7 @@ const Customers = () => {
         partyName: targetObj.name,
       };
 
-      setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' });
+      setSettleModal({ show: false, target: null, amount: '', discount: '', date: '', method: 'Cash', notes: '' });
       setReceiptModal({ show: true, settlement: settlementObj, party: targetObj });
     }
   };
@@ -497,7 +522,7 @@ const Customers = () => {
                           </button>
                           {activeTab !== 'Deleted' && (
                             <>
-                              <button className="btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, date: new Date().toISOString().split('T')[0] })}>{t(language, 'Settle Due' || 'Settle')}</button>
+                              <button className="btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => setSettleModal({ show: true, target: person, amount: person.due, discount: '', date: new Date().toISOString().split('T')[0], method: 'Cash', notes: '' })}>{t(language, 'Settle Due' || 'Settle')}</button>
                               {activeTab === 'Customer' && (
                                 <button
                                   className="btn-primary flex-align-gap" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
@@ -590,34 +615,194 @@ const Customers = () => {
       {/* Settle Due Drawer */}
       {settleModal.show && createPortal(
         <div className="drawer-overlay">
-          <div className="drawer-container" style={{ maxWidth: '420px' }}>
+          <div className="drawer-container" style={{ maxWidth: '440px' }}>
             <div className="drawer-header">
-              <h2>{t(language, 'Settle Due')}</h2>
-              <button className="drawer-close-btn" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' })}>
+              <h2>{language === 'bn' ? 'বকেয়া আদায় ও সমন্বয়' : t(language, 'Settle Due')}</h2>
+              <button className="drawer-close-btn" onClick={() => setSettleModal({ show: false, target: null, amount: '', discount: '', date: '', method: 'Cash', notes: '' })}>
                 <X size={20} />
               </button>
             </div>
             <form id="settle-form" onSubmit={handleSettle} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div className="drawer-body">
-                <p className="mb-4 text-muted">
-                  {language === 'bn' ? 'বর্তমান বকেয়া:' : 'Current Due:'} <strong className="text-danger">৳{settleModal.target?.due}</strong>
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Due Banner */}
+                <div style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
                   <div>
-                    <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'পরিশোধের পরিমাণ' : 'Amount to Settle'} (BDT)</label>
-                    <input
-                      type="number"
-                      className="w-full"
-                      value={settleModal.amount}
-                      onChange={e => setSettleModal({ ...settleModal, amount: e.target.value })}
-                      required
-                      min="1"
-                      max={settleModal.target?.due}
-                      step="any"
-                      placeholder="e.g. 1000"
-                    />
-                    <small className="text-muted">{language === 'bn' ? 'বকেয়া পরিশোধের পরিমাণ লিখুন।' : 'Enter the amount they are paying to clear the due.'}</small>
+                    <div style={{ fontSize: '0.76rem', color: '#991b1b', fontWeight: 600 }}>
+                      {language === 'bn' ? 'বর্তমান মোট বকেয়া' : 'Current Due Balance'}
+                    </div>
+                    <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
+                      ৳{Number(settleModal.target?.due || 0).toLocaleString()}
+                    </div>
                   </div>
+                  <div style={{
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    background: '#fee2e2',
+                    color: '#991b1b',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                  }}>
+                    {settleModal.target?.name}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Discount on Total Due */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
+                        <Tag size={14} style={{ color: '#d97706' }} />
+                        <span>{language === 'bn' ? 'ছাড় / ডিসকাউন্ট (BDT)' : 'Discount on Due (BDT)'}</span>
+                      </label>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {language === 'bn' ? '(ঐচ্ছিক)' : '(Optional)'}
+                      </span>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-muted)' }}>৳</span>
+                      <input
+                        type="number"
+                        className="w-full"
+                        style={{
+                          paddingLeft: '28px',
+                          borderColor: Number(settleModal.discount) > 0 ? '#f59e0b' : undefined,
+                          background: Number(settleModal.discount) > 0 ? '#fffbeb' : undefined
+                        }}
+                        value={settleModal.discount}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const discNum = parseFloat(val) || 0;
+                          const targetDue = Number(settleModal.target?.due || 0);
+                          const newAmount = Math.max(0, targetDue - discNum);
+                          setSettleModal({
+                            ...settleModal,
+                            discount: val,
+                            amount: newAmount > 0 ? newAmount : (val ? 0 : targetDue)
+                          });
+                        }}
+                        min="0"
+                        max={settleModal.target?.due}
+                        step="any"
+                        placeholder="0"
+                      />
+                    </div>
+                    <small className="text-muted" style={{ display: 'block', marginTop: '3px', fontSize: '0.74rem' }}>
+                      {language === 'bn' ? 'বকেয়ার ওপর বিশেষ ছাড় দিতে চাইলে এখানে লিখুন।' : 'Enter discount or waiver amount on due if applicable.'}
+                    </small>
+                  </div>
+
+                  {/* Amount to Settle / Pay */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
+                        <DollarSign size={14} style={{ color: '#10b981' }} />
+                        <span>{language === 'bn' ? 'পরিশোধের পরিমাণ' : 'Amount to Settle'} (BDT) *</span>
+                      </label>
+                      {/* Quick Full Net Due Button */}
+                      {(() => {
+                        const targetDue = Number(settleModal.target?.due || 0);
+                        const discNum = parseFloat(settleModal.discount) || 0;
+                        const netDue = Math.max(0, Math.round((targetDue - discNum + Number.EPSILON) * 100) / 100);
+                        if (netDue > 0 && parseFloat(settleModal.amount) !== netDue) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSettleModal({ ...settleModal, amount: netDue })}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--primary)',
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                padding: 0,
+                                textDecoration: 'underline',
+                              }}
+                            >
+                              {language === 'bn' ? `পুরো প্রদেয় ৳${netDue.toLocaleString()}` : `Fill Net ৳${netDue.toLocaleString()}`}
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-muted)' }}>৳</span>
+                      <input
+                        type="number"
+                        className="w-full"
+                        style={{ paddingLeft: '28px' }}
+                        value={settleModal.amount}
+                        onChange={e => setSettleModal({ ...settleModal, amount: e.target.value })}
+                        min="0"
+                        max={settleModal.target?.due}
+                        step="any"
+                        placeholder="e.g. 1000"
+                        required={!parseFloat(settleModal.discount)}
+                      />
+                    </div>
+                    <small className="text-muted" style={{ display: 'block', marginTop: '3px', fontSize: '0.74rem' }}>
+                      {language === 'bn' ? 'গ্রাহক নগদ বা একাউন্টে যে পরিমাণ পরিশোধ করছেন।' : 'Enter the amount they are paying to clear the due.'}
+                    </small>
+                  </div>
+
+                  {/* Live Breakdown Box */}
+                  {(() => {
+                    const due = Number(settleModal.target?.due || 0);
+                    const disc = parseFloat(settleModal.discount) || 0;
+                    const paid = parseFloat(settleModal.amount) || 0;
+                    const totalSettle = Math.round((paid + disc + Number.EPSILON) * 100) / 100;
+                    const remaining = Math.max(0, Math.round((due - totalSettle + Number.EPSILON) * 100) / 100);
+                    const isOver = totalSettle > due + 0.005;
+
+                    return (
+                      <div style={{
+                        background: isOver ? '#fff1f2' : '#f8fafc',
+                        border: `1px solid ${isOver ? '#fecdd3' : '#e2e8f0'}`,
+                        borderRadius: '8px',
+                        padding: '0.75rem 0.9rem',
+                        fontSize: '0.82rem',
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{language === 'bn' ? 'মোট বকেয়া:' : 'Total Due:'}</span>
+                          <span style={{ fontWeight: 700 }}>৳{due.toLocaleString()}</span>
+                        </div>
+                        {disc > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: '#b45309' }}>
+                            <span>{language === 'bn' ? 'বিশেষ ছাড় (ডিসকাউন্ট):' : 'Discount:'}</span>
+                            <span style={{ fontWeight: 700 }}>− ৳{disc.toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: '#059669' }}>
+                          <span>{language === 'bn' ? 'নগদ জমা / পরিশোধ:' : 'Amount Paid:'}</span>
+                          <span style={{ fontWeight: 700 }}>− ৳{paid.toLocaleString()}</span>
+                        </div>
+                        <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 700, color: isOver ? '#dc2626' : (remaining <= 0 ? '#15803d' : '#b91c1c') }}>
+                            {language === 'bn' ? 'অবশিষ্ট বকেয়া:' : 'Remaining Due:'}
+                          </span>
+                          <span style={{ fontWeight: 800, fontSize: '0.95rem', color: isOver ? '#dc2626' : (remaining <= 0 ? '#15803d' : '#b91c1c') }}>
+                            {isOver
+                              ? (language === 'bn' ? 'বকেয়ার চেয়ে বেশি!' : 'Exceeds Due!')
+                              : (remaining <= 0
+                                  ? (language === 'bn' ? '৳০ (সম্পূর্ণ পরিশোধিত)' : '৳0 (Cleared)')
+                                  : `৳${remaining.toLocaleString()}`)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Date */}
                   <div>
                     <label className="text-muted text-sm block mb-1">{t(language, 'Date')}</label>
                     <input
@@ -628,6 +813,8 @@ const Customers = () => {
                       required
                     />
                   </div>
+
+                  {/* Payment Method */}
                   <div>
                     <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'পেমেন্ট মাধ্যম' : 'Payment Method'}</label>
                     <select
@@ -640,12 +827,14 @@ const Customers = () => {
                       <option value="Nagad">Nagad (নগদ)</option>
                     </select>
                   </div>
+
+                  {/* Notes */}
                   <div>
                     <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'মন্তব্য (ঐচ্ছিক)' : 'Notes / Reference'}</label>
                     <input
                       type="text"
                       className="w-full"
-                      placeholder={language === 'bn' ? 'যেমন: চেক নং বা লেনদেন রেফারেন্স' : 'e.g. Check / Txn reference'}
+                      placeholder={language === 'bn' ? 'যেমন: চেক নং, লেনদেন রেফারেন্স বা ছাড়ের বিবরণ' : 'e.g. Check / Txn reference or discount reason'}
                       value={settleModal.notes || ''}
                       onChange={e => setSettleModal({ ...settleModal, notes: e.target.value })}
                     />
@@ -653,7 +842,7 @@ const Customers = () => {
                 </div>
               </div>
               <div className="drawer-footer">
-                <button type="button" className="btn-outline" onClick={() => setSettleModal({ show: false, target: null, amount: '', date: '', method: 'Cash', notes: '' })}>{t(language, 'Cancel')}</button>
+                <button type="button" className="btn-outline" onClick={() => setSettleModal({ show: false, target: null, amount: '', discount: '', date: '', method: 'Cash', notes: '' })}>{t(language, 'Cancel')}</button>
                 <button type="submit" className="btn-primary">{language === 'bn' ? 'পরিশোধ ও রসিদ তৈরি' : 'Confirm & Generate Receipt'}</button>
               </div>
             </form>

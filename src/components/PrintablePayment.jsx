@@ -52,8 +52,9 @@ const PrintablePayment = ({
   const phone = shopProfile?.phone || shopProfile?.whatsapp || '';
 
   const amount = Number(settlement.amount || 0);
+  const discount = Number(settlement.discount || 0);
   const previousDue = Number(settlement.previousDue ?? settlement.previous_due ?? 0);
-  const remainingDue = Number(settlement.remainingDue ?? settlement.remaining_due ?? Math.max(0, previousDue - amount));
+  const remainingDue = Number(settlement.remainingDue ?? settlement.remaining_due ?? Math.max(0, previousDue - (amount + discount)));
   const isCleared = remainingDue <= 0;
 
   const partyName = party?.name || settlement.partyName || settlement.targetName || settlement.targetId || '-';
@@ -144,6 +145,12 @@ const PrintablePayment = ({
               <td style={{ padding: '2px 0' }}>Previous Due (পূর্বের বকেয়া):</td>
               <td style={{ textAlign: 'right', fontWeight: '600' }}>৳{money(previousDue)}</td>
             </tr>
+            {discount > 0 && (
+              <tr style={{ color: '#000' }}>
+                <td style={{ padding: '2px 0' }}>Discount (ছাড়):</td>
+                <td style={{ textAlign: 'right', fontWeight: '600' }}>- ৳{money(discount)}</td>
+              </tr>
+            )}
             <tr style={{ fontWeight: 'bold', fontSize: '12px' }}>
               <td style={{ padding: '3px 0' }}>Amount Paid (জমা/পরিশোধ):</td>
               <td style={{ textAlign: 'right' }}>৳{money(amount)}</td>
@@ -313,6 +320,16 @@ const PrintablePayment = ({
                 ৳{money(previousDue)}
               </td>
             </tr>
+            {discount > 0 && (
+              <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fffbeb' }}>
+                <td style={{ padding: '8px 14px', fontWeight: 600, color: '#b45309' }}>
+                  {isBn ? 'বিশেষ ছাড় / ডিসকাউন্ট (Settlement Discount)' : 'Settlement Discount (Waiver)'}
+                </td>
+                <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>
+                  &minus; ৳{money(discount)}
+                </td>
+              </tr>
+            )}
             <tr style={{ borderBottom: '1px solid #cbd5e1', background: '#f0fdf4' }}>
               <td style={{ padding: '9px 14px', fontWeight: 700, color: '#15803d' }}>
                 {isSupplier ? (isBn ? 'এই ভাউচারে পরিশোধকৃত টাকা (Paid on this Voucher)' : 'Amount Paid on this Voucher') : (isBn ? 'এই রসিদে জমা টাকা (Paid on this Receipt)' : 'Amount Paid on this Receipt')}
