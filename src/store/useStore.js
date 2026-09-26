@@ -1384,10 +1384,13 @@ const useStore = create(
         }
       },
 
-      /** Everything that happened on one date, with that day's totals. */
-      fetchDayBook: async (date) => {
+      /** Everything that happened on one date or date range, with totals. */
+      fetchDayBook: async (param) => {
         try {
-          const data = await ReportService.dayBook(date ? { date } : {});
+          const params = typeof param === 'string'
+            ? (param ? { date: param } : {})
+            : (param || {});
+          const data = await ReportService.dayBook(params);
           return { ok: true, data };
         } catch (error) {
           return fail(error, 'Could not load the day book.');

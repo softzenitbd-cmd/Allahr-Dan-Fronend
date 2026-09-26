@@ -28,6 +28,7 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
   }
   const shopName = rawShopName;
 
+  const invoiceNo = sale.invoiceNumber || sale.invoice_number || sale.invoiceId || sale.invoiceNo || sale.invoice_no || sale.id || '';
   const received = Number(sale.totalReceived ?? sale.paid_amount ?? sale.paidAtSale) || 0;
   const due = Number(sale.due ?? sale.due_amount ?? sale.dueRemaining) || 0;
   const totalUnits = (sale.items || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0);
@@ -124,9 +125,9 @@ const ThermalReceipt = ({ sale, shopProfile, domId = 'printable-thermal-receipt'
         </div>
 
         <div style={{ fontSize: '10px', lineHeight: 1.4, margin: '4px 0', color: '#000000' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'চালান নং:' : 'Invoice No:'}</span>
-            <span style={{ fontWeight: 900, color: '#000000' }}>{sale.invoice_number || sale.id}</span>
+            <span style={{ fontWeight: 900, color: '#000000', fontSize: '11px', letterSpacing: '0.02em' }}>{invoiceNo || '—'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 600, color: '#000000' }}>{language === 'bn' ? 'তারিখ ও সময়:' : 'Date & Time:'}</span>

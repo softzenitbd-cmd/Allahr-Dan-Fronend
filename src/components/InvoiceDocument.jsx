@@ -84,9 +84,13 @@ export const fromApiInvoice = (inv, customers = []) => {
   const contact = customers.find((c) => c.id === inv.customerId);
   const laterPayments = Number(inv.duePaid) || 0;
   const paidAtSale = Number(inv.paid_amount) || 0;
+  const invNumber = inv.invoiceNumber || inv.invoice_number || inv.invoiceId || inv.id || '';
 
   return {
-    invoiceNumber: inv.id || inv.invoice_number,
+    id: invNumber,
+    invoiceId: invNumber,
+    invoiceNumber: invNumber,
+    invoice_number: invNumber,
     date: inv.date,
     status: inv.status,
     returnStatus: inv.returnStatus || 'none',
@@ -142,9 +146,13 @@ export const fromCompletedSale = (sale) => {
   if (!sale) return null;
   const paid = Number(sale.paidAmount) || 0;
   const due = Number(sale.dueAmount) || 0;
+  const invNumber = sale.invoiceNumber || sale.invoiceId || sale.invoice_number || sale.id || '';
 
   return {
-    invoiceNumber: sale.invoiceId,
+    id: invNumber,
+    invoiceId: invNumber,
+    invoiceNumber: invNumber,
+    invoice_number: invNumber,
     date: sale.date,
     status: 'Completed',
     customer: {

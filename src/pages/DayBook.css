@@ -8,8 +8,59 @@
 .day-book { display: flex; flex-direction: column; gap: var(--sp-4); }
 
 /* --------------------------------------------------------------------------
-   Which day
+   Which day / Date range
    -------------------------------------------------------------------------- */
+
+.db-date-control-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.db-datebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.db-presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+  padding: 0.25rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.db-preset-btn {
+  background: transparent;
+  border: none;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.db-preset-btn:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.db-preset-btn.active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
 
 .db-datebar {
   display: flex;
@@ -23,13 +74,51 @@
 }
 
 .db-date { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 220px; color: var(--primary); }
-.db-date-main { font-size: 1rem; font-weight: 700; color: var(--text-main); }
+.db-date-main { font-size: 1rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+
+.db-date-tag {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border-radius: var(--radius-full, 9999px);
+  vertical-align: middle;
+}
 
 .db-live { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--success); font-weight: 600; }
 .db-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: db-pulse 1.6s ease-in-out infinite; }
 @keyframes db-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-.db-datebar input[type="date"] { height: 36px; min-height: 0; width: auto; font-size: 0.8125rem; }
+.db-date-pickers {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.db-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.db-range-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.db-datebar input[type="date"],
+.db-range-inputs input[type="date"] {
+  height: 36px;
+  min-height: 0;
+  width: auto;
+  font-size: 0.8125rem;
+}
+
 .db-datebar .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8125rem; }
 
 .db-loading { padding: var(--sp-10); text-align: center; color: var(--text-muted); }

@@ -35,6 +35,14 @@ const money = (value) => {
 const pad = (n) => String(n).padStart(2, '0');
 const isoLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const shift = (iso, days) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + days); return isoLocal(d); };
+const firstOfMonth = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+const countDays = (sIso, eIso) => {
+  if (!sIso || !eIso) return 1;
+  const d1 = new Date(`${sIso}T00:00:00`);
+  const d2 = new Date(`${eIso}T00:00:00`);
+  const diffTime = Math.abs(d2 - d1);
+  return Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+};
 const pretty = (iso, bn) => formatLongDate(iso, bn, '—');
 
 /** How each kind of row looks: icon, colour, label. */
@@ -63,12 +71,18 @@ const FILTERS = [
 ];
 
 /** A headline figure with yesterday underneath. */
-const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false, breakdown = null, isCount = false, countSuffix = '' }) => {
+const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false, breakdown = null, isCount = false, countSuffix = '', isRange = false }) => {
   const delta = compare !== undefined && compare !== null ? Number(value) - Number(compare) : null;
   const suffix = countSuffix || (bn ? 'জন' : '');
   const shown = isCount
     ? `${Number(value) || 0} ${suffix}`
     : money(abs ? Math.abs(Number(value) || 0) : value);
+  const compareText = bn
+    ? (isRange ? 'পূর্ববর্তী সময়ের চেয়ে' : 'গতকালের চেয়ে')
+    : (isRange ? 'vs prev period' : 'vs yesterday');
+  const sameText = bn
+    ? (isRange ? 'পূর্ববর্তী সময়ের সমান' : 'গতকালের সমান')
+    : (isRange ? 'same as prev period' : 'same as yesterday');
   return (
     <div className={`db-kpi ${tone}`}>
       <div className="db-kpi-top">
@@ -91,10 +105,10 @@ const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = fals
         <div className={`db-kpi-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`}>
           {delta > 0 ? <TrendingUp size={12} /> : delta < 0 ? <TrendingDown size={12} /> : null}
           {delta === 0
-            ? (bn ? 'গতকালের সমান' : 'same as yesterday')
+            ? sameText
             : isCount
-              ? `${delta > 0 ? '+' : ''}${delta} ${suffix} ${bn ? 'গতকালের চেয়ে' : 'vs yesterday'}`
-              : `${delta > 0 ? '+' : ''}${money(delta)} ${bn ? 'গতকালের চেয়ে' : 'vs yesterday'}`}
+              ? `${delta > 0 ? '+' : ''}${delta} ${suffix} ${compareText}`
+              : `${delta > 0 ? '+' : ''}${money(delta)} ${compareText}`}
         </div>
       )}
     </div>
@@ -112,7 +126,11 @@ const DayBook = () => {
   const isAdmin = user?.role === 'Admin';
 
   const today = isoLocal(new Date());
-  const [date, setDate] = useState(today);
+  const [preset, setPreset] = useState('today'); // 'today' | 'yesterday' | '7days' | 'this_month' | '30days' | 'custom'
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const isRange = startDate !== endDate;
+  const date = startDate; // backwards compatibility alias for single day forms
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all');
@@ -124,19 +142,35 @@ const DayBook = () => {
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    const res = await fetchDayBook(date);
+    const params = startDate === endDate ? { date: startDate } : { start_date: startDate, end_date: endDate };
+    const res = await fetchDayBook(params);
     if (res?.ok) setData(res.data);
     setLoading(false);
-  }, [date, fetchDayBook]);
+  }, [startDate, endDate, fetchDayBook]);
 
   useEffect(() => { load(); }, [load]);
 
-  // A live day keeps itself fresh while the page stays open.
+  // A live day or range ending today keeps itself fresh while the page stays open.
   useEffect(() => {
-    if (date !== today) return undefined;
+    if (endDate !== today) return undefined;
     const id = setInterval(() => load(true), 60000);
     return () => clearInterval(id);
-  }, [date, today, load]);
+  }, [endDate, today, load]);
+
+  const handlePrevDay = () => {
+    const prev = shift(startDate, -1);
+    setStartDate(prev);
+    setEndDate(prev);
+    setPreset(prev === today ? 'today' : prev === shift(today, -1) ? 'yesterday' : 'custom');
+  };
+
+  const handleNextDay = () => {
+    if (startDate >= today) return;
+    const next = shift(startDate, 1);
+    setStartDate(next);
+    setEndDate(next);
+    setPreset(next === today ? 'today' : next === shift(today, -1) ? 'yesterday' : 'custom');
+  };
 
   const categories = useMemo(() => {
     const DEFAULT_CATS = ['Shop Rent', 'Electricity Bill', 'Transport', 'Staff Cost', 'Marketing', 'Others'];
@@ -860,7 +894,10 @@ const DayBook = () => {
   const p = data?.profit;
   const cf = data?.cashflow;
   const cmp = data?.compare || {};
-  const dayLabel = date === today ? (bn ? 'আজ' : 'Today') : date === shift(today, -1) ? (bn ? 'গতকাল' : 'Yesterday') : null;
+  const dayCount = data?.dayCount || countDays(startDate, endDate);
+  const dayLabel = !isRange
+    ? (startDate === today ? (bn ? 'আজ' : 'Today') : startDate === shift(today, -1) ? (bn ? 'গতকাল' : 'Yesterday') : null)
+    : null;
 
   // Compute today's loan metrics for DayBook calculations
   const todayLoans = useMemo(() => {
@@ -916,7 +953,7 @@ const DayBook = () => {
 
     let subText = '';
     if (total === 0) {
-      subText = bn ? 'আজ কোনো বিক্রি হয়নি' : 'No sales today';
+      subText = bn ? (isRange ? 'এই সময়ে কোনো বিক্রি হয়নি' : 'আজ কোনো বিক্রি হয়নি') : (isRange ? 'No sales in this period' : 'No sales today');
     } else if (regCount > 0 && walkinCount > 0) {
       subText = `${regCount} ${bn ? 'জন নামসহ' : 'regular'} · ${walkinCount} ${bn ? 'জন ওয়াক-ইন' : 'walk-in'}`;
     } else if (walkinCount > 0) {
@@ -931,7 +968,7 @@ const DayBook = () => {
     ] : null;
 
     return { total, regCount, walkinCount, sub: subText, breakdown };
-  }, [data, s, bn]);
+  }, [data, s, bn, isRange]);
 
   // Compute customer returns metrics for the selected day
   const customerReturns = useMemo(() => {
@@ -1000,16 +1037,16 @@ const DayBook = () => {
 
     let subText = '';
     if (finalCreated === 0) {
-      subText = bn ? 'আজ কোনো বাকি বিক্রি নেই' : 'No credit sales today';
+      subText = bn ? (isRange ? 'এই সময়ে কোনো বাকি বিক্রি নেই' : 'আজ কোনো বাকি বিক্রি নেই') : (isRange ? 'No credit sales in this period' : 'No credit sales today');
     } else if (finalUnpaid === 0) {
-      subText = bn ? 'আজকের সব বাকি পরিশোধ ও সমন্বয় হয়েছে' : 'All dues from today paid/settled';
+      subText = bn ? (isRange ? 'এই সময়ের সব বাকি পরিশোধ ও সমন্বয় হয়েছে' : 'আজকের সব বাকি পরিশোধ ও সমন্বয় হয়েছে') : (isRange ? 'All dues from this period paid/settled' : 'All dues from today paid/settled');
     } else {
-      subText = `${bn ? 'আজকের বিক্রি থেকে যা বকেয়া রইল' : 'left unpaid from today\'s sales'}${finalPaidLater > 0 ? ` · ${bn ? 'আদায়' : 'paid'} ${money(finalPaidLater)}` : ''}`;
+      subText = `${bn ? (isRange ? 'এই সময়ের বিক্রি থেকে যা বকেয়া রইল' : 'আজকের বিক্রি থেকে যা বকেয়া রইল') : (isRange ? 'left unpaid from period sales' : 'left unpaid from today\'s sales')}${finalPaidLater > 0 ? ` · ${bn ? 'আদায়' : 'paid'} ${money(finalPaidLater)}` : ''}`;
     }
 
     const breakdown = finalCreated > 0 ? [
       { l: bn ? 'চালানে বাকি' : 'Gross Due', v: money(finalCreated) },
-      { l: bn ? 'বকেয়া আদায়' : 'Paid Today', v: finalPaidLater > 0 ? `−${money(finalPaidLater)}` : '৳0', tone: finalPaidLater > 0 ? 'good' : 'muted' },
+      { l: bn ? (isRange ? 'বকেয়া আদায়' : 'Paid Today') : (isRange ? 'Paid in Period' : 'Paid Today'), v: finalPaidLater > 0 ? `−${money(finalPaidLater)}` : '৳0', tone: finalPaidLater > 0 ? 'good' : 'muted' },
       { l: bn ? 'রিটার্ন সমন্বয়' : 'Return Credit', v: customerReturns.dueAdjusted > 0 ? `−${money(customerReturns.dueAdjusted)}` : '৳0', tone: customerReturns.dueAdjusted > 0 ? 'good' : 'muted' },
       { l: bn ? 'অবশিষ্ট বাকি' : 'Net Due', v: money(finalUnpaid), tone: finalUnpaid > 0 ? 'bad' : 'good' },
     ] : null;
@@ -1021,14 +1058,22 @@ const DayBook = () => {
       sub: subText,
       breakdown,
     };
-  }, [data, s, customerReturns, bn]);
+  }, [data, s, customerReturns, bn, isRange]);
 
   return (
     <div className="day-book animate-fade-in">
       <div className="page-header">
         <div>
-          <h1>{bn ? 'দিনের হিসাব ও কর্জ' : 'Day Book & Loans'}</h1>
-          <p className="text-muted">{bn ? 'এক দিনের লেনদেন এবং প্রকল্পের বাইরের ব্যক্তিগত কর্জ/ঋণ ব্যবস্থাপনা।' : 'Daily transactions and isolated external loan management.'}</p>
+          <h1>{bn ? (isRange ? 'সময়কালীন হিসাব ও কর্জ' : 'দিনের হিসাব ও কর্জ') : (isRange ? 'Periodic Day Book & Loans' : 'Day Book & Loans')}</h1>
+          <p className="text-muted">
+            {bn
+              ? (isRange
+                  ? `${pretty(startDate, true)} থেকে ${pretty(endDate, true)} পর্যন্ত মোট ${dayCount} দিনের সমন্বিত লেনদেন ও হিসাব।`
+                  : 'এক দিনের লেনদেন এবং প্রকল্পের বাইরের ব্যক্তিগত কর্জ/ঋণ ব্যবস্থাপনা।')
+              : (isRange
+                  ? `Consolidated transactions and books across ${dayCount} days.`
+                  : 'Daily transactions and isolated external loan management.')}
+          </p>
         </div>
         <div className="flex-align-gap">
           {activeTab === 'daily' ? (
@@ -1036,21 +1081,21 @@ const DayBook = () => {
               <button className="btn-outline" onClick={() => load()} disabled={loading}><RefreshCcw size={16} className={loading ? 'animate-spin' : ''} /> {bn ? 'রিফ্রেশ' : 'Refresh'}</button>
               <button
                 className="btn-outline flex-align-gap"
-                onClick={() => downloadElementAsPDF('printable-daybook', `Closing-Report-${date}`)}
+                onClick={() => downloadElementAsPDF('printable-daybook', isRange ? `Closing-Report-${startDate}-to-${endDate}` : `Closing-Report-${startDate}`)}
                 disabled={!data}
                 title={bn ? 'ক্লোজিং রিপোর্ট PDF ডাউনলোড করুন' : 'Download Closing Report as PDF'}
               >
                 <Download size={16} /> {bn ? 'PDF ডাউনলোড' : 'Download PDF'}
               </button>
-              <button className="btn-outline flex-align-gap" onClick={() => printElement('printable-daybook', `DayBook-${date}`)} disabled={!data}>
-                <Printer size={16} /> {bn ? 'দিন শেষের রিপোর্ট' : 'Closing Report'}
+              <button className="btn-outline flex-align-gap" onClick={() => printElement('printable-daybook', isRange ? `DayBook-${startDate}-to-${endDate}` : `DayBook-${startDate}`)} disabled={!data}>
+                <Printer size={16} /> {bn ? (isRange ? 'রিপোর্ট প্রিন্ট' : 'দিন শেষের রিপোর্ট') : (isRange ? 'Print Report' : 'Closing Report')}
               </button>
             </>
           ) : (
             <div className="flex-align-gap">
               <button
                 className="btn-outline flex-align-gap"
-                onClick={() => printElement('printable-all-loans', `Loans-Report-${date}`)}
+                onClick={() => printElement('printable-all-loans', `Loans-Report-${startDate}`)}
                 title={bn ? 'সকল ঋণের রিপোর্ট প্রিন্ট করুন' : 'Print All Loans Report'}
               >
                 <Printer size={16} /> {bn ? 'ঋণ রিপোর্ট প্রিন্ট' : 'Print Report'}
@@ -1087,19 +1132,179 @@ const DayBook = () => {
 
       {activeTab === 'daily' ? (
         <>
-          {/* Which day */}
-          <div className="db-datebar">
-            <button className="btn-icon" onClick={() => setDate(shift(date, -1))} title={bn ? 'আগের দিন' : 'Previous day'}><ChevronLeft size={18} /></button>
-            <div className="db-date">
-              <CalendarDays size={18} />
-              <div>
-                <div className="db-date-main">{dayLabel ? `${dayLabel} · ` : ''}{pretty(date, bn)}</div>
-                {data?.isToday && <div className="db-live"><span className="dot" /> {bn ? 'লাইভ — প্রতি মিনিটে আপডেট হয়' : 'Live — refreshes every minute'}</div>}
+          {/* Which day or date range */}
+          <div className="db-date-control-card">
+            <div className="db-datebar-top">
+              <div className="db-presets">
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === 'today' ? 'active' : ''}`}
+                  onClick={() => {
+                    setPreset('today');
+                    setStartDate(today);
+                    setEndDate(today);
+                  }}
+                >
+                  {bn ? 'আজ' : 'Today'}
+                </button>
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === 'yesterday' ? 'active' : ''}`}
+                  onClick={() => {
+                    const y = shift(today, -1);
+                    setPreset('yesterday');
+                    setStartDate(y);
+                    setEndDate(y);
+                  }}
+                >
+                  {bn ? 'গতকাল' : 'Yesterday'}
+                </button>
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === '7days' ? 'active' : ''}`}
+                  onClick={() => {
+                    setPreset('7days');
+                    setStartDate(shift(today, -6));
+                    setEndDate(today);
+                  }}
+                >
+                  {bn ? 'গত ৭ দিন' : 'Last 7 Days'}
+                </button>
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === 'this_month' ? 'active' : ''}`}
+                  onClick={() => {
+                    setPreset('this_month');
+                    setStartDate(firstOfMonth(new Date()));
+                    setEndDate(today);
+                  }}
+                >
+                  {bn ? 'এই মাস' : 'This Month'}
+                </button>
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === '30days' ? 'active' : ''}`}
+                  onClick={() => {
+                    setPreset('30days');
+                    setStartDate(shift(today, -29));
+                    setEndDate(today);
+                  }}
+                >
+                  {bn ? 'গত ৩০ দিন' : 'Last 30 Days'}
+                </button>
+                <button
+                  type="button"
+                  className={`db-preset-btn ${preset === 'custom' ? 'active' : ''}`}
+                  onClick={() => setPreset('custom')}
+                >
+                  {bn ? 'কাস্টম রেঞ্জ' : 'Custom'}
+                </button>
               </div>
             </div>
-            <button className="btn-icon" onClick={() => setDate(shift(date, 1))} disabled={date >= today} title={bn ? 'পরের দিন' : 'Next day'}><ChevronRight size={18} /></button>
-            <input type="date" value={date} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} />
-            {date !== today && <button className="btn-outline btn-sm" onClick={() => setDate(today)}>{bn ? 'আজকে যান' : 'Jump to today'}</button>}
+
+            <div className="db-datebar">
+              {!isRange && (
+                <button
+                  className="btn-icon"
+                  onClick={handlePrevDay}
+                  title={bn ? 'আগের দিন' : 'Previous day'}
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+
+              <div className="db-date">
+                <CalendarDays size={18} />
+                <div>
+                  <div className="db-date-main">
+                    {!isRange ? (
+                      <>
+                        {dayLabel ? `${dayLabel} · ` : ''}{pretty(startDate, bn)}
+                      </>
+                    ) : (
+                      <>
+                        {pretty(startDate, bn)} — {pretty(endDate, bn)}
+                        <span className="db-date-tag">
+                          {dayCount} {bn ? 'দিন' : 'days'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  {((!isRange && data?.isToday) || (isRange && endDate === today)) && (
+                    <div className="db-live">
+                      <span className="dot" /> {bn ? 'লাইভ — প্রতি মিনিটে আপডেট হয়' : 'Live — refreshes every minute'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {!isRange && (
+                <button
+                  className="btn-icon"
+                  onClick={handleNextDay}
+                  disabled={startDate >= today}
+                  title={bn ? 'পরের দিন' : 'Next day'}
+                >
+                  <ChevronRight size={18} />
+                </button>
+              )}
+
+              <div className="db-date-pickers">
+                {!isRange && preset !== 'custom' ? (
+                  <input
+                    type="date"
+                    value={startDate}
+                    max={today}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const val = e.target.value;
+                      setStartDate(val);
+                      setEndDate(val);
+                      setPreset(val === today ? 'today' : val === shift(today, -1) ? 'yesterday' : 'custom');
+                    }}
+                  />
+                ) : (
+                  <div className="db-range-inputs">
+                    <span className="db-range-label">{bn ? 'হতে:' : 'From:'}</span>
+                    <input
+                      type="date"
+                      value={startDate}
+                      max={endDate || today}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        setStartDate(e.target.value);
+                        setPreset('custom');
+                      }}
+                    />
+                    <span className="db-range-label">{bn ? 'পর্যন্ত:' : 'To:'}</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate}
+                      max={today}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        setEndDate(e.target.value);
+                        setPreset('custom');
+                      }}
+                    />
+                  </div>
+                )}
+
+                {((!isRange && startDate !== today) || (isRange && (startDate !== today || endDate !== today))) && (
+                  <button
+                    className="btn-outline btn-sm"
+                    onClick={() => {
+                      setPreset('today');
+                      setStartDate(today);
+                      setEndDate(today);
+                    }}
+                  >
+                    {bn ? 'আজকে যান' : 'Jump to today'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {!data && loading && <div className="db-loading">{bn ? 'হিসাব আনা হচ্ছে…' : 'Adding up the day…'}</div>}
@@ -1108,8 +1313,9 @@ const DayBook = () => {
             <>
               {/* The closing-time numbers */}
               <div className="db-kpis">
-                <Kpi bn={bn} icon={ShoppingCart} tone="success"
-                  label={bn ? 'বিক্রি (নেট)' : 'Net Sales'} value={netSalesEffective}
+                <Kpi bn={bn} icon={ShoppingCart} tone="success" isRange={isRange}
+                  label={bn ? (isRange ? 'মোট বিক্রি (নেট)' : 'বিক্রি (নেট)') : (isRange ? 'Total Net Sales' : 'Net Sales')}
+                  value={netSalesEffective}
                   sub={`${s.invoiceCount} ${bn ? 'টি চালান' : 'invoices'}${customerReturns.retailValue > 0 ? ` · ${bn ? 'রিটার্ন বাদ' : 'returns'} −${money(customerReturns.retailValue)}` : ''}${s.totalDiscount > 0 ? ` · ${bn ? 'ছাড়' : 'discount'} ${money(s.totalDiscount)}` : ''}`}
                   breakdown={isAdmin && data.cogs ? [
                     { l: bn ? 'বিক্রি' : 'Sold', v: money(netSalesEffective) },
@@ -1121,26 +1327,27 @@ const DayBook = () => {
                     { l: bn ? 'প্রকৃত বিক্রি' : 'Net Sold', v: money(netSalesEffective), tone: 'good' },
                   ] : null)}
                   compare={cmp.netSales} />
-                <Kpi bn={bn} icon={Users} tone="primary" isCount={true} countSuffix={bn ? 'জন' : ''}
-                  label={bn ? 'আজকের ক্রেতা' : 'Customers'}
+                <Kpi bn={bn} icon={Users} tone="primary" isCount={true} countSuffix={bn ? 'জন' : ''} isRange={isRange}
+                  label={bn ? (isRange ? 'মোট ক্রেতা' : 'আজকের ক্রেতা') : (isRange ? 'Total Customers' : 'Customers')}
                   value={customerMetrics.total}
                   sub={customerMetrics.sub}
                   breakdown={customerMetrics.breakdown}
                   compare={cmp.customerCount} />
-                <Kpi bn={bn} icon={RotateCcw} tone={customerReturns.units > 0 ? 'danger' : ''} isCount={true} countSuffix={bn ? 'টি' : 'pcs'}
-                  label={bn ? 'পণ্য রিটার্ন' : 'Returns'}
+                <Kpi bn={bn} icon={RotateCcw} tone={customerReturns.units > 0 ? 'danger' : ''} isCount={true} countSuffix={bn ? 'টি' : 'pcs'} isRange={isRange}
+                  label={bn ? (isRange ? 'মোট পণ্য রিটার্ন' : 'পণ্য রিটার্ন') : (isRange ? 'Total Returns' : 'Returns')}
                   value={customerReturns.units}
                   sub={customerReturns.units > 0
                     ? `${money(customerReturns.retailValue)} ${bn ? 'মূল্য' : 'worth'}${customerReturns.refundAmount > 0 ? ` · ${bn ? 'নগদ ফেরত' : 'refund'} ${money(customerReturns.refundAmount)}` : ''}${customerReturns.dueAdjusted > 0 ? ` · ${bn ? 'বাকি সমন্বয়' : 'due adj'} ${money(customerReturns.dueAdjusted)}` : ''}`
-                    : (bn ? 'আজ কোনো পণ্য ফেরত নেই' : 'No returns today')}
+                    : (bn ? (isRange ? 'এই সময়ে কোনো পণ্য ফেরত নেই' : 'আজ কোনো পণ্য ফেরত নেই') : (isRange ? 'No returns in this period' : 'No returns today'))}
                   breakdown={customerReturns.units > 0 ? [
                     { l: bn ? 'ফেরত মূল্য' : 'Return Value', v: money(customerReturns.retailValue), tone: 'bad' },
                     { l: bn ? 'নগদ রিফান্ড' : 'Cash Refund', v: customerReturns.refundAmount > 0 ? `−${money(customerReturns.refundAmount)}` : '৳0', tone: customerReturns.refundAmount > 0 ? 'bad' : 'muted' },
                     { l: bn ? 'বাকি সমন্বয়' : 'Due Adjusted', v: customerReturns.dueAdjusted > 0 ? `−${money(customerReturns.dueAdjusted)}` : '৳0', tone: customerReturns.dueAdjusted > 0 ? 'good' : 'muted' },
                   ] : null}
                   compare={cmp.returnUnits} />
-                <Kpi bn={bn} icon={Banknote} tone="info"
-                  label={bn ? 'টাকা এসেছে (নেট)' : 'Net Received'} value={netReceivedEffective}
+                <Kpi bn={bn} icon={Banknote} tone="info" isRange={isRange}
+                  label={bn ? (isRange ? 'মোট টাকা এসেছে (নেট)' : 'টাকা এসেছে (নেট)') : (isRange ? 'Total Net Received' : 'Net Received')}
+                  value={netReceivedEffective}
                   sub={customerReturns.refundAmount > 0
                     ? `${bn ? 'মোট আদায়' : 'gross in'} ${money(s.totalReceived)} − ${bn ? 'রিটার্ন রিফান্ড' : 'refund'} ${money(customerReturns.refundAmount)}`
                     : `${bn ? 'কাউন্টারে' : 'at counter'} ${money(s.paidAtCounter)} · ${bn ? 'বকেয়া আদায়' : 'dues'} ${money(s.dueCollected)}`}
@@ -1150,32 +1357,36 @@ const DayBook = () => {
                     { l: bn ? 'রিফান্ড বাদ' : 'Refund Out', v: `−${money(customerReturns.refundAmount)}`, tone: 'bad' },
                   ] : null}
                   compare={cmp.received} />
-                <Kpi bn={bn} icon={Wallet} tone={dueMetrics.unpaid > 0 ? 'warning' : ''}
-                  label={bn ? 'আজ বাকি হয়েছে (নেট)' : 'Due Balance'} value={dueMetrics.unpaid}
+                <Kpi bn={bn} icon={Wallet} tone={dueMetrics.unpaid > 0 ? 'warning' : ''} isRange={isRange}
+                  label={bn ? (isRange ? 'মোট বাকি হয়েছে (নেট)' : 'আজ বাকি হয়েছে (নেট)') : (isRange ? 'Period Due Balance' : 'Due Balance')}
+                  value={dueMetrics.unpaid}
                   sub={dueMetrics.sub}
                   breakdown={dueMetrics.breakdown} />
                 {isAdmin && (
-                  <Kpi bn={bn} icon={Truck} tone="warning"
-                    label={bn ? 'ক্রয়' : 'Purchases'} value={data.purchases.total}
+                  <Kpi bn={bn} icon={Truck} tone="warning" isRange={isRange}
+                    label={bn ? (isRange ? 'মোট ক্রয়' : 'ক্রয়') : (isRange ? 'Total Purchases' : 'Purchases')}
+                    value={data.purchases.total}
                     sub={`${data.purchases.count} ${bn ? 'টি' : 'bills'} · ${bn ? 'পরিশোধ' : 'paid'} ${money(data.purchases.paid + data.purchases.paidLater)}`} />
                 )}
-                <Kpi bn={bn} icon={DollarSign} tone="danger"
-                  label={bn ? 'খরচ' : 'Expenses'} value={data.expenses.total}
+                <Kpi bn={bn} icon={DollarSign} tone="danger" isRange={isRange}
+                  label={bn ? (isRange ? 'মোট খরচ' : 'খরচ') : (isRange ? 'Total Expenses' : 'Expenses')}
+                  value={data.expenses.total}
                   sub={data.expenses.categories.slice(0, 2).map((c) => `${c.category} ${money(c.amount)}`).join(' · ') || (bn ? 'কোনো খরচ নেই' : 'no expenses')}
                   compare={cmp.expenses} />
                 {isAdmin && (
-                  <Kpi bn={bn} icon={p.isLoss ? TrendingDown : TrendingUp} tone={p.isLoss ? 'danger' : 'success'}
-                    label={p.isLoss ? (bn ? 'আজ লোকসান' : 'Loss today') : (bn ? 'আজ লাভ' : 'Profit today')} value={p.netProfit} abs
+                  <Kpi bn={bn} icon={p.isLoss ? TrendingDown : TrendingUp} tone={p.isLoss ? 'danger' : 'success'} isRange={isRange}
+                    label={p.isLoss ? (bn ? (isRange ? 'মোট লোকসান' : 'আজ লোকসান') : (isRange ? 'Period Loss' : 'Loss today')) : (bn ? (isRange ? 'মোট লাভ' : 'আজ লাভ') : (isRange ? 'Period Profit' : 'Profit today'))}
+                    value={p.netProfit} abs
                     sub={`${bn ? 'মোট লাভ' : 'gross'} ${money(p.grossProfit)} (${p.grossMargin}%) − ${bn ? 'খরচ' : 'expenses'} ${money(p.operatingExpenses)}`}
                     compare={cmp.netProfit} />
                 )}
                 {isAdmin && (
-                  <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''}
-                    label={bn ? 'কর্জ / ঋণ (আজকের)' : 'Loans Today'}
+                  <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''} isRange={isRange}
+                    label={bn ? (isRange ? 'কর্জ / ঋণ (সময়কালীন)' : 'কর্জ / ঋণ (আজকের)') : (isRange ? 'Loans in Period' : 'Loans Today')}
                     value={todayLoans.out > 0 ? -todayLoans.out : todayLoans.in}
                     sub={todayLoans.count > 0
                       ? `${bn ? 'প্রদান/পরিশোধ' : 'Out'} −${money(todayLoans.out)} · ${bn ? 'আদায়/গ্রহণ' : 'In'} +${money(todayLoans.in)}`
-                      : (bn ? 'আজ কোনো কর্জ লেনদেন নেই' : 'No loan activity today')}
+                      : (bn ? (isRange ? 'এই সময়ে কোনো কর্জ লেনদেন নেই' : 'আজ কোনো কর্জ লেনদেন নেই') : (isRange ? 'No loan activity in period' : 'No loan activity today'))}
                   />
                 )}
                 {isAdmin && (
@@ -1335,7 +1546,7 @@ const DayBook = () => {
                   {isAdmin && (
                     <div className="card db-panel">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <h3 style={{ margin: 0 }}>{bn ? 'কর্জ / ঋণ হিসাব (আজ)' : 'Today\'s Loan Summary'}</h3>
+                        <h3 style={{ margin: 0 }}>{bn ? (isRange ? 'কর্জ / ঋণ হিসাব (সময়কালীন)' : 'কর্জ / ঋণ হিসাব (আজ)') : (isRange ? 'Period Loan Summary' : "Today's Loan Summary")}</h3>
                         <span className="badge badge-secondary">{todayLoans.count} {bn ? 'টি' : 'txns'}</span>
                       </div>
                       <div className="db-line">
@@ -1347,7 +1558,7 @@ const DayBook = () => {
                         <span className="num text-success">{todayLoans.in > 0 ? `+${money(todayLoans.in)}` : money(0)}</span>
                       </div>
                       <div className="db-line total">
-                        <span>{bn ? 'আজকের নেট কর্জ প্রভাব' : 'Net Loan Movement'}</span>
+                        <span>{bn ? (isRange ? 'নির্বাচিত সময়ের নেট কর্জ প্রভাব' : 'আজকের নেট কর্জ প্রভাব') : (isRange ? 'Net Loan Movement (Period)' : 'Net Loan Movement')}</span>
                         <span className={`num ${todayLoans.net < 0 ? 'text-danger' : todayLoans.net > 0 ? 'text-success' : ''}`}>
                           {todayLoans.net < 0 ? `−${money(Math.abs(todayLoans.net))}` : todayLoans.net > 0 ? `+${money(todayLoans.net)}` : money(0)}
                         </span>
@@ -1368,12 +1579,12 @@ const DayBook = () => {
                   {isAdmin && (
                     <div className="card db-panel">
                       <h3>{bn ? 'ক্যাশ চলাচল' : 'Cash movement'}</h3>
-                      <div className="db-line"><span>{bn ? 'দিনের শুরুতে' : 'Opening'}</span><span className="num">{money(cf.openingTotal)}</span></div>
+                      <div className="db-line"><span>{bn ? (isRange ? 'সময়ের শুরুতে' : 'দিনের শুরুতে') : (isRange ? 'Period Opening' : 'Opening')}</span><span className="num">{money(cf.openingTotal)}</span></div>
                       <div className="db-line"><span className="text-success">{bn ? 'এসেছে' : 'In'}</span><span className="num text-success">+{money(cf.inflow)}</span></div>
                       {todayLoans.in > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ থেকে এসেছে' : '└ from loan inflow'}</span><span className="num text-success">+{money(todayLoans.in)}</span></div>}
                       <div className="db-line"><span className="text-danger">{bn ? 'গেছে' : 'Out'}</span><span className="num text-danger">−{money(cf.outflow)}</span></div>
                       {todayLoans.out > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ বাবদ গেছে' : '└ to loan outflow'}</span><span className="num text-danger">−{money(todayLoans.out)}</span></div>}
-                      <div className="db-line total"><span>{bn ? 'দিনের শেষে' : 'Closing'}</span><span className="num">{money(cf.closingTotal)}</span></div>
+                      <div className="db-line total"><span>{bn ? (isRange ? 'সময়ের শেষে' : 'দিনের শেষে') : (isRange ? 'Period Closing' : 'Closing')}</span><span className="num">{money(cf.closingTotal)}</span></div>
                       <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'বাসায়' : 'Home'} {money(cf.closingBank)}</div>
                     </div>
                   )}
@@ -1401,7 +1612,11 @@ const DayBook = () => {
                   <div style={{ textAlign: 'center', marginBottom: 12 }}>
                     <div style={{ fontSize: 20, fontWeight: 700 }}>{shopProfile?.name || shopProfile?.shop_name || 'Allahr dan gents point'}</div>
                     <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>{shopProfile?.address || DEFAULT_SHOP_ADDRESS}</div>
-                    <div style={{ fontSize: 13, marginTop: 4 }}>{bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — {pretty(date, false)}</div>
+                    <div style={{ fontSize: 13, marginTop: 4 }}>
+                      {isRange
+                        ? (bn ? `হিসাব রিপোর্ট — ${pretty(startDate, false)} থেকে ${pretty(endDate, false)} (${dayCount} দিন)` : `Report — ${pretty(startDate, false)} to ${pretty(endDate, false)} (${dayCount} days)`)
+                        : (`${bn ? 'দিন শেষের রিপোর্ট' : 'Day Closing Report'} — ${pretty(startDate, false)}`)}
+                    </div>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
                     <thead>
