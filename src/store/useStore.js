@@ -46,11 +46,10 @@ const enqueue = (task) => {
 
 // Cache freshness TTL: 90 seconds (data fresher than 90s is served instantly from memory)
 const CACHE_TTL_MS = 90 * 1000;
+// Pending shop-colour saves, one per colour, so dragging a picker sends one
+// request when it stops rather than one per pixel.
+const shopColourSaveTimers = new Map();
 // Tracks the epoch timestamp (ms) when each slice was last fetched
-// Holds back the accent save while the colour picker is being dragged.
-let accentSaveTimer = null;
-let cardColorSaveTimer = null;
-
 const lastFetchedTimestamps = new Map();
 // Deduplicates concurrent in-flight requests for the same slice
 const inFlightRequests = new Map();
@@ -402,6 +401,13 @@ const useStore = create(
             rolePermissions: (profile?.role_permissions && Object.keys(profile.role_permissions).length > 0)
               ? { ...DEFAULT_ROLE_PERMISSIONS, ...profile.role_permissions }
               : (state.rolePermissions || DEFAULT_ROLE_PERMISSIONS),
+            // Shop-wide colours, set by the Admin. A value still being dragged
+            // on this screen is not overwritten by the copy on the server.
+            ...(shopColourSaveTimers.size === 0 ? {
+              themeGradient: profile?.theme_gradient || state.themeGradient,
+              accentColor: profile?.accent_color ?? state.accentColor,
+              dashboardCardColors: profile?.dashboard_card_colors ?? state.dashboardCardColors,
+            } : {}),
             _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
           }));
         } catch {}
@@ -412,9 +418,6 @@ const useStore = create(
             const settings = await CoreService.userSettings();
             set((state) => ({
               theme: settings.theme_mode || state.theme,
-              themeGradient: settings.active_theme_class || state.themeGradient,
-              accentColor: settings.accentColor ?? state.accentColor,
-              dashboardCardColors: settings.dashboardCardColors ?? state.dashboardCardColors,
               language: settings.language || state.language,
               smsSettings: settings.smsSettings || state.smsSettings,
               _cacheTimestamps: { ...(state._cacheTimestamps || {}), _userSettings: Date.now() },
@@ -431,9 +434,26 @@ const useStore = create(
         CoreService.saveUserSettings(patch).catch(() => {});
       },
 
+      /**
+       * Save one of the shop's colours for every account. Only an Admin can;
+       * for anyone else the change stays on this screen, which is also what
+       * the server would enforce.
+       */
+      saveShopColour: (key, patch) => {
+        if (get().user?.role !== 'Admin') return;
+        clearTimeout(shopColourSaveTimers.get(key));
+        shopColourSaveTimers.set(key, setTimeout(async () => {
+          try {
+            const profile = await CoreService.saveShopProfile(patch);
+            set((state) => ({ shopProfile: { ...state.shopProfile, ...profile } }));
+          } catch { /* the colour still shows here; the next load retries */ }
+          shopColourSaveTimers.delete(key);
+        }, 450));
+      },
+
       setThemeGradient: (gradient) => {
         set({ themeGradient: gradient });
-        get().saveSettings({ active_theme_class: gradient });
+        get().saveShopColour('theme', { theme_gradient: gradient });
       },
 
       /**
@@ -448,11 +468,7 @@ const useStore = create(
       setAccentColor: (hex) => {
         const value = hex || '';
         set({ accentColor: value });
-
-        clearTimeout(accentSaveTimer);
-        accentSaveTimer = setTimeout(() => {
-          get().saveSettings({ accentColor: value });
-        }, 450);
+        get().saveShopColour('accent', { accent_color: value });
       },
 
       /**
@@ -465,16 +481,12 @@ const useStore = create(
         if (hex) next[cardKey] = hex;
         else delete next[cardKey];
         set({ dashboardCardColors: next });
-
-        clearTimeout(cardColorSaveTimer);
-        cardColorSaveTimer = setTimeout(() => {
-          get().saveSettings({ dashboardCardColors: next });
-        }, 450);
+        get().saveShopColour('cards', { dashboard_card_colors: next });
       },
 
       resetDashboardCardColors: () => {
         set({ dashboardCardColors: {} });
-        get().saveSettings({ dashboardCardColors: {} });
+        get().saveShopColour('cards', { dashboard_card_colors: {} });
       },
 
       setLanguage: (lang) => {
@@ -745,22 +757,6 @@ const useStore = create(
 
           try {
             const invoice = await SaleService.create(salePayload);
-
-            // If it's a split payment (Cash + MFS), sale was deposited to Cash by default;
-            // transfer the MFS portion from Cash to Bank so both drawer and bank remain exact!
-            if (isSplit && Number(mfsPaid) > 0) {
-              try {
-                await TreasuryService.transfer({
-                  from_account: 'Cash',
-                  to_account: 'Bank',
-                  amount: Number(mfsPaid),
-                  description: `Split payment (${mfsProvider || 'MFS'}) for ${invoice?.invoice_number || invoice?.id || 'sale'}`,
-                });
-              } catch (tErr) {
-                console.warn('Split payment internal treasury transfer:', tErr);
-              }
-            }
-
             set({ isOnline: true });
             await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
             return { ok: true, invoice, isOffline: false };
@@ -786,19 +782,7 @@ const useStore = create(
 
           for (const item of queue) {
             try {
-              const invoice = await SaleService.create(item.payload);
-              if (item.payload?.isSplit && Number(item.payload?.mfsPaid) > 0) {
-                try {
-                  await TreasuryService.transfer({
-                    from_account: 'Cash',
-                    to_account: 'Bank',
-                    amount: Number(item.payload.mfsPaid),
-                    description: `Split payment (${item.payload.mfsProvider || 'MFS'}) for ${invoice?.invoice_number || invoice?.id || 'sale'}`,
-                  });
-                } catch (tErr) {
-                  console.warn('Split payment internal treasury transfer:', tErr);
-                }
-              }
+              await SaleService.create(item.payload);
               syncedCount++;
             } catch (err) {
               console.error('Failed to sync offline sale:', err);
@@ -907,10 +891,32 @@ const useStore = create(
           }
         }),
 
+      /** What of an invoice can still be returned. */
+      fetchSaleReturnLines: async (invoiceId) => {
+        try {
+          const data = await ReturnService.saleLines(invoiceId);
+          return { ok: true, data };
+        } catch (error) {
+          return fail(error, 'Could not load that invoice.');
+        }
+      },
+
+      /** Take goods back against an invoice: stock, due and refund together. */
+      processSaleReturn: (payload) => enqueue(async () => {
+        try {
+          const result = await ReturnService.saleReturn(payload);
+          ['returns', 'inventory', 'sales', 'customers', 'treasury'].forEach((k) => inFlightRequests.delete(k));
+          await get().refresh('returns', 'inventory', 'sales', 'customers', 'treasury', 'dashboard');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'The return could not be saved.');
+        }
+      }),
+
       deleteReturn: (returnId) => enqueue(async () => {
         try {
           await ReturnService.remove(returnId);
-          await get().refresh('returns', 'inventory');
+          await get().refresh('returns', 'inventory', 'sales', 'customers', 'treasury');
           return { ok: true };
         } catch (error) {
           return fail(error, 'Could not delete the return.');

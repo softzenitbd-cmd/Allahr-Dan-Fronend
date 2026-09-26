@@ -1231,10 +1231,10 @@ const Reports = () => {
         </div>
       )}
 
-      {/* 13. Bank Statement */}
+      {/* 13. Home Balance statement (the internal 'Bank' account) */}
       {activeTab === 'BankStatement' && (
         <div className="card glass">
-          <h3>{t(language, 'Bank Stmt' || 'Bank Statement')} ({dateFilter})</h3>
+          <h3>{language === 'bn' ? t(language, 'Bank Stmt') : 'Home Balance Statement'} ({dateFilter})</h3>
           <div className="table-responsive mt-4">
             <table className="data-table">
               <thead><tr><th>Date</th><th>Type</th><th>Ref ID</th><th>Description</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>

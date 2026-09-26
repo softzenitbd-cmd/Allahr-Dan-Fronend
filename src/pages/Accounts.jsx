@@ -111,7 +111,6 @@ const Accounts = () => {
                 <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'অ্যাকাউন্ট' : 'Account'}</label>
                 <select value={entryForm.accountId} onChange={e => setEntryForm({ ...entryForm, accountId: e.target.value })}>
                   <option value="Cash">{language === 'bn' ? 'দোকানের ক্যাশ (Cash)' : 'Cash'}</option>
-                  <option value="Bank">{language === 'bn' ? 'বাসার ব্যালেন্স (Home)' : 'Home Balance'}</option>
                 </select>
               </div>
               <div className="form-group" style={{ minWidth: '120px' }}>

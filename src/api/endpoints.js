@@ -46,6 +46,7 @@ export const ENDPOINTS = {
 
   // Returns
   RETURNS: '/returns/',
+  SALE_RETURN: '/returns/sale/',
   RETURN: (id) => `/returns/${encodeURIComponent(id)}/`,
 
   // Ledger

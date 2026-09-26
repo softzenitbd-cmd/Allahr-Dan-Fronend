@@ -1429,7 +1429,6 @@ const HR = () => {
                     onChange={(e) => setSettleMethod(e.target.value)}
                   >
                     <option value="Cash">Cash (নগদ ক্যাশ)</option>
-                    <option value="Bank">Bank (ব্যাংক অ্যাকাউন্ট)</option>
                   </select>
                 </div>
 

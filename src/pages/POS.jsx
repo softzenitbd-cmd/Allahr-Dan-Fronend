@@ -512,7 +512,7 @@ const POS = () => {
       invoiceDiscount,
       salesman: salesmanObj,
       paidAmount: autoPaidAmount,
-      account: isSplit ? 'Cash' : (paymentType === 'Mobile Banking' && autoPaidAmount > 0 ? 'Bank' : 'Cash'),
+      account: 'Cash', // the shop keeps no bank: every method is drawer money
       splitDetails: splitDetailsText,
     };
 

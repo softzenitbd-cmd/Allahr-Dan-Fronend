@@ -89,6 +89,8 @@ export const fromApiInvoice = (inv, customers = []) => {
     invoiceNumber: inv.id || inv.invoice_number,
     date: inv.date,
     status: inv.status,
+    returnStatus: inv.returnStatus || 'none',
+    returnedValue: Number(inv.returnedValue) || 0,
     customer: {
       name: inv.customerName || 'Walk-in Customer',
       phone: inv.customer_phone || contact?.phone || '',
@@ -285,6 +287,18 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
           }}>
             {language === 'bn' ? 'চালান / ইনভয়েস' : 'INVOICE'}
           </div>
+          {sale.returnStatus && sale.returnStatus !== 'none' && (
+            <div style={{
+              marginTop: '6px', display: 'inline-block', marginLeft: '6px',
+              border: '2px solid #dc2626', color: '#dc2626', borderRadius: '4px',
+              padding: '2px 10px', fontSize: '12px', fontWeight: 800, letterSpacing: '0.08em',
+            }}>
+              {sale.returnStatus === 'full'
+                ? (language === 'bn' ? 'রিটার্নড' : 'RETURNED')
+                : (language === 'bn' ? 'আংশিক রিটার্ন' : 'PARTLY RETURNED')}
+              {sale.returnedValue > 0 ? ` · ৳${sale.returnedValue.toLocaleString('en-US')}` : ''}
+            </div>
+          )}
           <div style={{ marginTop: '8px', fontSize: '11px', lineHeight: 1.7 }}>
             <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'চালান নং:' : 'No:'}</span> <strong>{sale.invoiceNumber}</strong></div>
             <div><span style={{ color: '#6b7280' }}>{language === 'bn' ? 'তারিখ:' : 'Date:'}</span> {formatDate(sale.date)}</div>

@@ -47,7 +47,7 @@ const ROUTE_SLICES = {
   '/day-book': ['sales', 'customers', 'expenses'],
   '/inventory': ['categories', 'units'],
   '/purchases': ['purchases', 'suppliers', 'inventory'],
-  '/returns': ['returns', 'inventory'],
+  '/returns': ['returns', 'inventory', 'sales'],
   '/suppliers': ['suppliers', 'purchases', 'settlements'],
   '/customers': ['customers', 'suppliers', 'sales', 'purchases', 'settlements'],
   '/expenses': ['expenses'],

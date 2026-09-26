@@ -33,7 +33,7 @@ const KINDS = [
   { key: 'salesman', en: 'Staff / Salesman', bn: 'কর্মী / সেলসম্যান', Icon: UserCheck },
 ];
 
-const METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bank'];
+const METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bangla QR'];
 const PAGE_SIZE = 15;
 
 /** The ranges worth one tap. */
@@ -1541,7 +1541,7 @@ const Ledger = () => {
                     <select value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
                       {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    <small>{bn ? 'Bank হলে ব্যাংক হিসাবে, নাহলে ক্যাশে।' : 'Bank posts to the bank account; anything else to cash.'}</small>
+                    <small>{bn ? 'যে মাধ্যমেই হোক, টাকা দোকানের ক্যাশে জমা হবে।' : 'Whatever the method, the money goes into Cash in Hand.'}</small>
                   </div>
                   <div>
                     <label>{bn ? 'নোট' : 'Note'}</label>

@@ -448,12 +448,12 @@ const BalanceSheet = () => {
 
           <Row label={bn ? 'শুরুর ব্যালেন্স' : 'Opening balance'} value={money(cashflow.openingTotal)} />
           <Row label={bn ? 'ক্যাশ' : 'Cash in hand'} value={money(cashflow.openingCash)} variant="sub" />
-          <Row label={bn ? 'ব্যাংক' : 'Bank'} value={money(cashflow.openingBank)} variant="sub" />
+          <Row label={bn ? 'বাসার ব্যালেন্স' : 'Home balance'} value={money(cashflow.openingBank)} variant="sub" />
           <Row label={bn ? 'মোট জমা (In)' : 'Money in'} value={money(cashflow.inflow)} />
           <Row label={bn ? 'মোট উত্তোলন (Out)' : 'Money out'} value={money(cashflow.outflow)} variant="deduct" />
           <Row label={bn ? 'শেষ ব্যালেন্স' : 'Closing balance'} value={money(cashflow.closingTotal)} variant="total" />
           <Row label={bn ? 'ক্যাশ' : 'Cash in hand'} value={money(cashflow.closingCash)} variant="sub" />
-          <Row label={bn ? 'ব্যাংক' : 'Bank'} value={money(cashflow.closingBank)} variant="sub" />
+          <Row label={bn ? 'বাসার ব্যালেন্স' : 'Home balance'} value={money(cashflow.closingBank)} variant="sub" />
 
           <div className="bs-panel-title" style={{ marginTop: '1.25rem' }}>
             {bn ? 'উৎস অনুযায়ী' : 'By source'}
@@ -513,7 +513,7 @@ const BalanceSheet = () => {
           <div>
             <div className="bs-panel-title">{bn ? 'সম্পদ (Assets)' : 'Assets'}</div>
             <Row label={bn ? 'হাতে নগদ' : 'Cash in hand'} value={money(position.assets.cash)} />
-            <Row label={bn ? 'ব্যাংক' : 'Bank'} value={money(position.assets.bank)} />
+            <Row label={bn ? 'বাসার ব্যালেন্স' : 'Home balance'} value={money(position.assets.bank)} />
             <Row
               label={bn ? 'স্টকের মূল্য (ক্রয়মূল্যে)' : 'Stock (at cost)'}
               hint={bn
@@ -650,13 +650,13 @@ const PrintableStatement = ({ data, shopName, shopProfile }) => {
             line('Money out', money(cashflow.outflow)),
             line('Closing balance', money(cashflow.closingTotal), { bold: true, rule: true }),
             line('Cash in hand', money(cashflow.closingCash), { indent: true }),
-            line('Bank', money(cashflow.closingBank), { indent: true }),
+            line('Home balance', money(cashflow.closingBank), { indent: true }),
           ])}
 
           {block(`Position as on ${position.asOf}`, [
             line('ASSETS', '', { bold: true }),
             line('Cash in hand', money(position.assets.cash), { indent: true }),
-            line('Bank', money(position.assets.bank), { indent: true }),
+            line('Home balance', money(position.assets.bank), { indent: true }),
             line('Stock (at cost)', money(position.assets.stockAtCost), { indent: true }),
             line('Receivable from customers', money(position.assets.customerDue), { indent: true }),
             position.assets.staffDue > 0

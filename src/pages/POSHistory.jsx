@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Eye, Printer, Trash2, Wallet, Search, RefreshCcw, X,
-  FileText, Banknote, AlertCircle, Receipt, Download, Edit,
+  FileText, Banknote, AlertCircle, Receipt, Download, Edit, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
@@ -41,7 +41,7 @@ const receivedOf = (sale) => {
   return Number(sale?.paid_amount) || 0;
 };
 
-const PAYMENT_METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bank'];
+const PAYMENT_METHODS = ['Cash', 'bKash', 'Nagad', 'Rocket', 'Bangla QR'];
 
 const STAT_TINTS = {
   count: 'rgba(59,130,246,0.12)',
@@ -60,6 +60,14 @@ const POSHistory = () => {
   const navigate = useNavigate();
 
   const handleEditInvoice = (sale) => {
+    // Editing re-rings the whole sale, which would put returned goods back
+    // on the shelf a second time. Undo the returns first.
+    if (sale.returnStatus && sale.returnStatus !== 'none') {
+      toast.error(language === 'bn'
+        ? 'এই চালানে রিটার্ন আছে। আগে Returns → History থেকে রিটার্নটা মুছুন, তারপর এডিট করুন।'
+        : 'This invoice has returns against it. Delete them in Returns → History first, then edit.');
+      return;
+    }
     navigate('/pos', { state: { editSale: sale } });
   };
 
@@ -322,6 +330,7 @@ const POSHistory = () => {
                 <th style={{ textAlign: 'right' }}>{t(language, 'Total')}</th>
                 <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'পরিশোধ' : 'Paid'}</th>
                 <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'বকেয়া' : 'Due'}</th>
+                {isAdmin && <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'লাভ' : 'Profit'}</th>}
                 <th style={{ textAlign: 'right', paddingRight: '0.85rem' }}>{t(language, 'Actions')}</th>
               </tr>
             </thead>
@@ -353,6 +362,18 @@ const POSHistory = () => {
                               <span className="poshistory-product-qty">
                                 ×{item.quantity}
                               </span>
+                              {isAdmin && item.profit !== undefined && (
+                                <span
+                                  className={`poshistory-product-profit ${!item.costKnown ? 'unknown' : item.profit < 0 ? 'loss' : ''}`}
+                                  title={item.costKnown
+                                    ? (language === 'bn'
+                                      ? `বিক্রি ৳${money(item.lineRevenue)} − ক্রয়মূল্য ৳${money(item.lineCost)}`
+                                      : `Sold ৳${money(item.lineRevenue)} − cost ৳${money(item.lineCost)}`)
+                                    : (language === 'bn' ? 'ক্রয়মূল্য দেওয়া নেই' : 'No cost price set')}
+                                >
+                                  {item.costKnown ? `${item.profit < 0 ? '−' : '+'}৳${money(Math.abs(item.profit))}` : '?'}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -364,6 +385,13 @@ const POSHistory = () => {
                       <span className={`pay-pill ${settled ? 'paid' : received > 0 ? 'partial' : 'due'}`}>
                         {s.paymentType}
                       </span>
+                      {s.returnStatus && s.returnStatus !== 'none' && (
+                        <span className={`ret-pill ${s.returnStatus}`} title={language === 'bn' ? `ফেরত মূল্য ৳${money(s.returnedValue)}` : `Returned value ৳${money(s.returnedValue)}`}>
+                          {s.returnStatus === 'full'
+                            ? (language === 'bn' ? 'রিটার্নড' : 'Returned')
+                            : (language === 'bn' ? 'আংশিক রিটার্ন' : 'Part returned')}
+                        </span>
+                      )}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>৳{money(s.total)}</td>
                     <td style={{ textAlign: 'right', color: 'var(--success)' }}>৳{money(received)}</td>
@@ -374,6 +402,14 @@ const POSHistory = () => {
                     }}>
                       ৳{money(remaining)}
                     </td>
+                    {isAdmin && (
+                      <td style={{
+                        textAlign: 'right', fontWeight: 700,
+                        color: s.profit == null ? 'var(--text-muted)' : s.profit < 0 ? 'var(--danger)' : 'var(--success)',
+                      }}>
+                        {s.profit == null ? '—' : `${s.profit < 0 ? '−' : ''}৳${money(Math.abs(s.profit))}`}
+                      </td>
+                    )}
                     <td style={{ textAlign: 'right', paddingRight: '0.5rem' }}>
                       <div className="flex-align-gap" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                         <button
@@ -421,7 +457,7 @@ const POSHistory = () => {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan="10" className="text-center text-muted" style={{ padding: '2rem' }}>
+                  <td colSpan={isAdmin ? 11 : 10} className="text-center text-muted" style={{ padding: '2rem' }}>
                     {language === 'bn' ? 'এই ফিল্টারে কোনো চালান পাওয়া যায়নি।' : 'No invoices match these filters.'}
                   </td>
                 </tr>
@@ -508,14 +544,29 @@ const POSHistory = () => {
             </div>
 
             <div className="drawer-footer" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
+              <div className="flex-align-gap" style={{ gap: '6px' }}>
                 {outstandingOf(selected) > 0 && (
                   <span className="pay-pill due">
                     {language === 'bn' ? 'বকেয়া' : 'Due'}: ৳{money(outstandingOf(selected))}
                   </span>
                 )}
+                {selected.returnStatus && selected.returnStatus !== 'none' && (
+                  <span className={`ret-pill ${selected.returnStatus}`}>
+                    {selected.returnStatus === 'full'
+                      ? (language === 'bn' ? 'রিটার্নড' : 'Returned')
+                      : (language === 'bn' ? 'আংশিক রিটার্ন' : 'Part returned')} · ৳{money(selected.returnedValue)}
+                  </span>
+                )}
               </div>
               <div className="flex-align-gap" style={{ gap: '8px' }}>
+                {/* Returns are taken against the invoice they came from. */}
+                {selected.returnStatus !== 'full' && <button
+                  className="btn-outline flex-align-gap"
+                  onClick={() => navigate(`/returns?invoice=${encodeURIComponent(selected.id)}`)}
+                  title={language === 'bn' ? 'এই চালানের পণ্য ফেরত নিন' : 'Take goods back from this invoice'}
+                >
+                  <RotateCcw size={16} /> {language === 'bn' ? 'রিটার্ন' : 'Return'}
+                </button>}
                 {outstandingOf(selected) > 0 && (
                   <button className="btn-outline flex-align-gap" onClick={() => openPayModal(selected)}>
                     <Wallet size={16} /> {language === 'bn' ? 'বকেয়া জমা নিন' : 'Pay Due'}
@@ -626,8 +677,8 @@ const POSHistory = () => {
                     </select>
                     <small className="text-muted">
                       {language === 'bn'
-                        ? 'ব্যাংক নির্বাচন করলে টাকা ব্যাংক হিসাবে যাবে, নাহলে ক্যাশ ড্রয়ারে।'
-                        : 'Bank posts to the bank account; everything else goes into the cash drawer.'}
+                        ? 'যে মাধ্যমেই হোক, টাকা দোকানের ক্যাশে জমা হবে।'
+                        : 'Whatever the method, the money goes into Cash in Hand.'}
                     </small>
                   </div>
 

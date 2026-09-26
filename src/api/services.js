@@ -88,6 +88,10 @@ export const ReturnService = {
   list: (params) => apiClient.get(ENDPOINTS.RETURNS, { params }),
   create: (payload) => apiClient.post(ENDPOINTS.RETURNS, payload),
   remove: (id) => apiClient.delete(ENDPOINTS.RETURN(id)),
+  // Returns taken against a sale invoice: what can still come back, and the
+  // return itself (stock, due write-off and refund in one go).
+  saleLines: (invoiceId) => apiClient.get(`${ENDPOINTS.SALE_RETURN}${encodeURIComponent(invoiceId)}/`),
+  saleReturn: (payload) => apiClient.post(ENDPOINTS.SALE_RETURN, payload),
 };
 
 export const LedgerService = {

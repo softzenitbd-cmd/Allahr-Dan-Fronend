@@ -173,3 +173,25 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Goods came back on this invoice. */
+.ret-pill {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  margin-left: 0.35rem; padding: 0.15rem 0.5rem;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700; white-space: nowrap;
+}
+.ret-pill.full { background: rgba(100, 116, 139, 0.16); color: #475569; }
+.ret-pill.partial { background: rgba(124, 58, 237, 0.12); color: #6d28d9; }
+
+/* What each line earned; shown to the Admin only. */
+.poshistory-product-profit {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+}
+.poshistory-product-profit.loss { color: var(--danger); }
+.poshistory-product-profit.unknown { color: var(--text-subtle); }

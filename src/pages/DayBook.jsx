@@ -255,7 +255,7 @@ const DayBook = () => {
 
   const [loanForm, setLoanForm] = useState({
     type: 'given', // 'given' (দেওয়া) or 'taken' (নেওয়া)
-    account: 'Cash', // 'Cash' or 'Bank'
+    account: 'Cash', // all loans move drawer cash; the shop keeps no bank
     name: '',
     phone: '',
     amount: '',
@@ -403,7 +403,7 @@ const DayBook = () => {
     if (!res?.ok) return;
 
     toast.success(bn
-      ? `ঋণ সংরক্ষণ ও ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'মাইনাস' : 'প্লাস'} করা হয়েছে`
+      ? `ঋণ সংরক্ষণ ও ক্যাশ একাউন্টে ${isGiven ? 'মাইনাস' : 'প্লাস'} করা হয়েছে`
       : `Loan recorded and ${isGiven ? 'deducted from' : 'added to'} ${account}`);
     setLoanDrawer(false);
     setLoanForm({
@@ -693,7 +693,7 @@ const DayBook = () => {
     setSaving(false);
 
     toast.success(bn
-      ? `${money(payAmt)} পরিশোধ এবং ${account === 'Bank' ? 'ব্যাংক' : 'ক্যাশ'} একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
+      ? `${money(payAmt)} পরিশোধ এবং ক্যাশ একাউন্টে ${isGiven ? 'প্লাস' : 'মাইনাস'} করা হয়েছে`
       : `Payment of ${money(payAmt)} recorded and updated in ${account}`);
     setLoanPayTarget(null);
     load(true);
@@ -1000,7 +1000,7 @@ const DayBook = () => {
                 {isAdmin && (
                   <Kpi bn={bn} icon={Landmark} tone="info"
                     label={bn ? 'ক্যাশে আছে' : 'Cash in hand'} value={cf.closingCash}
-                    sub={`${bn ? 'শুরুতে' : 'opened'} ${money(cf.openingCash)} · ${bn ? 'ব্যাংক' : 'bank'} ${money(cf.closingBank)}`} />
+                    sub={`${bn ? 'শুরুতে' : 'opened'} ${money(cf.openingCash)} · ${bn ? 'বাসায়' : 'home'} ${money(cf.closingBank)}`} />
                 )}
               </div>
 
@@ -1193,7 +1193,7 @@ const DayBook = () => {
                       <div className="db-line"><span className="text-danger">{bn ? 'গেছে' : 'Out'}</span><span className="num text-danger">−{money(cf.outflow)}</span></div>
                       {todayLoans.out > 0 && <div className="db-line text-xs" style={{ paddingLeft: '0.75rem' }}><span className="text-muted">{bn ? '└ কর্জ বাবদ গেছে' : '└ to loan outflow'}</span><span className="num text-danger">−{money(todayLoans.out)}</span></div>}
                       <div className="db-line total"><span>{bn ? 'দিনের শেষে' : 'Closing'}</span><span className="num">{money(cf.closingTotal)}</span></div>
-                      <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'ব্যাংক' : 'Bank'} {money(cf.closingBank)}</div>
+                      <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{bn ? 'ক্যাশ' : 'Cash'} {money(cf.closingCash)} · {bn ? 'বাসায়' : 'Home'} {money(cf.closingBank)}</div>
                     </div>
                   )}
 
@@ -1259,7 +1259,7 @@ const DayBook = () => {
                           ['Cost of goods sold', money(data.cogs.total), `${data.cogs.unitsSold} units`],
                           ['Gross profit', money(p.grossProfit), `${p.grossMargin}%`],
                           [p.isLoss ? 'Net loss' : 'Net profit', money(Math.abs(p.netProfit)), ''],
-                          ['Cash opening → closing', `${money(cf.openingCash)} → ${money(cf.closingCash)}`, `bank ${money(cf.closingBank)}`],
+                          ['Cash opening → closing', `${money(cf.openingCash)} → ${money(cf.closingCash)}`, `home ${money(cf.closingBank)}`],
                         ] : [['Expenses', money(data.expenses.total), '']]),
                       ].map(([l, v, h]) => (
                         <tr key={l}>
@@ -1645,7 +1645,7 @@ const DayBook = () => {
                 <input type="number" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} min="1" step="any" required autoFocus />
                 <label>{bn ? 'মাধ্যম' : 'Method'}</label>
                 <select value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
-                  {['Cash', 'bKash', 'Nagad', 'Rocket', 'Bank'].map((m) => <option key={m}>{m}</option>)}
+                  {['Cash', 'bKash', 'Nagad', 'Rocket', 'Bangla QR'].map((m) => <option key={m}>{m}</option>)}
                 </select>
               </div>
               <div className="drawer-footer" style={{ flexShrink: 0 }}>
@@ -1780,7 +1780,6 @@ const DayBook = () => {
                   onChange={(e) => setLoanForm({ ...loanForm, account: e.target.value })}
                 >
                   <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
-                  <option value="Bank">Bank Account (ব্যাংক একাউন্ট)</option>
                 </select>
 
                 {/* Amount */}
@@ -1917,7 +1916,6 @@ const DayBook = () => {
                   style={{ marginBottom: '0.75rem' }}
                 >
                   <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
-                  <option value="Bank">Bank Account (ব্যাংক একাউন্ট)</option>
                 </select>
 
                 <label>
@@ -2426,7 +2424,6 @@ const DayBook = () => {
                       onChange={(e) => setQuickAdjustAccount(e.target.value)}
                     >
                       <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
-                      <option value="Bank">Bank Account (ব্যাংক)</option>
                     </select>
                   </div>
                   <div>
@@ -2591,7 +2588,6 @@ const DayBook = () => {
                         onChange={(e) => setOldLoanForm({ ...oldLoanForm, account: e.target.value })}
                       >
                         <option value="Cash">Cash in Hand (নগদ ক্যাশ)</option>
-                        <option value="Bank">Bank Account (ব্যাংক)</option>
                       </select>
                     </div>
                     <div>
@@ -2621,7 +2617,7 @@ const DayBook = () => {
                       style={{ width: 'auto', cursor: 'pointer' }}
                     />
                     <label htmlFor="old-affect-cash" style={{ margin: 0, fontSize: '0.8rem', cursor: 'pointer' }}>
-                      {bn ? 'আজকের ক্যাশ/ব্যাংক ব্যালেন্সে প্রভাব ফেলবে (ডিফল্ট: বন্ধ)' : 'Affect today\'s Cash/Bank balance (Default: Off)'}
+                      {bn ? 'আজকের ক্যাশ ব্যালেন্সে প্রভাব ফেলবে (ডিফল্ট: বন্ধ)' : 'Affect today\'s Cash/Bank balance (Default: Off)'}
                     </label>
                   </div>
                 </div>
@@ -2695,7 +2691,6 @@ const DayBook = () => {
                         onChange={(e) => setAdjustForm({ ...adjustForm, account: e.target.value })}
                       >
                         <option value="Cash">Cash (নগদ ক্যাশ)</option>
-                        <option value="Bank">Bank (ব্যাংক)</option>
                       </select>
                     </div>
                     <div>

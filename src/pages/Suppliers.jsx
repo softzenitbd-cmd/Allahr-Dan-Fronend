@@ -917,7 +917,6 @@ const Suppliers = () => {
                       onChange={e => setSettleModal({ ...settleModal, method: e.target.value })}
                     >
                       <option value="Cash">{language === 'bn' ? 'ক্যাশ (নগদ)' : 'Cash'}</option>
-                      <option value="Bank">{language === 'bn' ? 'ব্যাংক ট্রান্সফার' : 'Bank Transfer'}</option>
                       <option value="bKash">bKash (বিকাশ)</option>
                       <option value="Nagad">Nagad (নগদ)</option>
                     </select>
