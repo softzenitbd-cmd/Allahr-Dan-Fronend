@@ -409,3 +409,37 @@
 .vse-manage { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.5rem; }
 .vse-manage input { flex: 1; min-width: 160px; }
 .vse-manage-note { width: 100%; font-size: 0.72rem; color: var(--text-muted); }
+
+
+/* Size picker for actions on a product with sizes */
+.size-pick-backdrop { position: fixed; inset: 0; z-index: 10990; }
+.size-pick {
+  position: fixed; z-index: 11000; width: 240px; max-height: 320px; overflow: auto;
+  background: var(--bg-card, #fff); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18); padding: 8px;
+}
+.size-pick-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 700; }
+.size-pick-head button { background: none; border: none; cursor: pointer; color: var(--text-muted); display: inline-flex; }
+.size-pick-name { font-size: 0.72rem; color: var(--text-muted); margin: 2px 0 6px; }
+.size-pick-list { display: flex; flex-direction: column; gap: 2px; }
+.size-pick-list button {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px;
+  padding: 6px 8px; border: none; border-radius: 6px; background: transparent; cursor: pointer; text-align: left;
+}
+.size-pick-list button:hover { background: var(--bg-hover, #f1f5f9); }
+.size-pick-code { font-family: monospace; font-size: 0.72rem; color: var(--text-muted); }
+.size-pick-extra {
+  width: 100%; margin-top: 6px; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--primary); background: transparent; color: var(--primary); font-weight: 600; font-size: 0.8rem;
+}
+
+
+/* Editable sizes in "Edit — all sizes" */
+.inv-group-sizes th { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-align: left; padding: 2px 4px 4px; }
+.inv-size-input {
+  width: 100%; max-width: 110px; padding: 3px 6px; border-radius: 6px; font-weight: 700; font-size: 0.82rem;
+  border: 1px solid #c7d2fe; background: var(--bg-card, #fff); color: #3730a3;
+}
+.inv-size-qty { max-width: 80px; text-align: right; color: var(--text-main); }
+.inv-group-sizes tr.is-changed td { background: rgba(250, 204, 21, 0.12); }
+.inv-size-was { font-size: 0.68rem; color: var(--text-muted); }

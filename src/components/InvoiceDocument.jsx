@@ -112,6 +112,7 @@ export const fromApiInvoice = (inv, customers = []) => {
       return {
         name: item.name,
         variant: item.variant || '',
+        color: item.color || '',
         code: item.product_code || item.id || '',
         unit: item.unit || '',
         quantity: qty,
@@ -171,6 +172,7 @@ export const fromCompletedSale = (sale) => {
       return {
         name: item.name,
         variant: item.variant || '',
+        color: item.color || '',
         code: item.id || '',
         unit: item.unit || '',
         quantity: qty,
@@ -383,6 +385,7 @@ const InvoiceDocument = ({ sale, shopProfile, domId = 'printable-invoice', langu
                 <td style={S.cell}>
                   <span style={{ fontWeight: 600 }}>{item.name}</span>
                   {item.variant ? <span style={{ color: '#4b5563' }}> — {item.variant}</span> : null}
+                  {item.color ? <span style={{ color: '#4b5563' }}> · {item.color}</span> : null}
                   {item.isGift ? (
                     <span style={{
                       marginLeft: '6px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em',

@@ -576,3 +576,37 @@ body.dark-mode .swal2-html-container { color: var(--text-muted) !important; }
 .mh-kind.mh-out { background: rgba(5, 150, 105, 0.12); }
 .mh-in { color: #dc2626; }
 .mh-out { color: #059669; }
+
+
+/* Product colours: picker, table dots, POS cart line */
+.cpk { display: flex; flex-direction: column; gap: 0.45rem; }
+.cpk-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cpk-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main);
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+}
+.cpk-chip i, .inv-colors i, .cl-colors i {
+  display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18); flex: 0 0 auto;
+}
+.cpk-chip.is-on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.cpk-chip-edit { cursor: default; padding-right: 3px; }
+.cpk-chip-edit button {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0;
+  border-radius: 50%; border: none; background: rgba(220, 38, 38, 0.12); color: #dc2626; cursor: pointer;
+}
+.cpk-manage { border-style: dashed; color: var(--primary); }
+.cpk-manage.is-on { background: var(--primary); color: #fff; border-style: solid; }
+.cpk-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.cpk-row input { flex: 1; min-width: 160px; }
+.cpk-note { width: 100%; font-size: 0.72rem; color: var(--text-muted); }
+.inv-colors { display: flex; align-items: center; gap: 3px; margin-top: 3px; }
+.inv-colors span { font-size: 0.68rem; color: var(--text-muted); margin-left: 3px; }
+.cl-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.cl-colors-hint { font-size: 0.7rem; font-weight: 700; color: #d97706; }
+.cl-colors button {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-color); background: transparent; font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
+}
+.cl-colors button.is-on { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }

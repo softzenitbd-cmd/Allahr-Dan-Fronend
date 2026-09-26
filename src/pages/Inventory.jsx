@@ -19,6 +19,8 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 import { formatDate, formatTime } from '../utils/date';
 import { discountInfo } from '../utils/discount';
+import ProductColorPicker from '../components/ProductColorPicker';
+import { colorSwatch } from '../utils/colors';
 import VariantStockEditor, { looksLikeVariantList, parseVariantText } from '../components/VariantStockEditor';
 
 const getProductImageUrl = (img) => {
@@ -80,6 +82,17 @@ const Inventory = () => {
   // Adding sizes (or stock to sizes) from a product's Edit form.
   const [addSizeRows, setAddSizeRows] = useState(null);
   const [addingSizes, setAddingSizes] = useState(false);
+  // On a product with sizes, stock / damage / history / print / delete act on
+  // one size: the button opens this little menu to pick which.
+  const [sizePick, setSizePick] = useState(null); // { x, y, item, title, run, extra }
+  const pickSize = (e, item, title, run, extra = null) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setSizePick({
+      x: Math.max(8, Math.min(r.right - 240, window.innerWidth - 248)),
+      y: Math.min(r.bottom + 6, window.innerHeight - 320),
+      item, title, run, extra,
+    });
+  };
   const toggleGroup = (key) => setExpandedGroups((prev) => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -290,7 +303,13 @@ const Inventory = () => {
       mrp: mrpPrice,
       discount_price: salePrice,
       price: salePrice,
-      ...(item.isGroup ? { groupOriginal: item } : {}),
+      ...(item.isGroup ? {
+        groupOriginal: item,
+        // Each size's label and pieces, editable in the drawer.
+        sizeEdits: Object.fromEntries((item.variants || []).map((v) => [
+          v.product_code || v.id, { variant: v.variant || '', stock: String(Number(v.stock) || 0) },
+        ])),
+      } : {}),
     });
     setAddSizeRows(null);
     setEditProductImage(null);
@@ -508,6 +527,20 @@ const Inventory = () => {
       }
     }
 
+    // A product with sizes: every size's history, together, newest first.
+    const sizes = prod.isGroup && prod.variants?.length ? prod.variants : null;
+    if (sizes) {
+      const results = await Promise.all(sizes.map((v) => fetchStockLogs({ ...params, product: v.product_code || v.id })));
+      const rows = results.flatMap((res, i) => (res?.ok ? res.rows || [] : [])
+        .filter(r => r.movement_type !== 'SALE')
+        .map(r => ({ ...r, _size: sizes[i].variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size') })));
+      rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setHistoryLogs(rows);
+      setHistorySummary(null);
+      setIsHistoryLoading(false);
+      return;
+    }
+
     const res = await fetchStockLogs(params);
     if (res?.ok) {
       // Guarantee sales never appear in inventory history
@@ -516,7 +549,7 @@ const Inventory = () => {
       setHistorySummary(res.summary || null);
     }
     setIsHistoryLoading(false);
-  }, [fetchStockLogs, historyProduct, historySubFilter, historyStartDate, historyEndDate]);
+  }, [fetchStockLogs, historyProduct, historySubFilter, historyStartDate, historyEndDate, language]);
 
   const handleStockInDatePreset = (presetId) => {
     setHistoryDateFilter(presetId);
@@ -714,6 +747,7 @@ const Inventory = () => {
       min_stock: minVal,
       minStock: minVal,
       ...(isAdmin ? { cost_price: Number(base.cost_price ?? base.costPrice) || 0 } : {}),
+      colors: base.colors || [],
       variants: rows,
     });
     setAddingSizes(false);
@@ -750,11 +784,31 @@ const Inventory = () => {
         min_stock: minVal,
         minStock: minVal,
         ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
+        colors: editingItem.colors || [],
       };
-      let payload = shared;
+      // Only the sizes whose label or pieces were changed.
+      const sizes = (editingItem.variants || []).flatMap((v) => {
+        const code = v.product_code || v.id;
+        const ed = editingItem.sizeEdits?.[code];
+        if (!ed) return [];
+        const change = { code };
+        if (ed.variant.trim() !== (v.variant || '')) change.variant = ed.variant.trim();
+        if (String(parseInt(ed.stock, 10) || 0) !== String(Number(v.stock) || 0)) change.stock = parseInt(ed.stock, 10) || 0;
+        return Object.keys(change).length > 1 ? [change] : [];
+      });
+      const labels = Object.values(editingItem.sizeEdits || {}).map((ed) => ed.variant.trim().toLowerCase());
+      const dupe = labels.find((x, i) => labels.indexOf(x) !== i);
+      if (dupe !== undefined) {
+        toast.error(language === 'bn'
+          ? `"${dupe || 'সাইজ ছাড়া'}" দুইটা সাইজে লেখা হয়েছে`
+          : `"${dupe || 'No size'}" is used for two sizes`);
+        return;
+      }
+      let payload = sizes.length ? { ...shared, sizes } : shared;
       if (editProductImage) {
         payload = new FormData();
-        Object.entries(shared).forEach(([k, v]) => payload.append(k, v));
+        Object.entries(shared).forEach(([k, v]) => payload.append(k, k === 'colors' ? JSON.stringify(v) : v));
+        if (sizes.length) payload.append('sizes', JSON.stringify(sizes));
         payload.append('image', editProductImage);
       }
       const groupRes = await updateProductGroup(editingItem.product_code || editingItem.id, payload);
@@ -786,6 +840,7 @@ const Inventory = () => {
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
       if (isAdmin) formData.append('cost_price', parseFloat(editingItem.cost_price) || 0);
+      formData.append('colors', JSON.stringify(editingItem.colors || []));
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
     } else {
@@ -879,12 +934,13 @@ const Inventory = () => {
       min_stock: minVal,
       minStock: minVal,
       ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+      colors: newProduct.colors || [],
     };
 
     let payload;
     if (newProductImage) {
       payload = new FormData();
-      Object.entries(shared).forEach(([k, v]) => payload.append(k, v));
+      Object.entries(shared).forEach(([k, v]) => payload.append(k, k === 'colors' ? JSON.stringify(v) : v));
       payload.append('variants', JSON.stringify(rows));
       payload.append('image', newProductImage);
     } else {
@@ -951,6 +1007,7 @@ const Inventory = () => {
         formData.append('discount_price', discVal || existingProduct.discount_price || saleVal);
         formData.append('price', saleVal || existingProduct.price);
         if (isAdmin && newProduct.cost_price) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
+        if (newProduct.colors?.length) formData.append('colors', JSON.stringify(newProduct.colors));
         formData.append('image', newProductImage);
         updateRes = await updateInventoryItem(existingProduct.id, formData);
       } else {
@@ -966,6 +1023,7 @@ const Inventory = () => {
           min_stock: minVal,
           minStock: minVal,
           ...(isAdmin && newProduct.cost_price ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+          ...(newProduct.colors?.length ? { colors: newProduct.colors } : {}),
         };
         updateRes = await updateInventoryItem(existingProduct.id, payload);
       }
@@ -1003,6 +1061,7 @@ const Inventory = () => {
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
       if (isAdmin) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
+      formData.append('colors', JSON.stringify(newProduct.colors || []));
       formData.append('image', newProductImage);
       res = await addInventoryItem(formData);
     } else {
@@ -1107,6 +1166,14 @@ const Inventory = () => {
                           {item.name}
                         </strong>
                       )}
+                      {kind !== 'size' && item.colors?.length > 0 && (
+                        <div className="inv-colors" title={item.colors.join(', ')}>
+                          {item.colors.slice(0, 8).map((c) => (
+                            <i key={c} style={{ background: colorSwatch(c) }} />
+                          ))}
+                          <span>{item.colors.length} {language === 'bn' ? 'কালার' : 'colours'}</span>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span className="badge badge-secondary">{item.category}</span>
@@ -1194,12 +1261,11 @@ const Inventory = () => {
                     )}
                     <td style={{ width: '110px', minWidth: '110px', whiteSpace: 'nowrap' }}>
                       <div className="table-actions">
-                        {kind !== 'group' && (<>
                         <button
                           className="btn-icon text-success"
                           style={{ color: '#059669', background: '#ecfdf5' }}
                           title={language === 'bn' ? 'স্টক যোগ করুন (+)' : 'Add Stock (+)'}
-                          onClick={() => handleOpenQuickStock(item)}
+                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজে স্টক যোগ করবেন?' : 'Add stock to which size?', (v) => handleOpenQuickStock(v), { label: language === 'bn' ? '+ নতুন সাইজ যোগ করুন' : '+ Add a new size', run: () => { handleOpenEditModal(item); setAddSizeRows([]); } }) : handleOpenQuickStock(item))}
                         >
                           <PlusCircle size={16} />
                         </button>
@@ -1207,7 +1273,7 @@ const Inventory = () => {
                           className="btn-icon text-danger"
                           style={{ color: '#dc2626', background: '#fef2f2' }}
                           title={language === 'bn' ? 'ড্যামেজ পণ্য বাদ দিন (-)' : 'Record Damaged Stock (-)'}
-                          onClick={() => handleOpenDamageModal(item)}
+                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজ ড্যামেজ?' : 'Damaged stock of which size?', (v) => handleOpenDamageModal(v)) : handleOpenDamageModal(item))}
                         >
                           <AlertTriangle size={15} />
                         </button>
@@ -1222,19 +1288,16 @@ const Inventory = () => {
                         <button
                           className="btn-icon text-secondary"
                           title="Print Barcode"
-                          onClick={() => handlePrintBarcode(item)}
+                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজের স্টিকার?' : 'Sticker for which size?', (v) => handlePrintBarcode(v)) : handlePrintBarcode(item))}
                         >
                           <Printer size={16} />
                         </button>
-                        </>)}
                         <button className="btn-icon text-primary" title={kind === 'group' ? (language === 'bn' ? 'সব সাইজ একসাথে এডিট' : 'Edit all sizes') : 'Edit'} onClick={() => handleOpenEditModal(item)}>
                           <Edit size={16} />
                         </button>
-                        {kind !== 'group' && (
-                        <button className="btn-icon text-danger" title="Delete" onClick={() => handleDelete(item.id)}>
+                        <button className="btn-icon text-danger" title="Delete" onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজ ডিলিট করবেন?' : 'Delete which size?', (v) => handleDelete(v.id)) : handleDelete(item.id))}>
                           <Trash2 size={16} />
                         </button>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -2119,6 +2182,16 @@ const Inventory = () => {
                       />
                     </div>
                   )}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'কালার (ঐচ্ছিক)' : 'Colours (optional)'}
+                    </label>
+                    <ProductColorPicker
+                      value={newProduct.colors || []}
+                      onChange={(colors) => setNewProduct((cur) => ({ ...cur, colors }))}
+                      bn={language === 'bn'}
+                    />
+                  </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
@@ -2173,6 +2246,38 @@ const Inventory = () => {
       )}
 
       {/* Edit Product Drawer */}
+      {sizePick && createPortal(
+        <>
+          <div className="size-pick-backdrop" onMouseDown={() => setSizePick(null)} />
+          <div className="size-pick" style={{ left: sizePick.x, top: sizePick.y }}>
+            <div className="size-pick-head">
+              <span>{sizePick.title}</span>
+              <button type="button" onClick={() => setSizePick(null)}><X size={14} /></button>
+            </div>
+            <div className="size-pick-name">{sizePick.item.name}</div>
+            <div className="size-pick-list">
+              {(sizePick.item.variants || []).map((v) => (
+                <button
+                  type="button"
+                  key={v.id}
+                  onClick={() => { const run = sizePick.run; setSizePick(null); run(v); }}
+                >
+                  <span className="inv-size-chip">{v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span>
+                  <span className="size-pick-code">{v.id}</span>
+                  <b>{Number(v.stock) || 0}</b>
+                </button>
+              ))}
+            </div>
+            {sizePick.extra && (
+              <button type="button" className="size-pick-extra" onClick={() => { const run = sizePick.extra.run; setSizePick(null); run(); }}>
+                {sizePick.extra.label}
+              </button>
+            )}
+          </div>
+        </>,
+        document.body
+      )}
+
       {editingItem && createPortal(
         <div className="drawer-overlay">
           <div className="drawer-container">
@@ -2238,22 +2343,69 @@ const Inventory = () => {
                         <span>{language === 'bn' ? 'নাম, ক্যাটাগরি, দাম — সব সাইজে একসাথে বদলাবে' : 'Name, category and prices change on every size'}</span>
                       </div>
                       <table className="inv-group-sizes">
+                        <thead>
+                          <tr>
+                            <th>{language === 'bn' ? 'সাইজ' : 'Size'}</th>
+                            <th>{language === 'bn' ? 'বারকোড' : 'Barcode'}</th>
+                            <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'পিস' : 'Pieces'}</th>
+                          </tr>
+                        </thead>
                         <tbody>
-                          {(editingItem.variants || []).map((v) => (
-                            <tr key={v.id}>
-                              <td><span className="inv-size-chip">{v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span></td>
-                              <td className="font-mono">{v.id}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 700 }}>{Number(v.stock) || 0} {v.unit || 'Pcs'}</td>
-                            </tr>
-                          ))}
+                          {(editingItem.variants || []).map((v) => {
+                            const code = v.product_code || v.id;
+                            const ed = editingItem.sizeEdits?.[code] || { variant: v.variant || '', stock: String(v.stock ?? 0) };
+                            const stockChanged = String(parseInt(ed.stock, 10) || 0) !== String(Number(v.stock) || 0);
+                            const changed = ed.variant.trim() !== (v.variant || '') || stockChanged;
+                            const setEd = (patch) => setEditingItem((cur) => ({
+                              ...cur,
+                              sizeEdits: { ...(cur.sizeEdits || {}), [code]: { ...ed, ...patch } },
+                            }));
+                            return (
+                              <tr key={v.id} className={changed ? 'is-changed' : undefined}>
+                                <td>
+                                  <input
+                                    className="inv-size-input"
+                                    value={ed.variant}
+                                    placeholder={language === 'bn' ? 'সাইজ ছাড়া' : 'No size'}
+                                    onChange={(e) => setEd({ variant: e.target.value })}
+                                  />
+                                </td>
+                                <td className="font-mono" style={{ fontSize: '0.78rem' }}>{v.id}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <input
+                                    className="inv-size-input inv-size-qty"
+                                    type="number"
+                                    min="0"
+                                    value={ed.stock}
+                                    onChange={(e) => setEd({ stock: e.target.value })}
+                                  />
+                                  {stockChanged && (
+                                    <div className="inv-size-was">
+                                      {language === 'bn' ? 'আগে' : 'was'} {Number(v.stock) || 0}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
                           <tr>
                             <td colSpan={2}>{language === 'bn' ? 'মোট' : 'Total'}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 800 }}>{Number(editingItem.stock) || 0} {editingItem.unit || 'Pcs'}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                              {(editingItem.variants || []).reduce((sum, v) => {
+                                const ed = editingItem.sizeEdits?.[v.product_code || v.id];
+                                return sum + (ed ? parseInt(ed.stock, 10) || 0 : Number(v.stock) || 0);
+                              }, 0)} {editingItem.unit || 'Pcs'}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {language === 'bn'
+                          ? 'সাইজের নাম বা পিস বদলে নিচে "Save Changes" চাপুন। বারকোড একই থাকবে।'
+                          : 'Change a size name or its pieces, then press Save Changes. Barcodes stay the same.'}
+                      </div>
                       {addSizeRows ? (
                         <div style={{ marginTop: '0.75rem' }}>
                           <div className="text-sm" style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
@@ -2508,6 +2660,16 @@ const Inventory = () => {
                       />
                     </div>
                   )}
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label className="text-muted text-sm block mb-1">
+                      {language === 'bn' ? 'কালার (ঐচ্ছিক)' : 'Colours (optional)'}
+                    </label>
+                    <ProductColorPicker
+                      value={editingItem.colors || []}
+                      onChange={(colors) => setEditingItem((cur) => ({ ...cur, colors }))}
+                      bn={language === 'bn'}
+                    />
+                  </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
@@ -3715,6 +3877,7 @@ const Inventory = () => {
                                 {isDamage ? <AlertTriangle size={12} /> : <PackagePlus size={12} />}
                                 {label}
                               </span>
+                              {r._size && <span className="inv-size-chip" style={{ marginLeft: '6px' }}>{r._size}</span>}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               <span style={{ fontWeight: 800, color: colour }}>
@@ -3723,6 +3886,7 @@ const Inventory = () => {
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
                               {r.balance_after} {unit}
+                              {r._size && <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 500 }}>{r._size}</div>}
                             </td>
                             <td>
                               <code style={{ fontSize: '0.75rem', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>

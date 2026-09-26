@@ -358,6 +358,7 @@ const POSHistory = () => {
                               <span className="poshistory-product-name" title={item.name}>
                                 • {item.name}
                                 {item.variant ? <span className="poshistory-product-variant"> ({item.variant})</span> : null}
+                                {item.color ? <span className="poshistory-product-variant"> · {item.color}</span> : null}
                               </span>
                               <span className="poshistory-product-qty">
                                 ×{item.quantity}
@@ -497,7 +498,7 @@ const POSHistory = () => {
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.customerName || 'N/A'}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.salesmanName || 'Admin'}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>
-                    {(s.items || []).map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.quantity}`).join(', ') || '—'}
+                    {(s.items || []).map((i) => `${i.name}${i.variant ? ` (${i.variant})` : ''}${i.color ? ` · ${i.color}` : ''} x${i.quantity}`).join(', ') || '—'}
                   </td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.paymentType}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem', textAlign: 'right' }}>৳{money(s.total)}</td>

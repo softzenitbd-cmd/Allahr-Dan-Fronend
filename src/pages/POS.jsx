@@ -11,6 +11,8 @@ import {
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
 import { discountInfo } from '../utils/discount';
+import { compareSizes } from '../utils/sizes';
+import { colorSwatch, splitColors, joinColors } from '../utils/colors';
 import PaymentVoucher from '../components/PaymentVoucher';
 import ThermalReceipt from '../components/ThermalReceipt';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
@@ -227,20 +229,7 @@ const POS = () => {
       map.get(key).push(p);
     });
     // Sizes in shop order: no size label first, then S M L XL..., then numbers.
-    const LETTERS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL'];
-    const rank = (v) => {
-      const t = String(v || '').trim().toUpperCase();
-      if (!t) return [0, 0, ''];
-      const i = LETTERS.indexOf(t);
-      if (i >= 0) return [1, i, t];
-      const n = parseFloat(t);
-      return Number.isFinite(n) ? [2, n, t] : [3, 0, t];
-    };
-    map.forEach((list) => list.sort((a, b) => {
-      const [ga, na, ta] = rank(a.variant);
-      const [gb, nb, tb] = rank(b.variant);
-      return ga - gb || na - nb || ta.localeCompare(tb);
-    }));
+    map.forEach((list) => list.sort((a, b) => compareSizes(a.variant, b.variant)));
     return map;
   }, [inventory]);
   const sizesOf = (product) => sizesByGroup.get(product.variant_of || product.id) || [product];
@@ -1256,6 +1245,33 @@ const POS = () => {
                           {item.variant ? `${item.variant} · ` : ''}{item.id}
                           {item.stock !== undefined ? ` · ${language === 'bn' ? 'স্টক' : 'stock'} ${item.stock}` : ''}
                         </div>
+                        {(() => {
+                          // Colours are only a label: tap the one(s) the customer takes.
+                          const colours = item.colors?.length ? item.colors
+                            : (inventory.find((p) => p.id === item.id || p.product_code === item.id)?.colors || []);
+                          if (!colours.length) return null;
+                          const picked = splitColors(item.color);
+                          const toggle = (c) => {
+                            const next = picked.includes(c) ? picked.filter((x) => x !== c) : [...picked, c];
+                            updateCartItem(item.id, { color: joinColors(next) });
+                          };
+                          return (
+                            <div className={`cl-colors ${picked.length ? '' : 'is-empty'}`}>
+                              {!picked.length && <span className="cl-colors-hint">{language === 'bn' ? 'কালার:' : 'Colour:'}</span>}
+                              {colours.map((c) => (
+                                <button
+                                  type="button"
+                                  key={c}
+                                  className={picked.includes(c) ? 'is-on' : ''}
+                                  onClick={() => toggle(c)}
+                                  title={c}
+                                >
+                                  <i style={{ background: colorSwatch(c) }} />{c}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         {Number.isFinite(Number(item.stock)) && item.quantity > Number(item.stock) && (
                           <div className="cl-overstock">
                             {language === 'bn'

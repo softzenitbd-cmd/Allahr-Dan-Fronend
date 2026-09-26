@@ -107,6 +107,7 @@ export const ENDPOINTS = {
   // Core
   SHOP_PROFILE: '/core/shop-profile/',
   SIZE_PRESETS: '/core/size-presets/',
+  COLOR_PRESETS: '/core/color-presets/',
   USER_SETTINGS: '/core/user-settings/',
   ACTIVITY_LOGS: '/core/activity-logs/',
   LOG_CUSTOM_ACTIVITY: '/core/activity-logs/log-custom/',

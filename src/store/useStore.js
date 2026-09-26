@@ -464,6 +464,21 @@ const useStore = create(
         }
       },
 
+      /** The shop's quick colour buttons (null = the built-in list). */
+      saveColorPresets: async (items) => {
+        const prev = get().shopProfile?.color_presets ?? null;
+        set((state) => ({ shopProfile: { ...state.shopProfile, color_presets: items } }));
+        try {
+          const res = await CoreService.saveColorPresets(items);
+          set((state) => ({ shopProfile: { ...state.shopProfile, color_presets: res?.items ?? items } }));
+          return true;
+        } catch (error) {
+          set((state) => ({ shopProfile: { ...state.shopProfile, color_presets: prev } }));
+          fail(error, 'Could not save the colours.');
+          return false;
+        }
+      },
+
       saveShopColour: (key, patch) => {
         if (get().user?.role !== 'Admin') return;
         clearTimeout(shopColourSaveTimers.get(key));

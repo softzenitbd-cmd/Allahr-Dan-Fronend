@@ -186,6 +186,7 @@ export const CoreService = {
   saveShopProfile: (payload) => apiClient.put(ENDPOINTS.SHOP_PROFILE, payload),
   // The quick size buttons; null puts back the built-in list.
   saveSizePresets: (sizes) => apiClient.put(ENDPOINTS.SIZE_PRESETS, { sizes }),
+  saveColorPresets: (items) => apiClient.put(ENDPOINTS.COLOR_PRESETS, { items }),
   userSettings: () => apiClient.get(ENDPOINTS.USER_SETTINGS),
   saveUserSettings: (payload) => apiClient.post(ENDPOINTS.USER_SETTINGS, payload),
 };

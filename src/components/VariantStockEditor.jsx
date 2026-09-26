@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X, Wand2, Settings2, RotateCcw } from 'lucide-react';
 import useStore from '../store/useStore';
+import { sortSizes } from '../utils/sizes';
 
 /**
  * Sizes, each with its own pieces: XL 4, L 10, M 3.
@@ -60,13 +61,14 @@ const VariantStockEditor = ({ rows, onChange, bn, unit = 'Pcs' }) => {
   // The quick size buttons are the shop's own list, kept on the server.
   const savedPresets = useStore((s) => s.shopProfile?.size_presets);
   const saveSizePresets = useStore((s) => s.saveSizePresets);
-  const presets = Array.isArray(savedPresets) ? savedPresets : DEFAULT_SIZE_PRESETS;
+  // Always in shop order, so a new 29 lands between 28 and 30.
+  const presets = sortSizes(Array.isArray(savedPresets) ? savedPresets : DEFAULT_SIZE_PRESETS);
   const [managing, setManaging] = useState(false);
   const [newPreset, setNewPreset] = useState('');
   const addPresets = () => {
     const extra = newPreset.split(/[,\n;]+/).map((x) => tidySize(x)).filter(Boolean)
       .filter((x) => !presets.some((p) => p.toLowerCase() === x.toLowerCase()));
-    if (extra.length) saveSizePresets([...presets, ...extra]);
+    if (extra.length) saveSizePresets(sortSizes([...presets, ...extra]));
     setNewPreset('');
   };
   const removePreset = (size) => saveSizePresets(presets.filter((p) => p !== size));
