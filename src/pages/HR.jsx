@@ -6,10 +6,11 @@ import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
 import { formatDate, formatDateTime, formatTime } from '../utils/date';
+import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 
 const HR = () => {
   const [activeTab, setActiveTab] = useState('Staff');
-  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, settleStaffDue, fetchPayrollAttendance, language } = useStore();
+  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, generateMonthPayroll, settleStaffDue, fetchPayrollAttendance, fetchStaffMoneyHistory, language } = useStore();
 
   // Modals state
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -41,6 +42,15 @@ const HR = () => {
   // and the cut the payer has chosen -- all of it, part, or none.
   const [payrollAtt, setPayrollAtt] = useState({});
   const [deductions, setDeductions] = useState({});
+  // Advance to take out of this salary, per staff (undefined = not adjusting).
+  const [advAdjust, setAdvAdjust] = useState({});
+  // The money-taken history drawer.
+  const [moneyHistory, setMoneyHistory] = useState(null); // { staff, data }
+  const openMoneyHistory = async (s) => {
+    setMoneyHistory({ staff: s, data: null });
+    const data = await fetchStaffMoneyHistory(s.id);
+    setMoneyHistory((cur) => (cur && cur.staff.id === s.id ? { staff: s, data: data || { entries: [], totals: {}, due: Number(s.due || 0) } } : cur));
+  };
   useEffect(() => {
     if (activeTab !== 'Payroll') return;
     let live = true;
@@ -49,7 +59,7 @@ const HR = () => {
     });
     return () => { live = false; };
   }, [activeTab, payrollMonth, attendance, payrolls, fetchPayrollAttendance]);
-  useEffect(() => { setDeductions({}); setBonuses({}); setPayInputs({}); }, [payrollMonth]);
+  useEffect(() => { setDeductions({}); setBonuses({}); setPayInputs({}); setAdvAdjust({}); }, [payrollMonth]);
   const [attViewMode, setAttViewMode] = useState('monthly'); // 'monthly' | 'daily'
   const [attReportMonth, setAttReportMonth] = useState(todayStr.substring(0, 7)); // YYYY-MM
   const [attStaffFilter, setAttStaffFilter] = useState(''); // '' for all, or staff id
@@ -176,7 +186,7 @@ const HR = () => {
     }
   };
 
-  const handlePaySalaryInstallment = async (staffMember, presentDays, bonus, customAmount, cut = 0) => {
+  const handlePaySalaryInstallment = async (staffMember, presentDays, bonus, customAmount, cut = 0, adjust = 0) => {
     const existingPayroll = (payrolls || []).find(p => (p.staffId === staffMember.id || p.staff_id === staffMember.id) && p.month === payrollMonth);
     const paidSoFar = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || 0) : 0;
     const baseSalary = existingPayroll && paidSoFar > 0 ? Number(existingPayroll.baseSalary ?? existingPayroll.base_salary ?? staffMember.baseSalary ?? 0) : Number(staffMember.baseSalary || 0);
@@ -189,10 +199,13 @@ const HR = () => {
         ? `এই মাসে আগেই ৳${paidSoFar.toLocaleString()} দেওয়া হয়েছে — কর্তনের পরে বেতন এর চেয়ে কম হতে পারে না।`
         : `৳${paidSoFar.toLocaleString()} is already paid this month — the salary after the cut cannot be less.`);
     }
-    const remainingDue = Math.max(0, Math.round(totalNetPay - paidSoFar));
+    const salaryLeft = Math.max(0, Math.round(totalNetPay - paidSoFar));
+    // An advance taken earlier, settled out of this salary: no cash moves for it.
+    const adj = Math.max(0, Math.min(Number(adjust) || 0, Number(staffMember.due || 0), salaryLeft));
+    const remainingDue = salaryLeft - adj;
 
     let payAmount = customAmount !== undefined && customAmount !== '' ? parseFloat(customAmount) : remainingDue;
-    if (isNaN(payAmount) || payAmount <= 0) {
+    if (isNaN(payAmount) || payAmount < 0 || (payAmount === 0 && adj <= 0)) {
       return toast.error(language === 'bn' ? 'সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)' : 'Please enter a valid amount greater than 0');
     }
 
@@ -215,6 +228,7 @@ const HR = () => {
       baseSalary: staffMember.baseSalary,
       bonus,
       ...(isFullyPaid ? {} : { deduction: cut }),
+      ...(adj > 0 ? { adjustAdvance: adj } : {}),
       amount: payAmount,
       paymentMethod: 'Cash',
       notes: excess > 0 ? `Salary: ৳${payAmount - excess}, Advance Due: ৳${excess}` : `Salary installment: ৳${payAmount}`,
@@ -222,12 +236,55 @@ const HR = () => {
 
     if (res?.ok) {
       setPayInputs(prev => ({ ...prev, [staffMember.id]: '' }));
+      setAdvAdjust(prev => { const next = { ...prev }; delete next[staffMember.id]; return next; });
+      const adjText = adj > 0
+        ? (language === 'bn' ? ` (অগ্রিম ৳${adj.toLocaleString()} বেতন থেকে কাটা হয়েছে)` : ` (advance ৳${adj.toLocaleString()} taken out of salary)`)
+        : '';
       toast.success(
         language === 'bn'
-          ? `${staffMember.name}-কে ৳${payAmount.toLocaleString()} টাকা সফলভাবে পরিশোধ করা হয়েছে!`
-          : `Paid ৳${payAmount.toLocaleString()} to ${staffMember.name} successfully!`
+          ? `${staffMember.name}-কে ৳${payAmount.toLocaleString()} টাকা দেওয়া হয়েছে${adjText}`
+          : `Paid ৳${payAmount.toLocaleString()} to ${staffMember.name}${adjText}`
       );
     }
+  };
+
+  const [generatingMonth, setGeneratingMonth] = useState(false);
+  /** Work out this month's salary for every active staff member, paying nobody. */
+  const handleGenerateMonthPayroll = async () => {
+    const monthLabel = new Date(`${payrollMonth}-01T00:00:00`).toLocaleDateString(language === 'bn' ? 'bn-BD' : 'en-GB', { month: 'long', year: 'numeric' });
+    const ok = await showConfirmDialog({
+      title: language === 'bn' ? `${monthLabel} — বেতন তৈরি করবেন?` : `Generate payroll for ${monthLabel}?`,
+      text: language === 'bn'
+        ? 'সব স্টাফের হাজিরা দেখে বেতন, কর্তন আর বোনাস হিসাব হবে। কোনো টাকা দেওয়া হবে না — পরে "টাকা দিন" দিয়ে দেবেন। যাদের বেতন পুরো দেওয়া হয়ে গেছে তারা বাদ থাকবে।'
+        : "Salary, deduction and bonus are worked out from everyone's attendance. No money is paid now — pay later with Pay. Anyone already paid in full is left as is.",
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, তৈরি করুন' : 'Yes, generate',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+    });
+    if (!ok) return;
+    // What is typed on screen (bonus, an adjusted cut) goes along.
+    const items = staff
+      .map((s) => ({
+        staffId: s.id,
+        ...(bonuses[s.id] !== undefined ? { bonus: bonuses[s.id] } : {}),
+        ...(deductions[s.id] !== undefined && deductions[s.id] !== '' ? { deduction: Number(deductions[s.id]) || 0 } : {}),
+      }))
+      .filter((it) => Object.keys(it).length > 1);
+    setGeneratingMonth(true);
+    const res = await generateMonthPayroll(payrollMonth, items);
+    setGeneratingMonth(false);
+    if (!res?.ok) return;
+    const { created = [], updated = [], skipped = [], totalNetPay = 0 } = res.result || {};
+    setDeductions({});
+    setBonuses({});
+    const done = created.length + updated.length;
+    const skippedText = skipped.length
+      ? (language === 'bn'
+        ? ` বাদ: ${skipped.map((x) => `${x.name} (${x.reason === 'already paid' ? 'আগেই পরিশোধিত' : x.reason === 'no salary set' ? 'বেতন সেট নেই' : x.reason})`).join(', ')}।`
+        : ` Skipped: ${skipped.map((x) => `${x.name} (${x.reason})`).join(', ')}.`)
+      : '';
+    showSuccessAlert(language === 'bn'
+      ? `${monthLabel}: ${done} জনের বেতন তৈরি হয়েছে — মোট ৳${Number(totalNetPay).toLocaleString()}।${skippedText}`
+      : `${monthLabel}: payroll ready for ${done} staff — total ৳${Number(totalNetPay).toLocaleString()}.${skippedText}`);
   };
 
   const openSettleStaff = (s) => {
@@ -343,6 +400,14 @@ const HR = () => {
                                   <DollarSign size={12} /> {language === 'bn' ? 'জমা' : 'Settle'}
                                 </button>
                               )}
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                title={language === 'bn' ? 'টাকা নেওয়ার ইতিহাস' : 'Money taken history'}
+                                onClick={() => openMoneyHistory(s)}
+                              >
+                                <History size={14} />
+                              </button>
                             </div>
                           </td>
                           <td>{formatDate(s.joinDate)}</td>
@@ -1005,13 +1070,51 @@ const HR = () => {
             <div>
               <div className="flex-align-gap mb-4" style={{ justifyContent: 'space-between' }}>
                 <h3>{t(language, 'Payroll & Bonus' || 'Monthly Payroll Summary')}</h3>
-                <input
-                  type="month"
-                  className="p-2 bg-input border border-gray-700 rounded text-main"
-                  value={payrollMonth}
-                  onChange={(e) => setPayrollMonth(e.target.value)}
-                />
+                <div className="flex-align-gap" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="month"
+                    className="p-2 bg-input border border-gray-700 rounded text-main"
+                    value={payrollMonth}
+                    onChange={(e) => setPayrollMonth(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary flex-align-gap"
+                    onClick={handleGenerateMonthPayroll}
+                    disabled={generatingMonth || staff.length === 0}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    <DollarSign size={16} />
+                    {generatingMonth
+                      ? (language === 'bn' ? 'তৈরি হচ্ছে…' : 'Generating…')
+                      : (language === 'bn' ? 'এই মাসের বেতন তৈরি করুন' : 'Generate Payroll')}
+                  </button>
+                </div>
               </div>
+              {(() => {
+                const monthRows = (payrolls || []).filter((pr) => pr.month === payrollMonth);
+                if (!monthRows.length) {
+                  return (
+                    <div className="payroll-month-note">
+                      {language === 'bn'
+                        ? 'এই মাসের বেতন এখনো তৈরি হয়নি। হাজিরা ঠিক আছে কিনা দেখে "এই মাসের বেতন তৈরি করুন" চাপুন।'
+                        : 'Payroll for this month is not generated yet. Check attendance, then press Generate Payroll.'}
+                    </div>
+                  );
+                }
+                const net = monthRows.reduce((a, pr) => a + Number(pr.netPay || 0), 0);
+                const paid = monthRows.reduce((a, pr) => a + Number(pr.paidAmount || 0), 0);
+                const cutSum = monthRows.reduce((a, pr) => a + Number(pr.deduction || 0), 0);
+                return (
+                  <div className="payroll-month-strip">
+                    <div><span>{language === 'bn' ? 'তৈরি হয়েছে' : 'Generated'}</span><b>{monthRows.length} {language === 'bn' ? 'জন' : 'staff'}</b></div>
+                    <div><span>{language === 'bn' ? 'মোট বেতন' : 'Total salary'}</span><b>৳{net.toLocaleString()}</b></div>
+                    <div><span>{language === 'bn' ? 'কর্তন' : 'Deducted'}</span><b className="text-danger">৳{cutSum.toLocaleString()}</b></div>
+                    <div><span>{language === 'bn' ? 'দেওয়া হয়েছে' : 'Paid'}</span><b className="text-success">৳{paid.toLocaleString()}</b></div>
+                    <div><span>{language === 'bn' ? 'বাকি' : 'Remaining'}</span><b className="text-danger">৳{Math.max(0, net - paid).toLocaleString()}</b></div>
+                  </div>
+                );
+              })()}
               {staff.length === 0 ? <p className="text-muted">No staff to generate payroll.</p> : (
                 <div className="table-responsive">
                   <table className="data-table mt-4">
@@ -1051,7 +1154,7 @@ const HR = () => {
                         const cutInput = deductions[s.id];
                         const cut = isFullyPaid
                           ? Number(existingPayroll.deduction || 0)
-                          : Math.max(0, Number(cutInput !== undefined && cutInput !== '' ? cutInput : (savedCut !== null && paidAmount > 0 ? savedCut : autoCut)) || 0);
+                          : Math.max(0, Number(cutInput !== undefined && cutInput !== '' ? cutInput : (savedCut !== null && Number(existingPayroll.deduction || 0) !== Number(existingPayroll.autoDeduction || 0) ? savedCut : autoCut)) || 0);
                         const totalNetPay = isFullyPaid
                           ? Number(existingPayroll.netPay || existingPayroll.net_pay || 0)
                           : Math.max(0, Math.round(baseSalary + bonus - cut));
@@ -1059,15 +1162,27 @@ const HR = () => {
                         const isPartial = paidAmount > 0 && !isFullyPaid;
 
                         const currentPayInput = payInputs[s.id] !== undefined ? payInputs[s.id] : '';
+                        const staffDue = Number(s.due || 0);
+                        const advOn = advAdjust[s.id] !== undefined;
+                        const advAmount = advOn ? Math.max(0, Math.min(Number(advAdjust[s.id]) || 0, staffDue, remainingDue)) : 0;
+                        const cashLeft = remainingDue - advAmount;
                         const numInput = parseFloat(currentPayInput);
-                        const hasExcess = !isNaN(numInput) && numInput > remainingDue;
-                        const excessAmount = hasExcess ? Math.round(numInput - remainingDue) : 0;
+                        const hasExcess = !isNaN(numInput) && numInput > cashLeft;
+                        const excessAmount = hasExcess ? Math.round(numInput - cashLeft) : 0;
 
                         return (
                           <tr key={s.id}>
                             <td>
                               <strong>{s.name}</strong>
                               <div className="text-xs text-muted">{s.role || 'Staff'}</div>
+                              {staffDue > 0 && (
+                                <div className="text-xs text-danger" style={{ fontWeight: 700 }}>
+                                  {language === 'bn' ? 'অগ্রিম/বকেয়া' : 'Advance/due'} ৳{staffDue.toLocaleString()}
+                                </div>
+                              )}
+                              <button type="button" className="money-history-link" onClick={() => openMoneyHistory(s)}>
+                                <History size={11} /> {language === 'bn' ? 'টাকা নেওয়ার ইতিহাস' : 'Money taken'}
+                              </button>
                             </td>
                             <td>
                               <strong>{presentDays}</strong> / {monthDays}
@@ -1158,7 +1273,7 @@ const HR = () => {
                                   <input
                                     type="number"
                                     min="1"
-                                    placeholder={remainingDue > 0 ? String(remainingDue) : (language === 'bn' ? 'পরিমাণ' : 'Amount')}
+                                    placeholder={cashLeft > 0 ? String(cashLeft) : (language === 'bn' ? 'পরিমাণ' : 'Amount')}
                                     value={currentPayInput}
                                     onChange={(e) => setPayInputs({ ...payInputs, [s.id]: e.target.value })}
                                     style={{ width: '85px', padding: '0.25rem 0.4rem', backgroundColor: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.85rem' }}
@@ -1166,11 +1281,48 @@ const HR = () => {
                                   <button
                                     className="btn-primary"
                                     style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-                                    onClick={() => handlePaySalaryInstallment(s, presentDays, bonus, currentPayInput, cut)}
+                                    onClick={() => handlePaySalaryInstallment(s, presentDays, bonus, currentPayInput, cut, advAmount)}
                                   >
                                     {language === 'bn' ? 'টাকা দিন' : 'Pay'}
                                   </button>
                                 </div>
+                                {staffDue > 0 && remainingDue > 0 && (
+                                  <div className="adv-adjust">
+                                    <label>
+                                      <input
+                                        type="checkbox"
+                                        checked={advOn}
+                                        onChange={(e) => setAdvAdjust((prev) => {
+                                          const next = { ...prev };
+                                          if (e.target.checked) next[s.id] = String(Math.min(staffDue, remainingDue));
+                                          else delete next[s.id];
+                                          return next;
+                                        })}
+                                      />
+                                      {language === 'bn' ? 'অগ্রিম বেতন থেকে কাটুন' : 'Take advance out of salary'}
+                                    </label>
+                                    {advOn && (
+                                      <div className="flex-align-gap" style={{ alignItems: 'center' }}>
+                                        <span>৳</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={Math.min(staffDue, remainingDue)}
+                                          value={advAdjust[s.id]}
+                                          onChange={(e) => setAdvAdjust({ ...advAdjust, [s.id]: e.target.value })}
+                                        />
+                                        <small className="text-muted">/ ৳{staffDue.toLocaleString()}</small>
+                                      </div>
+                                    )}
+                                    {advOn && advAmount > 0 && (
+                                      <small className="text-muted">
+                                        {language === 'bn'
+                                          ? `বেতন ৳${remainingDue.toLocaleString()} = অগ্রিম কাটা ৳${advAmount.toLocaleString()} + নগদ ৳${cashLeft.toLocaleString()}`
+                                          : `Salary ৳${remainingDue.toLocaleString()} = advance ৳${advAmount.toLocaleString()} + cash ৳${cashLeft.toLocaleString()}`}
+                                      </small>
+                                    )}
+                                  </div>
+                                )}
                                 {hasExcess && (
                                   <small className="text-warning" style={{ fontSize: '0.72rem', lineHeight: '1.2' }}>
                                     ⚠️ অতিরিক্ত ৳{excessAmount.toLocaleString()} Due-তে যাবে
@@ -1532,6 +1684,76 @@ const HR = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Money taken by a staff member: advances, repayments, salary adjustments */}
+      {moneyHistory && createPortal(
+        <div className="drawer-overlay" onClick={(e) => { if (e.target === e.currentTarget) setMoneyHistory(null); }}>
+          <div className="drawer-container">
+            <div className="drawer-header">
+              <h2>{language === 'bn' ? 'টাকা নেওয়ার ইতিহাস' : 'Money taken'} — {moneyHistory.staff.name}</h2>
+              <button className="drawer-close-btn" onClick={() => setMoneyHistory(null)}>
+                <X size={22} />
+              </button>
+            </div>
+            <div className="drawer-body">
+              {!moneyHistory.data ? (
+                <p className="text-muted">{language === 'bn' ? 'লোড হচ্ছে…' : 'Loading…'}</p>
+              ) : (() => {
+                const d = moneyHistory.data;
+                const KIND = {
+                  advance: { bn: 'অগ্রিম নিয়েছে', en: 'Advance taken', sign: '+', cls: 'mh-in' },
+                  shortfall: { bn: 'SR ঘাটতি', en: 'SR shortfall', sign: '+', cls: 'mh-in' },
+                  adjusted: { bn: 'বেতন থেকে কাটা', en: 'Taken from salary', sign: '−', cls: 'mh-out' },
+                  repaid: { bn: 'ফেরত দিয়েছে', en: 'Paid back', sign: '−', cls: 'mh-out' },
+                };
+                return (
+                  <>
+                    <div className="mh-summary">
+                      <div><span>{language === 'bn' ? 'এখন বকেয়া' : 'Owes now'}</span><b className={d.due > 0 ? 'text-danger' : ''}>৳{Number(d.due || 0).toLocaleString()}</b></div>
+                      <div><span>{language === 'bn' ? 'মোট নিয়েছে' : 'Taken'}</span><b>৳{Number(d.totals?.taken || 0).toLocaleString()}</b></div>
+                      <div><span>{language === 'bn' ? 'বেতন থেকে কাটা' : 'From salary'}</span><b>৳{Number(d.totals?.adjusted || 0).toLocaleString()}</b></div>
+                      <div><span>{language === 'bn' ? 'ফেরত দিয়েছে' : 'Paid back'}</span><b>৳{Number(d.totals?.repaid || 0).toLocaleString()}</b></div>
+                    </div>
+                    {d.entries.length === 0 ? (
+                      <p className="text-muted">{language === 'bn' ? 'এই স্টাফ এখনো কোনো অগ্রিম নেয়নি।' : 'No advances yet.'}</p>
+                    ) : (
+                      <table className="data-table mh-table">
+                        <thead>
+                          <tr>
+                            <th>{language === 'bn' ? 'তারিখ' : 'Date'}</th>
+                            <th>{language === 'bn' ? 'ধরন' : 'Type'}</th>
+                            <th>{language === 'bn' ? 'বিবরণ' : 'Details'}</th>
+                            <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'টাকা' : 'Amount'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {d.entries.map((e, i) => {
+                            const k = KIND[e.kind] || KIND.advance;
+                            return (
+                              <tr key={`${e.ref}-${i}`}>
+                                <td style={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</td>
+                                <td><span className={`mh-kind ${k.cls}`}>{language === 'bn' ? k.bn : k.en}</span></td>
+                                <td className="text-sm text-muted">{e.note}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }} className={k.cls}>{k.sign}৳{Number(e.amount).toLocaleString()}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                    <p className="text-xs text-muted" style={{ marginTop: '0.75rem' }}>
+                      {language === 'bn'
+                        ? 'Expense থেকে স্টাফ বেছে টাকা দিলে সেটা অগ্রিম হিসেবে এখানে আসে। বেতন দেওয়ার সময় Payroll-এ "অগ্রিম বেতন থেকে কাটুন" দিয়ে সমন্বয় করা যায়, বা স্টাফ তালিকার "জমা" দিয়ে ফেরত নেওয়া যায়।'
+                        : 'Money given from Expenses with a staff member picked shows here as an advance. Settle it from the salary in Payroll ("Take advance out of salary") or take it back with Settle in the staff list.'}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>,
         document.body

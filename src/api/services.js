@@ -123,6 +123,8 @@ export const HRService = {
   createStaff: (payload) => apiClient.post(ENDPOINTS.STAFF, payload),
   updateStaff: (code, payload) => apiClient.patch(ENDPOINTS.STAFF_MEMBER(code), payload),
   removeStaff: (code) => apiClient.delete(ENDPOINTS.STAFF_MEMBER(code)),
+  // Advances taken, repayments and what was taken out of salary.
+  staffMoneyHistory: (code) => apiClient.get(ENDPOINTS.STAFF_MONEY_HISTORY(code)),
 
   attendance: (params) => apiClient.get(ENDPOINTS.ATTENDANCE, { params }),
   markAttendance: (payload) => apiClient.post(ENDPOINTS.ATTENDANCE_MARK, payload),
@@ -135,6 +137,8 @@ export const HRService = {
   generatePayslip: (payload) => apiClient.post(ENDPOINTS.PAYROLL_GENERATE, payload),
   // Each staff member's register for a month and the salary cut it suggests.
   payrollAttendance: (month) => apiClient.get(ENDPOINTS.PAYROLL_ATTENDANCE, { params: { month } }),
+  // Every active staff member's salary for a month, worked out without paying.
+  generateMonthPayroll: (month, items) => apiClient.post(ENDPOINTS.PAYROLL_GENERATE_MONTH, { month, items }),
 };
 
 export const SRService = {

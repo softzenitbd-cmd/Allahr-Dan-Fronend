@@ -69,6 +69,7 @@ export const ENDPOINTS = {
   // HR
   STAFF: '/hr/staff/',
   STAFF_MEMBER: (code) => `/hr/staff/${encodeURIComponent(code)}/`,
+  STAFF_MONEY_HISTORY: (code) => `/hr/staff/${encodeURIComponent(code)}/money-history/`,
   ATTENDANCE: '/hr/attendance/',
   ATTENDANCE_MARK: '/hr/attendance/mark/',
   LEAVES: '/hr/leaves/',
@@ -76,6 +77,7 @@ export const ENDPOINTS = {
   PAYROLLS: '/hr/payrolls/',
   PAYROLL_GENERATE: '/hr/payrolls/generate/',
   PAYROLL_ATTENDANCE: '/hr/payrolls/attendance-summary/',
+  PAYROLL_GENERATE_MONTH: '/hr/payrolls/generate-month/',
 
   // SR consignment (stock issued to a salesman, settled at end of day)
   SR_SETTLEMENTS: '/sr/settlements/',

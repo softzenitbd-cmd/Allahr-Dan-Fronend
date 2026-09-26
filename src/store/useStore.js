@@ -1303,6 +1303,25 @@ const useStore = create(
         }
       },
 
+      fetchStaffMoneyHistory: async (code) => {
+        try {
+          return await HRService.staffMoneyHistory(code);
+        } catch (error) {
+          fail(error, 'Could not load the history.');
+          return null;
+        }
+      },
+
+      generateMonthPayroll: (month, items = []) => enqueue(async () => {
+        try {
+          const result = await HRService.generateMonthPayroll(month, items);
+          await get().refresh('payrolls');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not generate the payroll.');
+        }
+      }),
+
       generatePayslip: (payrollData) => enqueue(async () => {
         try {
           await HRService.generatePayslip({
@@ -1311,6 +1330,7 @@ const useStore = create(
             year: payrollData.year,
             presentDays: payrollData.presentDays,
             ...(payrollData.deduction !== undefined ? { deduction: payrollData.deduction } : {}),
+            ...(payrollData.adjustAdvance ? { adjustAdvance: payrollData.adjustAdvance } : {}),
             bonus: payrollData.bonus || 0,
             amount: payrollData.amount !== undefined ? payrollData.amount : undefined,
             paymentMethod: payrollData.paymentMethod || payrollData.method || 'Cash',
