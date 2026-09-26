@@ -60,6 +60,8 @@
 .db-kpi.danger { --tone: var(--danger); }
 .db-kpi.warning { --tone: var(--warning); }
 .db-kpi.info { --tone: var(--info); }
+.db-kpi.primary { --tone: var(--primary); }
+.db-kpi.purple { --tone: #8b5cf6; }
 
 .db-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .db-kpi-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }

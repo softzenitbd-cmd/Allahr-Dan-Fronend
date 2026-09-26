@@ -63,9 +63,12 @@ const FILTERS = [
 ];
 
 /** A headline figure with yesterday underneath. */
-const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false, breakdown = null }) => {
+const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = false, breakdown = null, isCount = false, countSuffix = '' }) => {
   const delta = compare !== undefined && compare !== null ? Number(value) - Number(compare) : null;
-  const shown = money(abs ? Math.abs(Number(value) || 0) : value);
+  const suffix = countSuffix || (bn ? 'জন' : '');
+  const shown = isCount
+    ? `${Number(value) || 0} ${suffix}`
+    : money(abs ? Math.abs(Number(value) || 0) : value);
   return (
     <div className={`db-kpi ${tone}`}>
       <div className="db-kpi-top">
@@ -87,7 +90,11 @@ const Kpi = ({ label, value, sub, compare, tone = '', icon: Icon, bn, abs = fals
       {delta !== null && (
         <div className={`db-kpi-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`}>
           {delta > 0 ? <TrendingUp size={12} /> : delta < 0 ? <TrendingDown size={12} /> : null}
-          {delta === 0 ? (bn ? 'গতকালের সমান' : 'same as yesterday') : `${delta > 0 ? '+' : ''}${money(delta)} ${bn ? 'গতকালের চেয়ে' : 'vs yesterday'}`}
+          {delta === 0
+            ? (bn ? 'গতকালের সমান' : 'same as yesterday')
+            : isCount
+              ? `${delta > 0 ? '+' : ''}${delta} ${suffix} ${bn ? 'গতকালের চেয়ে' : 'vs yesterday'}`
+              : `${delta > 0 ? '+' : ''}${money(delta)} ${bn ? 'গতকালের চেয়ে' : 'vs yesterday'}`}
         </div>
       )}
     </div>
@@ -870,6 +877,152 @@ const DayBook = () => {
     };
   }, [data]);
 
+  // Compute customer metrics for the selected day
+  const customerMetrics = useMemo(() => {
+    const backendCount = data?.sales?.customerCount;
+    const backendReg = data?.sales?.registeredCustomers;
+    const backendWalkin = data?.sales?.walkinCustomers;
+
+    const saleRows = (data?.feed || []).filter((r) => r.kind === 'sale');
+    const invoiceCount = s?.invoiceCount ?? saleRows.length;
+
+    let total = 0;
+    let regCount = 0;
+    let walkinCount = 0;
+
+    if (backendCount !== undefined && backendCount !== null) {
+      total = backendCount;
+      regCount = backendReg || 0;
+      walkinCount = backendWalkin || 0;
+    } else {
+      const WALK_IN_NAMES = new Set(['walk-in', 'walk-in customer', 'cash customer', 'walk in customer', 'walk in', '']);
+      const registeredCusts = new Set();
+      saleRows.forEach((r) => {
+        const name = (r.party || '').trim().toLowerCase();
+        const phone = (r.partyPhone || '').trim();
+        const isWalkin = (WALK_IN_NAMES.has(name) || !name) && !phone;
+        if (isWalkin) {
+          walkinCount += 1;
+        } else {
+          registeredCusts.add(`${name}_${phone}`);
+        }
+      });
+      regCount = registeredCusts.size;
+      total = regCount + walkinCount;
+    }
+
+    const netSales = Number(s?.netSales) || 0;
+    const avgBasket = total > 0 ? Math.round(netSales / total) : 0;
+
+    let subText = '';
+    if (total === 0) {
+      subText = bn ? 'আজ কোনো বিক্রি হয়নি' : 'No sales today';
+    } else if (regCount > 0 && walkinCount > 0) {
+      subText = `${regCount} ${bn ? 'জন নামসহ' : 'regular'} · ${walkinCount} ${bn ? 'জন ওয়াক-ইন' : 'walk-in'}`;
+    } else if (walkinCount > 0) {
+      subText = `${walkinCount} ${bn ? 'জন ওয়াক-ইন ক্রেতা' : 'walk-in buyers'}`;
+    } else {
+      subText = `${regCount} ${bn ? 'জন নিবন্ধিত ক্রেতা' : 'registered buyers'}`;
+    }
+
+    const breakdown = total > 0 ? [
+      { l: bn ? 'চালান' : 'Invoices', v: `${invoiceCount} ${bn ? 'টি' : ''}` },
+      { l: bn ? 'গড় কেনাকাটা' : 'Avg Basket', v: money(avgBasket) },
+    ] : null;
+
+    return { total, regCount, walkinCount, sub: subText, breakdown };
+  }, [data, s, bn]);
+
+  // Compute customer returns metrics for the selected day
+  const customerReturns = useMemo(() => {
+    const backendRet = data?.returns?.customer;
+    const saleReturns = (data?.feed || []).filter((r) => r.kind === 'return');
+
+    let units = 0;
+    let count = 0;
+    let retailValue = 0;
+    let refundAmount = 0;
+    let dueAdjusted = 0;
+
+    if (backendRet) {
+      units = Number(backendRet.units) || 0;
+      count = Number(backendRet.count) || 0;
+      retailValue = Number(backendRet.retailValue) || 0;
+      refundAmount = Number(backendRet.refundAmount) || 0;
+      dueAdjusted = Number(backendRet.dueAdjusted) || 0;
+    } else {
+      saleReturns.forEach((r) => {
+        units += Number(r.quantity) || 1;
+        retailValue += Number(r.amount) || 0;
+        refundAmount += Number(r.refund) || Number(r.cash) || 0;
+        dueAdjusted += Number(r.dueAdjusted) || 0;
+      });
+      count = saleReturns.length;
+    }
+
+    return { units, count, retailValue, refundAmount, dueAdjusted };
+  }, [data]);
+
+  const netSalesEffective = s?.netSalesAfterReturns !== undefined
+    ? Number(s.netSalesAfterReturns)
+    : Math.max(0, Number(s?.netSales || 0) - customerReturns.retailValue);
+
+  const netReceivedEffective = s?.netReceived !== undefined
+    ? Number(s.netReceived)
+    : Math.max(0, Number(s?.totalReceived || 0) - customerReturns.refundAmount);
+
+  // Unpaid due calculation (defensive fallback from feed + backend)
+  const dueMetrics = useMemo(() => {
+    const saleRows = (data?.feed || []).filter((r) => r.kind === 'sale');
+    const backendRemaining = s?.dueRemaining !== undefined ? Number(s.dueRemaining) : (s?.netDueCreated !== undefined ? Number(s.netDueCreated) : null);
+    const backendCreated = s?.dueCreated !== undefined ? Number(s.dueCreated) : null;
+    const backendPaidLater = s?.duePaidLater !== undefined ? Number(s.duePaidLater) : null;
+
+    let created = 0;
+    let paidLater = 0;
+    let returnCredited = 0;
+    let unpaid = 0;
+
+    saleRows.forEach((r) => {
+      const invDue = Number(r.dueCreated ?? r.due) || 0;
+      const invPaidLater = Number(r.duePaidLater) || 0;
+      const invRetCredited = Number(r.dueCredited) || 0;
+      const invUnpaid = r.due !== undefined ? Number(r.due) : Math.max(0, invDue - invPaidLater - invRetCredited);
+      created += invDue;
+      paidLater += invPaidLater;
+      returnCredited += invRetCredited;
+      unpaid += invUnpaid;
+    });
+
+    const finalUnpaid = backendRemaining !== null ? backendRemaining : unpaid;
+    const finalCreated = backendCreated !== null ? backendCreated : created;
+    const finalPaidLater = backendPaidLater !== null ? backendPaidLater : paidLater;
+
+    let subText = '';
+    if (finalCreated === 0) {
+      subText = bn ? 'আজ কোনো বাকি বিক্রি নেই' : 'No credit sales today';
+    } else if (finalUnpaid === 0) {
+      subText = bn ? 'আজকের সব বাকি পরিশোধ ও সমন্বয় হয়েছে' : 'All dues from today paid/settled';
+    } else {
+      subText = `${bn ? 'আজকের বিক্রি থেকে যা বকেয়া রইল' : 'left unpaid from today\'s sales'}${finalPaidLater > 0 ? ` · ${bn ? 'আদায়' : 'paid'} ${money(finalPaidLater)}` : ''}`;
+    }
+
+    const breakdown = finalCreated > 0 ? [
+      { l: bn ? 'চালানে বাকি' : 'Gross Due', v: money(finalCreated) },
+      { l: bn ? 'বকেয়া আদায়' : 'Paid Today', v: finalPaidLater > 0 ? `−${money(finalPaidLater)}` : '৳0', tone: finalPaidLater > 0 ? 'good' : 'muted' },
+      { l: bn ? 'রিটার্ন সমন্বয়' : 'Return Credit', v: customerReturns.dueAdjusted > 0 ? `−${money(customerReturns.dueAdjusted)}` : '৳0', tone: customerReturns.dueAdjusted > 0 ? 'good' : 'muted' },
+      { l: bn ? 'অবশিষ্ট বাকি' : 'Net Due', v: money(finalUnpaid), tone: finalUnpaid > 0 ? 'bad' : 'good' },
+    ] : null;
+
+    return {
+      unpaid: finalUnpaid,
+      created: finalCreated,
+      paidLater: finalPaidLater,
+      sub: subText,
+      breakdown,
+    };
+  }, [data, s, customerReturns, bn]);
+
   return (
     <div className="day-book animate-fade-in">
       <div className="page-header">
@@ -956,23 +1109,51 @@ const DayBook = () => {
               {/* The closing-time numbers */}
               <div className="db-kpis">
                 <Kpi bn={bn} icon={ShoppingCart} tone="success"
-                  label={bn ? 'বিক্রি' : 'Sales'} value={s.netSales}
-                  sub={`${s.invoiceCount} ${bn ? 'টি চালান' : 'invoices'}${s.totalDiscount > 0 ? ` · ${bn ? 'ছাড়' : 'discount'} ${money(s.totalDiscount)}` : ''}${s.customerReturns > 0 ? ` · ${bn ? 'রিটার্ন' : 'returns'} −${money(s.customerReturns)}` : ''}`}
-                  // The owner sees how the figure becomes profit: what those goods
-                  // cost, and what is left once that is taken off.
+                  label={bn ? 'বিক্রি (নেট)' : 'Net Sales'} value={netSalesEffective}
+                  sub={`${s.invoiceCount} ${bn ? 'টি চালান' : 'invoices'}${customerReturns.retailValue > 0 ? ` · ${bn ? 'রিটার্ন বাদ' : 'returns'} −${money(customerReturns.retailValue)}` : ''}${s.totalDiscount > 0 ? ` · ${bn ? 'ছাড়' : 'discount'} ${money(s.totalDiscount)}` : ''}`}
                   breakdown={isAdmin && data.cogs ? [
-                    { l: bn ? 'বিক্রি' : 'Sold', v: money(s.netSalesAfterReturns ?? s.netSales) },
+                    { l: bn ? 'বিক্রি' : 'Sold', v: money(netSalesEffective) },
                     { l: bn ? 'ক্রয়মূল্য' : 'Cost', v: `−${money(data.cogs.netOfReturns ?? data.cogs.total)}`, tone: 'muted' },
                     { l: `${bn ? 'লাভ' : 'Profit'} ${Math.round(p.grossMargin)}%`, v: money(p.grossProfit), tone: p.grossProfit < 0 ? 'bad' : 'good' },
-                  ] : null}
+                  ] : (customerReturns.retailValue > 0 ? [
+                    { l: bn ? 'মোট বিক্রি' : 'Gross Sold', v: money(s.netSales) },
+                    { l: bn ? 'পণ্য ফেরত' : 'Returns', v: `−${money(customerReturns.retailValue)}`, tone: 'bad' },
+                    { l: bn ? 'প্রকৃত বিক্রি' : 'Net Sold', v: money(netSalesEffective), tone: 'good' },
+                  ] : null)}
                   compare={cmp.netSales} />
+                <Kpi bn={bn} icon={Users} tone="primary" isCount={true} countSuffix={bn ? 'জন' : ''}
+                  label={bn ? 'আজকের ক্রেতা' : 'Customers'}
+                  value={customerMetrics.total}
+                  sub={customerMetrics.sub}
+                  breakdown={customerMetrics.breakdown}
+                  compare={cmp.customerCount} />
+                <Kpi bn={bn} icon={RotateCcw} tone={customerReturns.units > 0 ? 'danger' : ''} isCount={true} countSuffix={bn ? 'টি' : 'pcs'}
+                  label={bn ? 'পণ্য রিটার্ন' : 'Returns'}
+                  value={customerReturns.units}
+                  sub={customerReturns.units > 0
+                    ? `${money(customerReturns.retailValue)} ${bn ? 'মূল্য' : 'worth'}${customerReturns.refundAmount > 0 ? ` · ${bn ? 'নগদ ফেরত' : 'refund'} ${money(customerReturns.refundAmount)}` : ''}${customerReturns.dueAdjusted > 0 ? ` · ${bn ? 'বাকি সমন্বয়' : 'due adj'} ${money(customerReturns.dueAdjusted)}` : ''}`
+                    : (bn ? 'আজ কোনো পণ্য ফেরত নেই' : 'No returns today')}
+                  breakdown={customerReturns.units > 0 ? [
+                    { l: bn ? 'ফেরত মূল্য' : 'Return Value', v: money(customerReturns.retailValue), tone: 'bad' },
+                    { l: bn ? 'নগদ রিফান্ড' : 'Cash Refund', v: customerReturns.refundAmount > 0 ? `−${money(customerReturns.refundAmount)}` : '৳0', tone: customerReturns.refundAmount > 0 ? 'bad' : 'muted' },
+                    { l: bn ? 'বাকি সমন্বয়' : 'Due Adjusted', v: customerReturns.dueAdjusted > 0 ? `−${money(customerReturns.dueAdjusted)}` : '৳0', tone: customerReturns.dueAdjusted > 0 ? 'good' : 'muted' },
+                  ] : null}
+                  compare={cmp.returnUnits} />
                 <Kpi bn={bn} icon={Banknote} tone="info"
-                  label={bn ? 'টাকা এসেছে' : 'Received'} value={s.totalReceived}
-                  sub={`${bn ? 'কাউন্টারে' : 'at counter'} ${money(s.paidAtCounter)} · ${bn ? 'বকেয়া আদায়' : 'dues'} ${money(s.dueCollected)}`}
+                  label={bn ? 'টাকা এসেছে (নেট)' : 'Net Received'} value={netReceivedEffective}
+                  sub={customerReturns.refundAmount > 0
+                    ? `${bn ? 'মোট আদায়' : 'gross in'} ${money(s.totalReceived)} − ${bn ? 'রিটার্ন রিফান্ড' : 'refund'} ${money(customerReturns.refundAmount)}`
+                    : `${bn ? 'কাউন্টারে' : 'at counter'} ${money(s.paidAtCounter)} · ${bn ? 'বকেয়া আদায়' : 'dues'} ${money(s.dueCollected)}`}
+                  breakdown={customerReturns.refundAmount > 0 ? [
+                    { l: bn ? 'কাউন্টারে' : 'Counter', v: money(s.paidAtCounter) },
+                    { l: bn ? 'বকেয়া আদায়' : 'Dues In', v: money(s.dueCollected) },
+                    { l: bn ? 'রিফান্ড বাদ' : 'Refund Out', v: `−${money(customerReturns.refundAmount)}`, tone: 'bad' },
+                  ] : null}
                   compare={cmp.received} />
-                <Kpi bn={bn} icon={Wallet} tone={s.dueCreated > 0 ? 'warning' : ''}
-                  label={bn ? 'আজ বাকি হয়েছে' : 'Due Balance'} value={s.dueCreated}
-                  sub={bn ? 'আজকের বিক্রি থেকে যা বকেয়া রইল' : 'left unpaid from today\'s sales'} />
+                <Kpi bn={bn} icon={Wallet} tone={dueMetrics.unpaid > 0 ? 'warning' : ''}
+                  label={bn ? 'আজ বাকি হয়েছে (নেট)' : 'Due Balance'} value={dueMetrics.unpaid}
+                  sub={dueMetrics.sub}
+                  breakdown={dueMetrics.breakdown} />
                 {isAdmin && (
                   <Kpi bn={bn} icon={Truck} tone="warning"
                     label={bn ? 'ক্রয়' : 'Purchases'} value={data.purchases.total}
@@ -1248,9 +1429,11 @@ const DayBook = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <tbody>
                       {[
-                        ['Sales', money(s.netSales), `${s.invoiceCount} invoices`],
-                        ['Received', money(s.totalReceived), `counter ${money(s.paidAtCounter)} + dues ${money(s.dueCollected)}`],
-                        ['Due Balance', money(s.dueCreated), ''],
+                        ['Sales (Net of Returns)', money(netSalesEffective), `${s.invoiceCount} invoices${customerReturns.retailValue > 0 ? ` (after ${money(customerReturns.retailValue)} returns)` : ''}`],
+                        ['Customers Served', `${customerMetrics.total}`, customerMetrics.sub],
+                        ['Customer Returns', `${customerReturns.units} pcs`, customerReturns.units > 0 ? `${money(customerReturns.retailValue)} (refund: ${money(customerReturns.refundAmount)}, due adj: ${money(customerReturns.dueAdjusted)})` : 'None'],
+                        ['Received (Net of Refunds)', money(netReceivedEffective), `counter ${money(s.paidAtCounter)} + dues ${money(s.dueCollected)}${customerReturns.refundAmount > 0 ? ` − refund ${money(customerReturns.refundAmount)}` : ''}`],
+                        ['Due Balance (Net)', money(dueMetrics.unpaid), dueMetrics.sub],
                         ...(isAdmin ? [
                           ['Purchases', money(data.purchases.total), `paid ${money(data.purchases.paid + data.purchases.paidLater)}`],
                           ['Expenses', money(data.expenses.total), ''],
