@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
+import { discountInfo } from '../utils/discount';
 import PaymentVoucher from '../components/PaymentVoucher';
 import ThermalReceipt from '../components/ThermalReceipt';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
@@ -371,6 +372,14 @@ const POS = () => {
   }, 0);
 
   const total = Math.max(0, subtotal - invoiceDiscount);
+
+  // What the cart would cost at MRP, so the customer sees what they save:
+  // the MRP-to-sale-price gap plus any discount given at the counter.
+  const mrpTotal = cart.reduce((acc, item) => {
+    const mrp = Number(item.mrp || inventory.find(p => p.id === item.id || p.product_code === item.id)?.mrp || 0);
+    return acc + Math.max(mrp, Number(item.price) || 0) * item.quantity;
+  }, 0);
+  const totalSaving = discountInfo(mrpTotal, total);
 
   // Both conditions the checkout enforces, in one place, so the button and the
   // hint under it can never disagree about why it is disabled.
@@ -1083,6 +1092,9 @@ const POS = () => {
                                   <span className="sr-was">৳{Number(item.mrp).toLocaleString()}</span>
                                 ) : null}
                                 ৳{Number(item.price).toLocaleString()}
+                                {discountInfo(item.mrp, item.price) && (
+                                  <span className="discount-pill">−{discountInfo(item.mrp, item.price).pctText}</span>
+                                )}
                               </span>
                               <span className={`stock-pill ${item.stock <= 0 ? 'stock-empty' : item.stock <= 10 ? 'stock-low' : 'stock-ok'}`}>
                                 {item.stock}
@@ -1107,6 +1119,9 @@ const POS = () => {
                                       <span className="sr-was">৳{Number(lead.mrp).toLocaleString()}</span>
                                     ) : null}
                                     ৳{Number(lead.price).toLocaleString()}
+                                    {discountInfo(lead.mrp, lead.price) && (
+                                      <span className="discount-pill">−{discountInfo(lead.mrp, lead.price).pctText}</span>
+                                    )}
                                   </span>
                                   <span className={`stock-pill ${totalStock <= 0 ? 'stock-empty' : totalStock <= 10 ? 'stock-low' : 'stock-ok'}`}>
                                     {totalStock}
@@ -1707,8 +1722,21 @@ const POS = () => {
 
                   <div className="sum-total">
                     <span className="label">{t(language, 'Total Payable')}</span>
-                    <span className="amount">৳{total.toLocaleString()}</span>
+                    <span className="sum-total-right">
+                      {totalSaving && <span className="sum-mrp">৳{mrpTotal.toLocaleString()}</span>}
+                      <span className="amount">৳{total.toLocaleString()}</span>
+                    </span>
                   </div>
+                  {totalSaving && (
+                    <div className="sum-saving">
+                      <span className="sum-saving-pct">{totalSaving.pctText} {language === 'bn' ? 'ছাড়' : 'off'}</span>
+                      <span>
+                        {language === 'bn'
+                          ? `MRP থেকে ৳${totalSaving.amount.toLocaleString()} কম`
+                          : `৳${totalSaving.amount.toLocaleString()} less than MRP`}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Invoice Reconciliation Card (Shown during Edit Sale) */}

@@ -133,6 +133,8 @@ export const HRService = {
 
   payrolls: (params) => apiClient.get(ENDPOINTS.PAYROLLS, { params }),
   generatePayslip: (payload) => apiClient.post(ENDPOINTS.PAYROLL_GENERATE, payload),
+  // Each staff member's register for a month and the salary cut it suggests.
+  payrollAttendance: (month) => apiClient.get(ENDPOINTS.PAYROLL_ATTENDANCE, { params: { month } }),
 };
 
 export const SRService = {

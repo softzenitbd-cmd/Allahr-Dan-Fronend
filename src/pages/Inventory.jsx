@@ -18,6 +18,7 @@ import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 import { formatDate, formatTime } from '../utils/date';
+import { discountInfo } from '../utils/discount';
 import VariantStockEditor, { looksLikeVariantList, parseVariantText } from '../components/VariantStockEditor';
 
 const getProductImageUrl = (img) => {
@@ -1171,6 +1172,10 @@ const Inventory = () => {
                           <span style={{ fontWeight: 'bold', color: 'var(--primary)', fontSize: '0.95rem' }}>
                             ৳{(item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price)).toLocaleString()}
                           </span>
+                          {(() => {
+                            const d = discountInfo(item.mrp, Number(item.discount_price) > 0 ? item.discount_price : item.price);
+                            return d ? <span className="discount-pill">−{d.pctText}</span> : null;
+                          })()}
                         </div>
                       ) : (
                         <span style={{ fontWeight: 'bold' }}>
@@ -2142,6 +2147,14 @@ const Inventory = () => {
                       value={newProduct.discount_price}
                       onChange={(e) => setNewProduct({ ...newProduct, discount_price: e.target.value, price: e.target.value })}
                     />
+                    {(() => {
+                      const d = discountInfo(newProduct.mrp, newProduct.discount_price || newProduct.price);
+                      return d ? (
+                        <div className="discount-hint">
+                          {language === 'bn' ? 'ছাড়' : 'Discount'} ৳{d.amount.toLocaleString()} <b>({d.pctText} {language === 'bn' ? 'ছাড়' : 'off'})</b>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2523,6 +2536,14 @@ const Inventory = () => {
                       value={editingItem.discount_price || editingItem.price || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, discount_price: e.target.value, price: e.target.value })}
                     />
+                    {(() => {
+                      const d = discountInfo(editingItem.mrp, editingItem.discount_price || editingItem.price);
+                      return d ? (
+                        <div className="discount-hint">
+                          {language === 'bn' ? 'ছাড়' : 'Discount'} ৳{d.amount.toLocaleString()} <b>({d.pctText} {language === 'bn' ? 'ছাড়' : 'off'})</b>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               </div>

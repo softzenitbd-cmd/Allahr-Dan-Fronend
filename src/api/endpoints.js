@@ -75,6 +75,7 @@ export const ENDPOINTS = {
   LEAVE_STATUS: (id) => `/hr/leaves/${encodeURIComponent(id)}/status/`,
   PAYROLLS: '/hr/payrolls/',
   PAYROLL_GENERATE: '/hr/payrolls/generate/',
+  PAYROLL_ATTENDANCE: '/hr/payrolls/attendance-summary/',
 
   // SR consignment (stock issued to a salesman, settled at end of day)
   SR_SETTLEMENTS: '/sr/settlements/',

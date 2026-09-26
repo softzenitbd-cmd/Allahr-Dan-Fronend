@@ -511,3 +511,29 @@ body.dark-mode .swal2-html-container { color: var(--text-muted) !important; }
 /* Confirmation popups must sit above the side drawers (z-index 10000),
    otherwise a confirm opened from inside a drawer is hidden behind it. */
 .swal2-container { z-index: 20000 !important; }
+
+
+/* Payroll: absence chips and the salary-cut control */
+.payroll-att-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.pa-chip { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+.pa-absent { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+.pa-half { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+.pa-leave { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+.payroll-cut { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+.payroll-cut small { font-size: 0.7rem; line-height: 1.25; }
+.payroll-cut-btns { display: flex; gap: 4px; }
+.payroll-cut-btns button {
+  font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border-color); background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.payroll-cut-btns button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+
+/* MRP vs sale price: the discount, worked out */
+.discount-hint { margin-top: 4px; font-size: 0.78rem; color: #059669; }
+.discount-hint b { font-weight: 800; }
+.discount-pill {
+  display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 800; line-height: 1.5; vertical-align: middle;
+  background: rgba(5, 150, 105, 0.12); color: #059669; white-space: nowrap;
+}

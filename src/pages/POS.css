@@ -759,3 +759,19 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
 .sr-size:hover:not(:disabled) em { background: #fff; color: var(--primary); }
 .sr-size.in-cart { background: color-mix(in srgb, var(--primary) 10%, var(--bg-card)); }
 .sr-size:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--border-color); color: var(--text-subtle); text-decoration: line-through; }
+
+
+/* Total payable against MRP: the struck MRP total and the discount % */
+.sum-total-right { display: inline-flex; align-items: baseline; gap: 8px; }
+.sum-mrp {
+  font-size: 0.95rem; font-weight: 600; color: var(--text-subtle);
+  text-decoration: line-through; font-variant-numeric: tabular-nums;
+}
+.sum-saving {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  margin-top: 4px; font-size: 0.75rem; color: var(--success, #059669); font-weight: 600;
+}
+.sum-saving-pct {
+  padding: 1px 8px; border-radius: 999px; font-weight: 800;
+  background: var(--success-soft, rgba(5, 150, 105, 0.12)); color: var(--success, #059669);
+}

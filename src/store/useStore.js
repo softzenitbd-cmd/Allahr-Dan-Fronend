@@ -1293,6 +1293,16 @@ const useStore = create(
         }
       }),
 
+      /** Absent / half days per staff for a month, and the cut they suggest. */
+      fetchPayrollAttendance: async (month) => {
+        try {
+          const rows = await HRService.payrollAttendance(month);
+          return Array.isArray(rows) ? rows : [];
+        } catch {
+          return [];
+        }
+      },
+
       generatePayslip: (payrollData) => enqueue(async () => {
         try {
           await HRService.generatePayslip({
@@ -1300,6 +1310,7 @@ const useStore = create(
             month: payrollData.month,
             year: payrollData.year,
             presentDays: payrollData.presentDays,
+            ...(payrollData.deduction !== undefined ? { deduction: payrollData.deduction } : {}),
             bonus: payrollData.bonus || 0,
             amount: payrollData.amount !== undefined ? payrollData.amount : undefined,
             paymentMethod: payrollData.paymentMethod || payrollData.method || 'Cash',

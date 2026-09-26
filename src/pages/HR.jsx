@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Users, Calendar, DollarSign, Award, Plus, Check, X, Eye, Printer, Edit, Trash2, History, Download } from 'lucide-react';
 import useStore from '../store/useStore';
@@ -9,7 +9,7 @@ import { formatDate, formatDateTime, formatTime } from '../utils/date';
 
 const HR = () => {
   const [activeTab, setActiveTab] = useState('Staff');
-  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, settleStaffDue, language } = useStore();
+  const { staff, attendance, leaves, payrolls, addStaff, updateStaff, deleteStaff, markAttendance, addLeaveRequest, updateLeaveStatus, generatePayslip, settleStaffDue, fetchPayrollAttendance, language } = useStore();
 
   // Modals state
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -37,6 +37,19 @@ const HR = () => {
   const todayStr = new Date().toISOString().split('T')[0];
   const [attDate, setAttDate] = useState(todayStr);
   const [payrollMonth, setPayrollMonth] = useState(todayStr.substring(0, 7)); // YYYY-MM
+  // The month's register per staff member (absent, half days, suggested cut),
+  // and the cut the payer has chosen -- all of it, part, or none.
+  const [payrollAtt, setPayrollAtt] = useState({});
+  const [deductions, setDeductions] = useState({});
+  useEffect(() => {
+    if (activeTab !== 'Payroll') return;
+    let live = true;
+    fetchPayrollAttendance(payrollMonth).then((rows) => {
+      if (live) setPayrollAtt(Object.fromEntries(rows.map((r) => [r.staffId, r])));
+    });
+    return () => { live = false; };
+  }, [activeTab, payrollMonth, attendance, payrolls, fetchPayrollAttendance]);
+  useEffect(() => { setDeductions({}); setBonuses({}); setPayInputs({}); }, [payrollMonth]);
   const [attViewMode, setAttViewMode] = useState('monthly'); // 'monthly' | 'daily'
   const [attReportMonth, setAttReportMonth] = useState(todayStr.substring(0, 7)); // YYYY-MM
   const [attStaffFilter, setAttStaffFilter] = useState(''); // '' for all, or staff id
@@ -163,11 +176,19 @@ const HR = () => {
     }
   };
 
-  const handlePaySalaryInstallment = async (staffMember, presentDays, bonus, customAmount) => {
-    const baseSalary = Number(staffMember.baseSalary || 0);
+  const handlePaySalaryInstallment = async (staffMember, presentDays, bonus, customAmount, cut = 0) => {
     const existingPayroll = (payrolls || []).find(p => (p.staffId === staffMember.id || p.staff_id === staffMember.id) && p.month === payrollMonth);
-    const totalNetPay = existingPayroll ? Number(existingPayroll.netPay || existingPayroll.net_pay || (baseSalary + bonus)) : Math.round(baseSalary + bonus);
-    const paidSoFar = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || (existingPayroll.is_paid ? totalNetPay : 0)) : 0;
+    const paidSoFar = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || 0) : 0;
+    const baseSalary = existingPayroll && paidSoFar > 0 ? Number(existingPayroll.baseSalary ?? existingPayroll.base_salary ?? staffMember.baseSalary ?? 0) : Number(staffMember.baseSalary || 0);
+    const isFullyPaid = existingPayroll ? Boolean(existingPayroll.is_paid) : false;
+    const totalNetPay = isFullyPaid
+      ? Number(existingPayroll.netPay || existingPayroll.net_pay || 0)
+      : Math.max(0, Math.round(baseSalary + bonus - cut));
+    if (!isFullyPaid && paidSoFar > totalNetPay + 0.005) {
+      return toast.error(language === 'bn'
+        ? `এই মাসে আগেই ৳${paidSoFar.toLocaleString()} দেওয়া হয়েছে — কর্তনের পরে বেতন এর চেয়ে কম হতে পারে না।`
+        : `৳${paidSoFar.toLocaleString()} is already paid this month — the salary after the cut cannot be less.`);
+    }
     const remainingDue = Math.max(0, Math.round(totalNetPay - paidSoFar));
 
     let payAmount = customAmount !== undefined && customAmount !== '' ? parseFloat(customAmount) : remainingDue;
@@ -193,6 +214,7 @@ const HR = () => {
       presentDays,
       baseSalary: staffMember.baseSalary,
       bonus,
+      ...(isFullyPaid ? {} : { deduction: cut }),
       amount: payAmount,
       paymentMethod: 'Cash',
       notes: excess > 0 ? `Salary: ৳${payAmount - excess}, Advance Due: ৳${excess}` : `Salary installment: ৳${payAmount}`,
@@ -998,6 +1020,7 @@ const HR = () => {
                         <th>{t(language, 'Name' || 'Staff Name')}</th>
                         <th>{t(language, 'Days Present' || 'Days Present')}</th>
                         <th>{t(language, 'Base Salary' || 'Base Salary')} (BDT)</th>
+                        <th>{language === 'bn' ? 'কর্তন (অনুপস্থিতি)' : 'Deduction (absence)'}</th>
                         <th>{t(language, 'Bonus' || 'Bonus')}</th>
                         <th>{language === 'bn' ? 'মোট প্রদেয়' : 'Total Net'} (BDT)</th>
                         <th>{language === 'bn' ? 'পরিশোধিত' : 'Paid Amount'} (BDT)</th>
@@ -1009,16 +1032,30 @@ const HR = () => {
                     </thead>
                     <tbody>
                       {staff.map(s => {
-                        const fullDays = attendance.filter(a => a.staffId === s.id && a.status === 'Present' && a.date.startsWith(payrollMonth)).length;
-                        const halfDays = attendance.filter(a => a.staffId === s.id && a.status === 'Half Day' && a.date.startsWith(payrollMonth)).length;
+                        const att = payrollAtt[s.id] || null;
+                        const fullDays = att ? att.present + att.late : attendance.filter(a => a.staffId === s.id && (a.status === 'Present' || a.status === 'Late') && a.date.startsWith(payrollMonth)).length;
+                        const halfDays = att ? att.halfDay : attendance.filter(a => a.staffId === s.id && a.status === 'Half Day' && a.date.startsWith(payrollMonth)).length;
+                        const absentDays = att ? att.absent : attendance.filter(a => a.staffId === s.id && a.status === 'Absent' && a.date.startsWith(payrollMonth)).length;
+                        const leaveDays = att ? att.leave : 0;
+                        const monthDays = att ? att.daysInMonth : 30;
                         const presentDays = fullDays + (halfDays * 0.5);
                         const existingPayroll = (payrolls || []).find(p => (p.staffId === s.id || p.staff_id === s.id) && p.month === payrollMonth);
                         const bonus = bonuses[s.id] !== undefined ? bonuses[s.id] : (existingPayroll ? Number(existingPayroll.bonus || 0) : 0);
-                        const baseSalary = Number(s.baseSalary || 0);
-                        const totalNetPay = existingPayroll ? Number(existingPayroll.netPay || existingPayroll.net_pay || (baseSalary + bonus)) : Math.round(baseSalary + bonus);
-                        const paidAmount = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || (existingPayroll.is_paid ? totalNetPay : 0)) : 0;
+                        const paidAmount = existingPayroll ? Number(existingPayroll.paidAmount || existingPayroll.paid_amount || 0) : 0;
+                        const isFullyPaid = existingPayroll ? Boolean(existingPayroll.is_paid) : false;
+                        // Once money has gone out the month's salary is fixed at what it was.
+                        const baseSalary = existingPayroll && paidAmount > 0 ? Number(existingPayroll.baseSalary ?? existingPayroll.base_salary ?? s.baseSalary ?? 0) : Number(s.baseSalary || 0);
+                        const dayRate = att ? Number(att.dayRate) : (monthDays ? baseSalary / monthDays : 0);
+                        const autoCut = att ? Number(att.autoDeduction) : Math.round(dayRate * (absentDays + halfDays * 0.5));
+                        const savedCut = existingPayroll ? Number(existingPayroll.deduction || 0) : null;
+                        const cutInput = deductions[s.id];
+                        const cut = isFullyPaid
+                          ? Number(existingPayroll.deduction || 0)
+                          : Math.max(0, Number(cutInput !== undefined && cutInput !== '' ? cutInput : (savedCut !== null && paidAmount > 0 ? savedCut : autoCut)) || 0);
+                        const totalNetPay = isFullyPaid
+                          ? Number(existingPayroll.netPay || existingPayroll.net_pay || 0)
+                          : Math.max(0, Math.round(baseSalary + bonus - cut));
                         const remainingDue = Math.max(0, Math.round(totalNetPay - paidAmount));
-                        const isFullyPaid = existingPayroll ? (existingPayroll.is_paid || paidAmount >= totalNetPay) : false;
                         const isPartial = paidAmount > 0 && !isFullyPaid;
 
                         const currentPayInput = payInputs[s.id] !== undefined ? payInputs[s.id] : '';
@@ -1033,10 +1070,53 @@ const HR = () => {
                               <div className="text-xs text-muted">{s.role || 'Staff'}</div>
                             </td>
                             <td>
-                              <strong>{presentDays}</strong> / 30
-                              {halfDays > 0 && <div className="text-xs text-muted">({halfDays} {language === 'bn' ? 'হাফ ডে' : 'Half Day'})</div>}
+                              <strong>{presentDays}</strong> / {monthDays}
+                              <div className="payroll-att-chips">
+                                {absentDays > 0 && <span className="pa-chip pa-absent">{language === 'bn' ? 'অনুপস্থিত' : 'Absent'} {absentDays}</span>}
+                                {halfDays > 0 && <span className="pa-chip pa-half">{language === 'bn' ? 'হাফ ডে' : 'Half'} {halfDays}</span>}
+                                {leaveDays > 0 && <span className="pa-chip pa-leave">{language === 'bn' ? 'ছুটি' : 'Leave'} {leaveDays}</span>}
+                              </div>
                             </td>
                             <td>৳{baseSalary.toLocaleString()}</td>
+                            <td>
+                              {isFullyPaid ? (
+                                <span className={cut > 0 ? 'text-danger font-bold' : 'text-muted'}>
+                                  {cut > 0 ? `−৳${cut.toLocaleString()}` : (autoCut > 0 || Number(existingPayroll?.autoDeduction) > 0 ? (language === 'bn' ? 'কাটা হয়নি' : 'Not cut') : '—')}
+                                </span>
+                              ) : (
+                                <div className="payroll-cut">
+                                  <div className="flex-align-gap" style={{ alignItems: 'center' }}>
+                                    <span className="text-danger" style={{ fontWeight: 700 }}>−৳</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={cutInput !== undefined ? cutInput : cut}
+                                      onChange={(e) => setDeductions({ ...deductions, [s.id]: e.target.value })}
+                                      style={{ width: '75px', padding: '0.2rem 0.35rem', backgroundColor: 'var(--bg-input)', borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                                    />
+                                  </div>
+                                  {autoCut > 0 ? (
+                                    <>
+                                      <small className="text-muted">
+                                        {language === 'bn'
+                                          ? `হাজিরা অনুযায়ী ৳${autoCut.toLocaleString()} (${absentDays + halfDays * 0.5} দিন × ৳${Math.round(dayRate).toLocaleString()})`
+                                          : `By attendance ৳${autoCut.toLocaleString()} (${absentDays + halfDays * 0.5} days × ৳${Math.round(dayRate).toLocaleString()})`}
+                                      </small>
+                                      <div className="payroll-cut-btns">
+                                        <button type="button" className={cut === autoCut ? 'active' : ''} onClick={() => setDeductions({ ...deductions, [s.id]: String(autoCut) })}>
+                                          {language === 'bn' ? 'কাটুন' : 'Cut'}
+                                        </button>
+                                        <button type="button" className={cut === 0 ? 'active' : ''} onClick={() => setDeductions({ ...deductions, [s.id]: '0' })}>
+                                          {language === 'bn' ? 'কাটবেন না' : "Don't cut"}
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <small className="text-muted">{language === 'bn' ? 'অনুপস্থিতি নেই' : 'No absence'}</small>
+                                  )}
+                                </div>
+                              )}
+                            </td>
                             <td>
                               {isFullyPaid ? (
                                 <span>৳{bonus.toLocaleString()}</span>
@@ -1086,7 +1166,7 @@ const HR = () => {
                                   <button
                                     className="btn-primary"
                                     style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-                                    onClick={() => handlePaySalaryInstallment(s, presentDays, bonus, currentPayInput)}
+                                    onClick={() => handlePaySalaryInstallment(s, presentDays, bonus, currentPayInput, cut)}
                                   >
                                     {language === 'bn' ? 'টাকা দিন' : 'Pay'}
                                   </button>
@@ -1486,17 +1566,50 @@ const HR = () => {
                     {(() => {
                       const sId = viewPayrollDetails.staff.id;
                       const m = viewPayrollDetails.payroll.month;
-                      const fullD = attendance.filter(a => a.staffId === sId && a.status === 'Present' && a.date.startsWith(m)).length;
-                      const halfD = attendance.filter(a => a.staffId === sId && a.status === 'Half Day' && a.date.startsWith(m)).length;
-                      const totD = fullD + (halfD * 0.5);
+                      const pr = viewPayrollDetails.payroll;
+                      const fullD = attendance.filter(a => a.staffId === sId && (a.status === 'Present' || a.status === 'Late') && a.date.startsWith(m)).length;
+                      const halfD = pr.halfDays ?? attendance.filter(a => a.staffId === sId && a.status === 'Half Day' && a.date.startsWith(m)).length;
+                      const totD = pr.presentDays ?? (fullD + (halfD * 0.5));
                       return (
                         <div className="text-xs text-muted">
-                          Attendance: {totD} / 30 Days {halfD > 0 ? `(${halfD} Half-Day)` : ''}
+                          Attendance: {totD} / {pr.daysInMonth || 30} Days
+                          {halfD > 0 ? ` · ${halfD} Half-Day` : ''}
+                          {pr.absentDays > 0 ? ` · ${pr.absentDays} Absent` : ''}
+                          {pr.leaveDays > 0 ? ` · ${pr.leaveDays} Leave` : ''}
                         </div>
                       );
                     })()}
                   </div>
                 </div>
+
+                {(() => {
+                  const pr = viewPayrollDetails.payroll;
+                  const base = Number(pr.baseSalary ?? pr.base_salary ?? 0);
+                  const cutV = Number(pr.deduction || 0);
+                  const autoV = Number(pr.autoDeduction || 0);
+                  const bonusV = Number(pr.bonus || 0);
+                  return (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', marginBottom: '1rem' }}>
+                      <tbody>
+                        <tr><td style={{ padding: '4px 0' }}>Base Salary</td><td style={{ textAlign: 'right' }}>৳{base.toLocaleString()}</td></tr>
+                        <tr>
+                          <td style={{ padding: '4px 0' }}>
+                            Deduction (absent / half day)
+                            {autoV > 0 && cutV !== autoV && (
+                              <span style={{ color: '#64748b', fontSize: '0.78rem' }}> — by attendance ৳{autoV.toLocaleString()}, {cutV === 0 ? 'waived' : 'adjusted'}</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right', color: cutV > 0 ? '#dc2626' : undefined }}>{cutV > 0 ? `−৳${cutV.toLocaleString()}` : '৳0'}</td>
+                        </tr>
+                        <tr><td style={{ padding: '4px 0' }}>Bonus</td><td style={{ textAlign: 'right' }}>+৳{bonusV.toLocaleString()}</td></tr>
+                        <tr style={{ borderTop: '1px solid #cbd5e1', fontWeight: 700 }}>
+                          <td style={{ padding: '6px 0' }}>Net Salary</td>
+                          <td style={{ textAlign: 'right' }}>৳{Number(pr.netPay || pr.net_pay || 0).toLocaleString()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  );
+                })()}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem', textAlign: 'center' }}>
                   <div style={{ background: '#f1f5f9', padding: '0.75rem', borderRadius: '6px' }}>
