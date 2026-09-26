@@ -96,21 +96,9 @@ function App() {
     // because the same colour needs different treatment on each ground.
     applyAccent(accentColor, theme !== 'light');
 
-    // Global click listener for closing modals/drawers
-    const handleOverlayClick = (e) => {
-      if (e.target.classList.contains('drawer-overlay') || e.target.classList.contains('modal-overlay')) {
-        const closeBtn = e.target.querySelector('.drawer-close-btn, .modal-close-btn');
-        if (closeBtn) {
-          closeBtn.click();
-        }
-      }
-    };
-    
-    document.addEventListener('mousedown', handleOverlayClick);
-    
-    return () => {
-      document.removeEventListener('mousedown', handleOverlayClick);
-    };
+    // Drawers and modals close only from their own ✕ / Cancel buttons: a
+    // stray click on the dark background must not throw away a half-filled
+    // form.
   }, [theme, themeGradient, accentColor]);
 
   return (

@@ -449,6 +449,21 @@ const useStore = create(
        * for anyone else the change stays on this screen, which is also what
        * the server would enforce.
        */
+      /** The shop's quick size buttons (null = the built-in list). */
+      saveSizePresets: async (sizes) => {
+        const prev = get().shopProfile?.size_presets ?? null;
+        set((state) => ({ shopProfile: { ...state.shopProfile, size_presets: sizes } }));
+        try {
+          const res = await CoreService.saveSizePresets(sizes);
+          set((state) => ({ shopProfile: { ...state.shopProfile, size_presets: res?.sizes ?? sizes } }));
+          return true;
+        } catch (error) {
+          set((state) => ({ shopProfile: { ...state.shopProfile, size_presets: prev } }));
+          fail(error, 'Could not save the sizes.');
+          return false;
+        }
+      },
+
       saveShopColour: (key, patch) => {
         if (get().user?.role !== 'Admin') return;
         clearTimeout(shopColourSaveTimers.get(key));

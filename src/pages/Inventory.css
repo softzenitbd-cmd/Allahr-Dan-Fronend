@@ -396,3 +396,16 @@
   background: none; border: 1px dashed var(--primary); color: var(--primary);
   border-radius: 8px; padding: 6px 10px; font-weight: 600; cursor: pointer;
 }
+
+
+/* Managing the shop's size buttons */
+.vse-chip-manage { display: inline-flex; align-items: center; gap: 4px; border-style: dashed !important; color: var(--primary); }
+.vse-chip-manage.is-on { background: var(--primary); color: #fff; border-style: solid !important; }
+.vse-chip-edit { display: inline-flex; align-items: center; gap: 4px; padding-right: 3px !important; }
+.vse-chip-edit button {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  border-radius: 50%; border: none; background: rgba(220, 38, 38, 0.12); color: #dc2626; cursor: pointer; padding: 0;
+}
+.vse-manage { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.5rem; }
+.vse-manage input { flex: 1; min-width: 160px; }
+.vse-manage-note { width: 100%; font-size: 0.72rem; color: var(--text-muted); }

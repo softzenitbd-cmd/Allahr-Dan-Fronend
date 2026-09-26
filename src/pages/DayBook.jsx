@@ -2026,7 +2026,7 @@ const DayBook = () => {
 
       {/* Receive due on one invoice */}
       {pay && createPortal(
-        <div className="drawer-overlay" onClick={() => setPay(null)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0 }}>{bn ? 'বকেয়া নিন' : 'Receive due'}</h2>
@@ -2058,7 +2058,7 @@ const DayBook = () => {
 
       {/* Quick expense */}
       {expenseForm && createPortal(
-        <div className="drawer-overlay" onClick={() => setExpenseForm(null)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0 }}>{bn ? 'খরচ লিখুন' : 'Add expense'}</h2>
@@ -2115,7 +2115,7 @@ const DayBook = () => {
 
       {/* Add Loan Drawer */}
       {loanDrawer && createPortal(
-        <div className="drawer-overlay" onClick={() => setLoanDrawer(false)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -2229,7 +2229,7 @@ const DayBook = () => {
 
       {/* Pay Loan Modal */}
       {loanPayTarget && createPortal(
-        <div className="drawer-overlay" onClick={() => setLoanPayTarget(null)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -2387,7 +2387,7 @@ const DayBook = () => {
 
       {/* Loan History & Statement Modal */}
       {loanHistoryTarget && createPortal(
-        <div className="drawer-overlay" onClick={() => setLoanHistoryTarget(null)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -2601,7 +2601,7 @@ const DayBook = () => {
 
       {/* Quick Loan Plus/Minus Modal for the same person */}
       {quickAdjustTarget && createPortal(
-        <div className="drawer-overlay" onClick={() => setQuickAdjustTarget(null)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -2868,7 +2868,7 @@ const DayBook = () => {
 
       {/* Old Account & Balance Adjustment Drawer */}
       {loanAdjustDrawer && createPortal(
-        <div className="drawer-overlay" onClick={() => setLoanAdjustDrawer(false)}>
+        <div className="drawer-overlay">
           <div className="drawer-container" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

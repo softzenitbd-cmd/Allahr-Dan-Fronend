@@ -1,4 +1,5 @@
 import JsBarcode from 'jsbarcode';
+import { discountInfo } from './discount';
 
 /**
  * Generate clean standalone barcode bars SVG using JsBarcode without embedded text.
@@ -76,6 +77,7 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
     : Number(product.price);
   const mrpVal = Number(product.mrp);
   const hasDiscount = mrpVal > 0 && mrpVal > salePrice;
+  const discount = discountInfo(mrpVal, salePrice);
 
   const category = product.category_name || (typeof product.category === 'object' ? product.category?.name : product.category) || '';
   const variant = product.variant || '';
@@ -101,6 +103,7 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
       <div class="price-row">
         ${hasDiscount ? `<span class="mrp">৳ ${mrpVal.toLocaleString()}</span>` : ''}
         <span class="sale-price">৳ ${salePrice.toLocaleString()}</span>
+        ${discount ? `<span class="off">-${discount.pctText}</span>` : ''}
       </div>
     </div>
   `;
@@ -232,6 +235,17 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
     }
     .mrp { font-size: ${pt(9)}; font-weight: normal; text-decoration: line-through; color: #333; }
     .sale-price { font-size: ${pt(9)}; font-weight: 900; color: #000; }
+    /* The discount, printed white on black so it stands out on a thermal label */
+    .off {
+      font-size: ${pt(7)};
+      font-weight: 900;
+      color: #fff;
+      background: #000;
+      padding: 0 ${(0.7 * k).toFixed(2)}mm;
+      border-radius: ${(0.6 * k).toFixed(2)}mm;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
   </style>
 </head>
 <body>

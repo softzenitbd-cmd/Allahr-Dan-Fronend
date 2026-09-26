@@ -1691,7 +1691,7 @@ const HR = () => {
 
       {/* Money taken by a staff member: advances, repayments, salary adjustments */}
       {moneyHistory && createPortal(
-        <div className="drawer-overlay" onClick={(e) => { if (e.target === e.currentTarget) setMoneyHistory(null); }}>
+        <div className="drawer-overlay">
           <div className="drawer-container">
             <div className="drawer-header">
               <h2>{language === 'bn' ? 'টাকা নেওয়ার ইতিহাস' : 'Money taken'} — {moneyHistory.staff.name}</h2>
