@@ -683,6 +683,16 @@ const useStore = create(
         }
       }),
 
+      deleteProductGroup: (code) => enqueue(async () => {
+        try {
+          const result = await ProductService.removeGroup(code);
+          await get().refresh('inventory');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not delete the product.');
+        }
+      }),
+
       deleteInventoryItem: (id) => enqueue(async () => {
         try {
           await ProductService.remove(id);

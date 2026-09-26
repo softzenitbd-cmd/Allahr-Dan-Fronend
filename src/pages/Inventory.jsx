@@ -33,7 +33,7 @@ const getProductImageUrl = (img) => {
 
 const Inventory = () => {
   const {
-    inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup,
+    inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup, deleteProductGroup,
     deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user,
   } = useStore();
   // The original/buying price is confidential to the business owner/admin.
@@ -878,6 +878,29 @@ const Inventory = () => {
     }
   };
 
+  /** A product with sizes: every size goes, in one step. */
+  const handleDeleteGroup = async (item) => {
+    const sizes = item.variants || [];
+    const list = sizes.map((v) => `${v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')} ${Number(v.stock) || 0}`).join(', ');
+    const ok = await showConfirmDialog({
+      title: language === 'bn' ? `'${item.name}' পুরোটা ডিলিট করবেন?` : `Delete all of '${item.name}'?`,
+      text: language === 'bn'
+        ? `সব ${sizes.length}টি সাইজ মুছে যাবে (${list} — মোট ${Number(item.stock) || 0} পিস)। আগের বিক্রির হিসাব ঠিক থাকবে।`
+        : `All ${sizes.length} sizes will be deleted (${list} — ${Number(item.stock) || 0} pieces). Past sales stay in the books.`,
+      confirmButtonText: language === 'bn' ? 'হ্যাঁ, সব সাইজ ডিলিট' : 'Yes, delete all sizes',
+      cancelButtonText: language === 'bn' ? 'বাতিল' : 'Cancel',
+      isDanger: true,
+    });
+    if (!ok) return;
+    const res = await deleteProductGroup(item.product_code || item.id);
+    if (res?.ok) {
+      showSuccessAlert(language === 'bn'
+        ? `'${item.name}' — ${res.result?.deleted || sizes.length}টি সাইজসহ ডিলিট হয়েছে।`
+        : `'${item.name}' deleted with ${res.result?.deleted || sizes.length} sizes.`);
+      fetchPaginatedProducts(currentPage);
+    }
+  };
+
   const handleDelete = async (id) => {
     const isConfirmed = await showConfirmDialog({
       title: language === 'bn' ? 'পণ্যটি ডিলিট করবেন?' : 'Delete Product?',
@@ -1295,7 +1318,11 @@ const Inventory = () => {
                         <button className="btn-icon text-primary" title={kind === 'group' ? (language === 'bn' ? 'সব সাইজ একসাথে এডিট' : 'Edit all sizes') : 'Edit'} onClick={() => handleOpenEditModal(item)}>
                           <Edit size={16} />
                         </button>
-                        <button className="btn-icon text-danger" title="Delete" onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজ ডিলিট করবেন?' : 'Delete which size?', (v) => handleDelete(v.id)) : handleDelete(item.id))}>
+                        <button
+                          className="btn-icon text-danger"
+                          title={kind === 'group' ? (language === 'bn' ? 'সব সাইজসহ ডিলিট' : 'Delete with all sizes') : 'Delete'}
+                          onClick={() => (kind === 'group' ? handleDeleteGroup(item) : handleDelete(item.id))}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>

@@ -18,6 +18,7 @@ export const ENDPOINTS = {
   PRODUCT_WITH_VARIANTS: '/inventory/products/with-variants/',
   PRODUCT_SPLIT_VARIANTS: (code) => `/inventory/products/${encodeURIComponent(code)}/split-variants/`,
   PRODUCT_UPDATE_GROUP: (code) => `/inventory/products/${encodeURIComponent(code)}/update-group/`,
+  PRODUCT_DELETE_GROUP: (code) => `/inventory/products/${encodeURIComponent(code)}/delete-group/`,
   BARCODE_SEARCH: '/inventory/products/barcode-search/',
   CATEGORIES: '/inventory/categories/',
   CATEGORY: (id) => `/inventory/categories/${encodeURIComponent(id)}/`,

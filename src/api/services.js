@@ -24,6 +24,8 @@ export const ProductService = {
   splitVariants: (code, variants) => apiClient.post(ENDPOINTS.PRODUCT_SPLIT_VARIANTS(code), { variants }),
   // Name, category, prices... changed on every size of a product at once.
   updateGroup: (code, payload) => apiClient.post(ENDPOINTS.PRODUCT_UPDATE_GROUP(code), payload),
+  // A product with all its sizes, deleted at once.
+  removeGroup: (code) => apiClient.post(ENDPOINTS.PRODUCT_DELETE_GROUP(code)),
   update: (code, payload) => apiClient.patch(ENDPOINTS.PRODUCT(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.PRODUCT(code)),
   recordDamage: (payload) => apiClient.post(ENDPOINTS.PRODUCT_RECORD_DAMAGE, payload),
