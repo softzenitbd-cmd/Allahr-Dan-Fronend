@@ -102,8 +102,8 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
       <div class="barcode-number">${barcodeCode}</div>
       <div class="price-row">
         ${hasDiscount ? `<span class="mrp">৳ ${mrpVal.toLocaleString()}</span>` : ''}
-        <span class="sale-price">৳ ${salePrice.toLocaleString()}</span>
         ${discount ? `<span class="off">-${discount.pctText}</span>` : ''}
+        <span class="sale-price">৳ ${salePrice.toLocaleString()}</span>
       </div>
     </div>
   `;
@@ -237,12 +237,14 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
     .sale-price { font-size: ${pt(9)}; font-weight: 900; color: #000; }
     /* The discount, printed white on black so it stands out on a thermal label */
     .off {
-      font-size: ${pt(7)};
-      font-weight: 900;
+      font-size: ${pt(5.2)};
+      font-weight: 800;
       color: #fff;
       background: #000;
-      padding: 0 ${(0.7 * k).toFixed(2)}mm;
-      border-radius: ${(0.6 * k).toFixed(2)}mm;
+      padding: 0 ${(0.5 * k).toFixed(2)}mm;
+      border-radius: ${(0.5 * k).toFixed(2)}mm;
+      align-self: center;
+      line-height: 1.25;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
