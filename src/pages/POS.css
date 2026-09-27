@@ -775,3 +775,35 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
   padding: 1px 8px; border-radius: 999px; font-weight: 800;
   background: var(--success-soft, rgba(5, 150, 105, 0.12)); color: var(--success, #059669);
 }
+
+
+/* One barcode per product: size, then colour */
+.sku-pick-overlay {
+  position: fixed; inset: 0; z-index: 12000; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.sku-pick {
+  width: min(520px, 100%); max-height: 85vh; overflow: auto; background: var(--bg-card);
+  border-radius: 14px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3); padding: 1rem 1.1rem 1.1rem;
+}
+.sku-pick-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 0.9rem; }
+.sku-pick-name { font-weight: 800; font-size: 1.05rem; }
+.sku-pick-sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
+.sku-pick-close { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px; }
+.sku-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.sku-pick-grid button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px;
+  border: 1.5px solid var(--border-color); border-radius: 10px; background: var(--bg-card); cursor: pointer;
+}
+.sku-pick-grid button:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--bg-card)); }
+.sku-pick-grid button:disabled { opacity: 0.4; cursor: not-allowed; }
+.sku-pick-grid b { font-size: 1.05rem; }
+.sku-pick-grid small { font-size: 0.72rem; color: var(--text-muted); }
+.sku-pick-dots { display: flex; gap: 3px; }
+.sku-pick-dots i, .sr-size-dots i, .cl-sku-color i {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2);
+}
+.sku-pick-swatch { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2); }
+.sku-pick-back { margin-top: 0.8rem; background: none; border: none; color: var(--primary); font-weight: 600; cursor: pointer; }
+.sr-size-dots { display: inline-flex; gap: 2px; margin-left: 2px; }
+.cl-sku-color { display: inline-flex; align-items: center; gap: 3px; }

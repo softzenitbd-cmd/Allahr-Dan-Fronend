@@ -69,7 +69,8 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
   const height = Number(spec.height) || 25;
   const perRow = Math.max(1, Math.min(3, Number(spec.perRow) || 1));
 
-  const barcodeCode = String(product.id || product.product_code || '').trim();
+  // One barcode per product: every size and colour carries the product's code.
+  const barcodeCode = String(product.variant_of || product.id || product.product_code || '').trim();
   const barcodeSvg = generateBarcodeSvg(barcodeCode);
 
   const salePrice = product.discount_price && Number(product.discount_price) > 0
@@ -83,8 +84,9 @@ export const printBarcodeLabels = (product, count = 1, shopName = LABEL_SHOP_NAM
   const variant = product.variant || '';
 
   let itemTitle = product.name || '';
-  if (variant && !itemTitle.includes(variant)) {
-    itemTitle += ` (${variant})`;
+  const sizeColour = [variant, product.color || ''].filter(Boolean).join(' · ');
+  if (sizeColour && !itemTitle.includes(sizeColour)) {
+    itemTitle += ` (${sizeColour})`;
   }
 
   // Type sizes are tuned for a 40x25mm sticker and scale from there; the

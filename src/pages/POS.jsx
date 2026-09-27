@@ -229,10 +229,47 @@ const POS = () => {
       map.get(key).push(p);
     });
     // Sizes in shop order: no size label first, then S M L XL..., then numbers.
-    map.forEach((list) => list.sort((a, b) => compareSizes(a.variant, b.variant)));
+    map.forEach((list) => list.sort((a, b) => compareSizes(a.variant, b.variant)
+      || String(a.color || '').localeCompare(String(b.color || ''))));
     return map;
   }, [inventory]);
   const sizesOf = (product) => sizesByGroup.get(product.variant_of || product.id) || [product];
+
+  // One barcode per product: scanning it asks which size, then which colour.
+  const [skuPick, setSkuPick] = useState(null); // { members, size }
+  const sizeLabel = (v) => v || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size');
+  const sizeGroups = (members) => {
+    const out = [];
+    members.forEach((m) => {
+      const k = m.variant || '';
+      let g = out.find((x) => x.size === k);
+      if (!g) { g = { size: k, skus: [], stock: 0 }; out.push(g); }
+      g.skus.push(m);
+      g.stock += Number(m.stock) || 0;
+    });
+    return out;
+  };
+  const chooseSize = (members, size) => {
+    const skus = members.filter((m) => (m.variant || '') === size);
+    if (skus.length === 1) {
+      setSkuPick(null);
+      pickProduct(skus[0]);
+      return;
+    }
+    setSkuPick({ members, size });
+  };
+  const openSkuPicker = (members) => {
+    const groups = sizeGroups(members);
+    // Only one size: straight to its colours.
+    if (groups.length === 1) chooseSize(members, groups[0].size);
+    else setSkuPick({ members, size: null });
+  };
+  useEffect(() => {
+    if (!skuPick) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setSkuPick(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [skuPick]);
 
   const searchResults = useMemo(() => {
     if (!searchTerm) return [];
@@ -287,7 +324,8 @@ const POS = () => {
       return;
     }
 
-    addToCart({ ...product, isGift: false, itemDiscount: 0 });
+    // A row's own colour (stock kept per colour) is fixed on the line.
+    addToCart({ ...product, _skuColor: product.color || '', isGift: false, itemDiscount: 0 });
     // Show what was just scanned, so whoever is on the counter can see the
     // machine read the right label before the customer is charged for it.
     setScannedItem(product);
@@ -319,21 +357,29 @@ const POS = () => {
     setScanning(false);
 
     if (product) {
-      // A scanned barcode is one exact size. A typed name of a product that
-      // comes in sizes is not -- leave the list open to pick the size.
-      const exactCode = String(product.id) === term || String(product.product_code || '') === term;
-      if (!exactCode && sizesOf(product).length > 1) {
-        toast.info(language === 'bn' ? `"${product.name}" — সাইজ বেছে নিন` : `"${product.name}" — pick a size`);
-        return;
+      // The product's barcode (or its name) stands for all its sizes and
+      // colours: ask which. An old per-size sticker still goes straight in.
+      const members = sizesOf(product);
+      if (members.length > 1) {
+        const ownCode = (String(product.id) === term || String(product.product_code || '') === term)
+          && String(product.variant_of || '') !== term;
+        if (!ownCode) {
+          setBarcodeInput('');
+          openSkuPicker(members);
+          return;
+        }
       }
       pickProduct(product);
       return;
     }
+    if (searchResults.length === 1 && searchResults[0].members.length > 1) {
+      setBarcodeInput('');
+      openSkuPicker(searchResults[0].members);
+      return;
+    }
     // Several partial matches is not a failure: leave them on screen to choose.
-    if (searchResults.length > 1 || (searchResults.length === 1 && searchResults[0].members.length > 1)) {
-      toast.info(searchResults.length > 1
-        ? `${searchResults.length} items match "${term}". Pick one below.`
-        : (language === 'bn' ? `"${searchResults[0].lead.name}" — সাইজ বেছে নিন` : `"${searchResults[0].lead.name}" — pick a size`));
+    if (searchResults.length > 1) {
+      toast.info(`${searchResults.length} items match "${term}". Pick one below.`);
       return;
     }
     setScannedItem(null);
@@ -1021,6 +1067,76 @@ const POS = () => {
                   </div>
                 </div>
 
+                {skuPick && createPortal(
+                  (() => {
+                    const lead = skuPick.members.find((m) => m.id === m.variant_of) || skuPick.members[0];
+                    const groups = sizeGroups(skuPick.members);
+                    const skus = skuPick.size !== null ? skuPick.members.filter((m) => (m.variant || '') === skuPick.size) : [];
+                    return (
+                      <div className="sku-pick-overlay">
+                        <div className="sku-pick">
+                          <div className="sku-pick-head">
+                            <div>
+                              <div className="sku-pick-name">{lead.name}</div>
+                              <div className="sku-pick-sub">
+                                {skuPick.size === null
+                                  ? (language === 'bn' ? 'সাইজ বেছে নিন' : 'Pick a size')
+                                  : `${sizeLabel(skuPick.size)} — ${language === 'bn' ? 'কালার বেছে নিন' : 'pick a colour'}`}
+                              </div>
+                            </div>
+                            <button type="button" className="sku-pick-close" onClick={() => setSkuPick(null)}><X size={18} /></button>
+                          </div>
+                          {skuPick.size === null ? (
+                            <div className="sku-pick-grid">
+                              {groups.map((g) => (
+                                <button
+                                  type="button"
+                                  key={g.size || '_'}
+                                  disabled={g.stock <= 0}
+                                  onClick={() => chooseSize(skuPick.members, g.size)}
+                                >
+                                  <b>{sizeLabel(g.size)}</b>
+                                  <small>{g.stock} {language === 'bn' ? 'পিস' : 'pcs'}</small>
+                                  {g.skus.some((m) => m.color) && (
+                                    <span className="sku-pick-dots">
+                                      {g.skus.filter((m) => m.color).slice(0, 6).map((m) => (
+                                        <i key={m.id} style={{ background: colorSwatch(m.color), opacity: Number(m.stock) > 0 ? 1 : 0.3 }} />
+                                      ))}
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="sku-pick-grid">
+                                {skus.map((m) => (
+                                  <button
+                                    type="button"
+                                    key={m.id}
+                                    disabled={Number(m.stock) <= 0}
+                                    onClick={() => { setSkuPick(null); pickProduct(m); }}
+                                  >
+                                    <span className="sku-pick-swatch" style={{ background: m.color ? colorSwatch(m.color) : 'transparent' }} />
+                                    <b>{m.color || (language === 'bn' ? 'কালার ছাড়া' : 'No colour')}</b>
+                                    <small>{Number(m.stock) || 0} {language === 'bn' ? 'পিস' : 'pcs'}</small>
+                                  </button>
+                                ))}
+                              </div>
+                              {groups.length > 1 && (
+                                <button type="button" className="sku-pick-back" onClick={() => setSkuPick({ ...skuPick, size: null })}>
+                                  ← {language === 'bn' ? 'অন্য সাইজ' : 'Other size'}
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })(),
+                  document.body
+                )}
+
                 <div className="barcode-wrap">
                   <form onSubmit={handleBarcodeSubmit} className="barcode-form">
                     <Search size={18} className="text-muted" />
@@ -1099,7 +1215,9 @@ const POS = () => {
                                   <span className="sr-main">
                                     <span className="sr-name">{lead.name}</span>
                                     <span className="sr-meta">
-                                      {members.length} {language === 'bn' ? 'সাইজ — একটা বেছে নিন' : 'sizes — pick one'}
+                                      {sizeGroups(members).length} {language === 'bn' ? 'সাইজ' : 'sizes'}
+                                      {(() => { const cs = [...new Set(members.map((m) => m.color).filter(Boolean))]; return cs.length ? ` · ${cs.length} ${language === 'bn' ? 'কালার' : 'colours'}` : ''; })()}
+                                      {language === 'bn' ? ' — বেছে নিন' : ' — pick one'}
                                       {lead.category ? ` · ${lead.category}` : ''}
                                     </span>
                                   </span>
@@ -1117,22 +1235,25 @@ const POS = () => {
                                   </span>
                                 </div>
                                 <div className="sr-sizes">
-                                  {members.map((m) => {
-                                    const inCart = cart.find((c) => c.id === m.id)?.quantity || 0;
-                                    const out = Number(m.stock) <= 0;
+                                  {sizeGroups(members).map((g) => {
+                                    const inCart = g.skus.reduce((n, m) => n + (cart.find((c) => c.id === m.id)?.quantity || 0), 0);
+                                    const out = g.stock <= 0;
+                                    const colours = g.skus.map((m) => m.color).filter(Boolean);
                                     return (
                                       <button
-                                        key={m.id}
+                                        key={g.size || '_'}
                                         type="button"
                                         className={`sr-size ${inCart ? 'in-cart' : ''}`}
-                                        onClick={() => pickProduct(m)}
+                                        onClick={() => chooseSize(members, g.size)}
                                         disabled={out}
-                                        title={`${m.id}${out ? (language === 'bn' ? ' — স্টক শেষ' : ' — out of stock') : ''}`}
+                                        title={out ? (language === 'bn' ? 'স্টক শেষ' : 'Out of stock') : colours.join(', ')}
                                       >
-                                        {m.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}
-                                        <small>{Number(m.stock) || 0}</small>
-                                        {Number(m.price) !== Number(lead.price) && (
-                                          <small>৳{Number(m.price).toLocaleString()}</small>
+                                        {sizeLabel(g.size)}
+                                        <small>{g.stock}</small>
+                                        {colours.length > 0 && (
+                                          <span className="sr-size-dots">
+                                            {colours.slice(0, 5).map((c) => <i key={c} style={{ background: colorSwatch(c) }} />)}
+                                          </span>
                                         )}
                                         {inCart > 0 && <em>×{inCart}</em>}
                                       </button>
@@ -1170,6 +1291,7 @@ const POS = () => {
                       })()}
                       ৳{Number(scannedItem.price).toLocaleString()}
                       {scannedItem.variant ? ` · ${scannedItem.variant}` : ''}
+                      {scannedItem.color ? ` · ${scannedItem.color}` : ''}
                       {' · '}{language === 'bn' ? 'স্টক' : 'stock'} {scannedItem.stock}
                     </span>
                     {scannedItem.stock <= 0 && (
@@ -1242,11 +1364,16 @@ const POS = () => {
                           {item.isGift && <span className="cl-gift-tag">GIFT</span>}
                         </div>
                         <div className="cl-meta">
-                          {item.variant ? `${item.variant} · ` : ''}{item.id}
+                          {item.variant ? `${item.variant} · ` : ''}
+                          {item._skuColor ? (
+                            <span className="cl-sku-color"><i style={{ background: colorSwatch(item._skuColor) }} />{item._skuColor} · </span>
+                          ) : null}
+                          {item.variant_of || item.id}
                           {item.stock !== undefined ? ` · ${language === 'bn' ? 'স্টক' : 'stock'} ${item.stock}` : ''}
                         </div>
                         {(() => {
                           // Colours are only a label: tap the one(s) the customer takes.
+                          if (item._skuColor) return null; // its own colour, counted in stock
                           const colours = item.colors?.length ? item.colors
                             : (inventory.find((p) => p.id === item.id || p.product_code === item.id)?.colors || []);
                           if (!colours.length) return null;

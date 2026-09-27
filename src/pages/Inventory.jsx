@@ -19,7 +19,7 @@ import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import './Inventory.css';
 import { formatDate, formatTime } from '../utils/date';
 import { discountInfo } from '../utils/discount';
-import ProductColorPicker from '../components/ProductColorPicker';
+import VariantMatrixEditor, { matrixFromRows, matrixToPayload, matrixToVariants, matrixProblem, matrixTotal } from '../components/VariantMatrixEditor';
 import { colorSwatch } from '../utils/colors';
 import VariantStockEditor, { looksLikeVariantList, parseVariantText } from '../components/VariantStockEditor';
 
@@ -33,7 +33,7 @@ const getProductImageUrl = (img) => {
 
 const Inventory = () => {
   const {
-    inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup, deleteProductGroup,
+    inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup, deleteProductGroup, setProductMatrix,
     deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user,
   } = useStore();
   // The original/buying price is confidential to the business owner/admin.
@@ -74,6 +74,8 @@ const Inventory = () => {
   // created, each with its own barcode and stock.
   const [multiVariant, setMultiVariant] = useState(false);
   const [variantRows, setVariantRows] = useState([]);
+  // Adding a product with sizes and/or colours: the size x colour table.
+  const [newMatrix, setNewMatrix] = useState(() => matrixFromRows([]));
   // Dividing an existing product into sizes, from its Edit form.
   const [splitRows, setSplitRows] = useState(null);   // null = closed
   const [splitting, setSplitting] = useState(false);
@@ -287,6 +289,10 @@ const Inventory = () => {
     setShowAddModal(true);
   };
 
+  const matrixRowsOf = (list) => (list || []).map((v) => ({
+    code: v.product_code || v.id, size: v.variant || '', color: v.color || '', stock: Number(v.stock) || 0,
+  }));
+
   const handleOpenEditModal = (item) => {
     const salePrice = item.discount_price && Number(item.discount_price) > 0 ? Number(item.discount_price) : Number(item.price);
     const mrpPrice = item.mrp && Number(item.mrp) > 0 ? Number(item.mrp) : salePrice;
@@ -305,10 +311,9 @@ const Inventory = () => {
       price: salePrice,
       ...(item.isGroup ? {
         groupOriginal: item,
-        // Each size's label and pieces, editable in the drawer.
-        sizeEdits: Object.fromEntries((item.variants || []).map((v) => [
-          v.product_code || v.id, { variant: v.variant || '', stock: String(Number(v.stock) || 0) },
-        ])),
+        // The size x colour table, editable in the drawer.
+        matrixRows: matrixRowsOf(item.variants),
+        matrix: matrixFromRows(matrixRowsOf(item.variants), item.colors),
       } : {}),
     });
     setAddSizeRows(null);
@@ -786,41 +791,32 @@ const Inventory = () => {
         ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
         colors: editingItem.colors || [],
       };
-      // Only the sizes whose label or pieces were changed.
-      const sizes = (editingItem.variants || []).flatMap((v) => {
-        const code = v.product_code || v.id;
-        const ed = editingItem.sizeEdits?.[code];
-        if (!ed) return [];
-        const change = { code };
-        if (ed.variant.trim() !== (v.variant || '')) change.variant = ed.variant.trim();
-        if (String(parseInt(ed.stock, 10) || 0) !== String(Number(v.stock) || 0)) change.stock = parseInt(ed.stock, 10) || 0;
-        return Object.keys(change).length > 1 ? [change] : [];
-      });
-      const labels = Object.values(editingItem.sizeEdits || {}).map((ed) => ed.variant.trim().toLowerCase());
-      const dupe = labels.find((x, i) => labels.indexOf(x) !== i);
-      if (dupe !== undefined) {
-        toast.error(language === 'bn'
-          ? `"${dupe || 'সাইজ ছাড়া'}" দুইটা সাইজে লেখা হয়েছে`
-          : `"${dupe || 'No size'}" is used for two sizes`);
+      const problem = editingItem.matrix ? matrixProblem(editingItem.matrix, language === 'bn') : '';
+      if (problem) {
+        toast.error(problem);
         return;
       }
-      let payload = sizes.length ? { ...shared, sizes } : shared;
+      delete shared.colors; // the table decides the colours
+      let payload = shared;
       if (editProductImage) {
         payload = new FormData();
-        Object.entries(shared).forEach(([k, v]) => payload.append(k, k === 'colors' ? JSON.stringify(v) : v));
-        if (sizes.length) payload.append('sizes', JSON.stringify(sizes));
+        Object.entries(shared).forEach(([k, v]) => payload.append(k, v));
         payload.append('image', editProductImage);
       }
-      const groupRes = await updateProductGroup(editingItem.product_code || editingItem.id, payload);
-      if (groupRes?.ok) {
-        const n = groupRes.result?.updated || editingItem.variants?.length || 0;
+      const code = editingItem.product_code || editingItem.id;
+      const groupRes = await updateProductGroup(code, payload);
+      const matrixRes = groupRes?.ok && editingItem.matrix
+        ? await setProductMatrix(code, matrixToPayload(editingItem.matrix, editingItem.matrixRows))
+        : { ok: true };
+      if (groupRes?.ok && matrixRes?.ok) {
+        const n = matrixTotal(editingItem.matrix || { sizes: [], colors: [], cells: {} });
         setEditingItem(null);
         setAddSizeRows(null);
         setEditProductImage(null);
         setEditProductImagePreview(null);
         showSuccessAlert(language === 'bn'
-          ? `'${shared.name}' আপডেট হয়েছে — ${n}টি সাইজেই।`
-          : `Updated '${shared.name}' on all ${n} sizes.`);
+          ? `'${shared.name}' আপডেট হয়েছে — সব সাইজ/কালারে, মোট ${n} পিস।`
+          : `Updated '${shared.name}' on every size/colour — ${n} pieces in all.`);
         await refresh('inventory');
         fetchPaginatedProducts(currentPage);
       }
@@ -925,22 +921,20 @@ const Inventory = () => {
     setNewProductImagePreview(null);
     setMultiVariant(false);
     setVariantRows([]);
+    setNewMatrix(matrixFromRows([]));
   };
 
   /** One product in several sizes: each size its own row, barcode and stock. */
   const handleAddWithVariants = async (finalName) => {
-    const rows = variantRows
-      .map((r) => ({ name: String(r.name || '').trim(), stock: parseInt(r.stock, 10) || 0 }))
-      .filter((r) => r.name);
-    if (!rows.length) {
-      toast.error(language === 'bn' ? 'অন্তত একটা সাইজ আর তার পিস দিন' : 'Add at least one size with its pieces');
+    const problem = matrixProblem(newMatrix, language === 'bn');
+    if (problem) {
+      toast.error(problem);
       return;
     }
-    const seen = new Set();
-    for (const r of rows) {
-      const key = r.name.toLowerCase();
-      if (seen.has(key)) { toast.error(language === 'bn' ? `"${r.name}" দুবার লেখা হয়েছে` : `"${r.name}" is listed twice`); return; }
-      seen.add(key);
+    const rows = matrixToVariants(newMatrix);
+    if (!rows.length) {
+      toast.error(language === 'bn' ? 'টেবিলে অন্তত একটা ঘরে পিস লিখুন' : 'Fill the pieces in at least one cell');
+      return;
     }
 
     const mrpVal = parseFloat(newProduct.mrp) || 0;
@@ -957,7 +951,7 @@ const Inventory = () => {
       min_stock: minVal,
       minStock: minVal,
       ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
-      colors: newProduct.colors || [],
+      colors: [...new Set(rows.map((r) => r.color).filter(Boolean))],
     };
 
     let payload;
@@ -976,8 +970,9 @@ const Inventory = () => {
     const topped = res.result?.toppedUp || [];
     setShowAddModal(false);
     resetAddForm();
-    const madeText = made.map((p) => `${p.variant} ${p.stock}`).join(', ');
-    const toppedText = topped.map((p) => `${p.variant} (${language === 'bn' ? 'মোট' : 'now'} ${p.stock})`).join(', ');
+    const label = (p) => [p.variant, p.color].filter(Boolean).join(' ') || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size');
+    const madeText = made.map((p) => `${label(p)} ${p.stock}`).join(', ');
+    const toppedText = topped.map((p) => `${label(p)} (${language === 'bn' ? 'মোট' : 'now'} ${p.stock})`).join(', ');
     showSuccessAlert(language === 'bn'
       ? `'${finalName}' — ${made.length ? `নতুন সাইজ: ${madeText}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `স্টক যোগ: ${toppedText}` : ''}`
       : `'${finalName}' — ${made.length ? `new sizes: ${madeText}` : ''}${made.length && topped.length ? '; ' : ''}${topped.length ? `stock added: ${toppedText}` : ''}`);
@@ -1170,10 +1165,13 @@ const Inventory = () => {
                     </td>
                     <td>
                       {kind === 'group' ? (
+                        <>
                         <button type="button" className="inv-group-toggle" onClick={() => toggleGroup(item.groupKey)}>
                           {expandedGroups.has(item.groupKey) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                          {item.variants.length} {language === 'bn' ? 'সাইজ' : 'sizes'}
+                          {item.variants.length} {language === 'bn' ? 'ধরন' : 'kinds'}
                         </button>
+                        <div className="font-mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>{item.groupKey}</div>
+                        </>
                       ) : (
                         <span className="font-mono" style={{ fontWeight: 'bold' }}>{item.id}</span>
                       )}
@@ -1204,17 +1202,20 @@ const Inventory = () => {
                     <td>
                       {kind === 'group' ? (
                         <div className="inv-size-chips">
-                          {item.variants.map((v) => (
+                          {(item.sizeTotals || item.variants.map((v) => ({ size: v.variant || '', stock: Number(v.stock) || 0 }))).map((g) => (
                             <span
-                              key={v.id}
-                              className={`inv-size-chip ${Number(v.stock) <= 0 ? 'is-out' : Number(v.stock) <= Number(v.min_stock ?? 5) ? 'is-low' : ''}`}
+                              key={g.size || '_'}
+                              className={`inv-size-chip ${g.stock <= 0 ? 'is-out' : ''}`}
                             >
-                              {v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')} <b>{Number(v.stock) || 0}</b>
+                              {g.size || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')} <b>{g.stock}</b>
                             </span>
                           ))}
                         </div>
                       ) : kind === 'size' ? (
-                        <span className="inv-size-chip">{item.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span>
+                        <span className="inv-size-chip">
+                          {item.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}
+                          {item.color && <><i className="inv-chip-dot" style={{ background: colorSwatch(item.color) }} />{item.color}</>}
+                        </span>
                       ) : (item.variant || '-')}
                     </td>
                     <td>{item.unit}</td>
@@ -1288,7 +1289,7 @@ const Inventory = () => {
                           className="btn-icon text-success"
                           style={{ color: '#059669', background: '#ecfdf5' }}
                           title={language === 'bn' ? 'স্টক যোগ করুন (+)' : 'Add Stock (+)'}
-                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজে স্টক যোগ করবেন?' : 'Add stock to which size?', (v) => handleOpenQuickStock(v), { label: language === 'bn' ? '+ নতুন সাইজ যোগ করুন' : '+ Add a new size', run: () => { handleOpenEditModal(item); setAddSizeRows([]); } }) : handleOpenQuickStock(item))}
+                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজে স্টক যোগ করবেন?' : 'Add stock to which size?', (v) => handleOpenQuickStock(v), { label: language === 'bn' ? '+ নতুন সাইজ/কালার যোগ করুন' : '+ Add a size / colour', run: () => handleOpenEditModal(item) }) : handleOpenQuickStock(item))}
                         >
                           <PlusCircle size={16} />
                         </button>
@@ -1311,7 +1312,7 @@ const Inventory = () => {
                         <button
                           className="btn-icon text-secondary"
                           title="Print Barcode"
-                          onClick={(e) => (kind === 'group' ? pickSize(e, item, language === 'bn' ? 'কোন সাইজের স্টিকার?' : 'Sticker for which size?', (v) => handlePrintBarcode(v)) : handlePrintBarcode(item))}
+                          onClick={() => handlePrintBarcode(kind === 'group' ? { ...item, variant: '', color: '' } : item)}
                         >
                           <Printer size={16} />
                         </button>
@@ -2097,18 +2098,18 @@ const Inventory = () => {
                             const on = e.target.checked;
                             setMultiVariant(on);
                             // Carry over whatever was typed in the single box.
-                            if (on && !variantRows.length) {
+                            if (on && !matrixToVariants(newMatrix).length) {
                               const parsed = parseVariantText(newProduct.variant);
-                              setVariantRows(parsed || (newProduct.variant ? String(newProduct.variant).split(',').map((v) => ({ name: v.trim(), stock: '' })).filter((r) => r.name) : []));
+                              if (parsed) setNewMatrix(matrixFromRows(parsed.map((r) => ({ size: r.name, color: '', stock: r.stock }))));
                             }
                           }}
                           style={{ width: 15, height: 15 }}
                         />
-                        {language === 'bn' ? 'সাইজ অনুযায়ী আলাদা স্টক' : 'Separate stock per size'}
+                        {language === 'bn' ? 'সাইজ/কালার অনুযায়ী আলাদা স্টক' : 'Separate stock per size / colour'}
                       </label>
                     </div>
                     {multiVariant ? (
-                      <VariantStockEditor rows={variantRows} onChange={setVariantRows} bn={language === 'bn'} unit={newProduct.unit || 'Pcs'} />
+                      <VariantMatrixEditor value={newMatrix} onChange={setNewMatrix} bn={language === 'bn'} unit={newProduct.unit || 'Pcs'} />
                     ) : (
                       <input
                         type="text"
@@ -2119,7 +2120,7 @@ const Inventory = () => {
                         onBlur={(e) => {
                           // "XL4, L10" typed straight in: switch to sizes-with-pieces.
                           if (looksLikeVariantList(e.target.value)) {
-                            setVariantRows(parseVariantText(e.target.value));
+                            setNewMatrix(matrixFromRows(parseVariantText(e.target.value).map((r) => ({ size: r.name, color: '', stock: r.stock }))));
                             setMultiVariant(true);
                             setNewProduct((prev) => ({ ...prev, variant: '' }));
                           }
@@ -2209,16 +2210,6 @@ const Inventory = () => {
                       />
                     </div>
                   )}
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="text-muted text-sm block mb-1">
-                      {language === 'bn' ? 'কালার (ঐচ্ছিক)' : 'Colours (optional)'}
-                    </label>
-                    <ProductColorPicker
-                      value={newProduct.colors || []}
-                      onChange={(colors) => setNewProduct((cur) => ({ ...cur, colors }))}
-                      bn={language === 'bn'}
-                    />
-                  </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)
@@ -2289,7 +2280,10 @@ const Inventory = () => {
                   key={v.id}
                   onClick={() => { const run = sizePick.run; setSizePick(null); run(v); }}
                 >
-                  <span className="inv-size-chip">{v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}</span>
+                  <span className="inv-size-chip">
+                    {v.variant || (language === 'bn' ? 'সাইজ ছাড়া' : 'No size')}
+                    {v.color && <><i className="inv-chip-dot" style={{ background: colorSwatch(v.color) }} />{v.color}</>}
+                  </span>
                   <span className="size-pick-code">{v.id}</span>
                   <b>{Number(v.stock) || 0}</b>
                 </button>
@@ -2366,99 +2360,22 @@ const Inventory = () => {
                   {editingItem.isGroup ? (
                     <div className="inv-group-panel">
                       <div className="inv-group-panel-head">
-                        {language === 'bn' ? 'এই পণ্যের সাইজগুলো' : 'Sizes of this product'}
-                        <span>{language === 'bn' ? 'নাম, ক্যাটাগরি, দাম — সব সাইজে একসাথে বদলাবে' : 'Name, category and prices change on every size'}</span>
+                        {language === 'bn' ? 'সাইজ ও কালার অনুযায়ী স্টক' : 'Stock by size and colour'}
+                        <span>
+                          {language === 'bn'
+                            ? `বারকোড (পুরো পণ্যের একটাই): ${editingItem.variant_of || editingItem.product_code || editingItem.id} · নাম, ক্যাটাগরি, দাম সব সাইজ/কালারে একসাথে বদলাবে`
+                            : `Barcode (one for the product): ${editingItem.variant_of || editingItem.product_code || editingItem.id} · name, category and prices change on every size/colour`}
+                        </span>
                       </div>
-                      <table className="inv-group-sizes">
-                        <thead>
-                          <tr>
-                            <th>{language === 'bn' ? 'সাইজ' : 'Size'}</th>
-                            <th>{language === 'bn' ? 'বারকোড' : 'Barcode'}</th>
-                            <th style={{ textAlign: 'right' }}>{language === 'bn' ? 'পিস' : 'Pieces'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(editingItem.variants || []).map((v) => {
-                            const code = v.product_code || v.id;
-                            const ed = editingItem.sizeEdits?.[code] || { variant: v.variant || '', stock: String(v.stock ?? 0) };
-                            const stockChanged = String(parseInt(ed.stock, 10) || 0) !== String(Number(v.stock) || 0);
-                            const changed = ed.variant.trim() !== (v.variant || '') || stockChanged;
-                            const setEd = (patch) => setEditingItem((cur) => ({
-                              ...cur,
-                              sizeEdits: { ...(cur.sizeEdits || {}), [code]: { ...ed, ...patch } },
-                            }));
-                            return (
-                              <tr key={v.id} className={changed ? 'is-changed' : undefined}>
-                                <td>
-                                  <input
-                                    className="inv-size-input"
-                                    value={ed.variant}
-                                    placeholder={language === 'bn' ? 'সাইজ ছাড়া' : 'No size'}
-                                    onChange={(e) => setEd({ variant: e.target.value })}
-                                  />
-                                </td>
-                                <td className="font-mono" style={{ fontSize: '0.78rem' }}>{v.id}</td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <input
-                                    className="inv-size-input inv-size-qty"
-                                    type="number"
-                                    min="0"
-                                    value={ed.stock}
-                                    onChange={(e) => setEd({ stock: e.target.value })}
-                                  />
-                                  {stockChanged && (
-                                    <div className="inv-size-was">
-                                      {language === 'bn' ? 'আগে' : 'was'} {Number(v.stock) || 0}
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr>
-                            <td colSpan={2}>{language === 'bn' ? 'মোট' : 'Total'}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                              {(editingItem.variants || []).reduce((sum, v) => {
-                                const ed = editingItem.sizeEdits?.[v.product_code || v.id];
-                                return sum + (ed ? parseInt(ed.stock, 10) || 0 : Number(v.stock) || 0);
-                              }, 0)} {editingItem.unit || 'Pcs'}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                      <div className="text-xs" style={{ color: 'var(--text-muted)', marginTop: '4px' }}>
-                        {language === 'bn'
-                          ? 'সাইজের নাম বা পিস বদলে নিচে "Save Changes" চাপুন। বারকোড একই থাকবে।'
-                          : 'Change a size name or its pieces, then press Save Changes. Barcodes stay the same.'}
-                      </div>
-                      {addSizeRows ? (
-                        <div style={{ marginTop: '0.75rem' }}>
-                          <div className="text-sm" style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
-                            {language === 'bn'
-                              ? 'নতুন সাইজ লিখুন, অথবা আগের সাইজে আরও পিস — যেমন: XL5, M3। আগের সাইজে লিখলে স্টক যোগ হবে।'
-                              : 'Type new sizes, or more pieces of existing ones — e.g. XL5, M3. An existing size gets the pieces added.'}
-                          </div>
-                          <VariantStockEditor rows={addSizeRows} onChange={setAddSizeRows} bn={language === 'bn'} unit={editingItem.unit || 'Pcs'} />
-                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-                            <button type="button" className="btn-primary" onClick={handleAddSizesToGroup} disabled={addingSizes}>
-                              {addingSizes ? '…' : (language === 'bn' ? 'সাইজ / স্টক যোগ করুন' : 'Add sizes / stock')}
-                            </button>
-                            <button type="button" className="btn-outline" onClick={() => setAddSizeRows(null)}>
-                              {language === 'bn' ? 'বাতিল' : 'Cancel'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button type="button" className="inv-group-add" onClick={() => setAddSizeRows([])}>
-                          <PlusCircle size={14} /> {language === 'bn' ? 'নতুন সাইজ বা স্টক যোগ করুন' : 'Add a size or more stock'}
-                        </button>
-                      )}
-                      <div className="text-sm" style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>
-                        {language === 'bn'
-                          ? 'কোনো একটা সাইজের স্টক বা বারকোড — লিস্টে পণ্যের নামে চাপ দিলে সাইজগুলো খুলবে, সেখান থেকে।'
-                          : "One size's stock or barcode: click the product in the list to open its sizes."}
+                      <VariantMatrixEditor
+                        value={editingItem.matrix || matrixFromRows([])}
+                        rows={editingItem.matrixRows || []}
+                        onChange={(matrix) => setEditingItem((cur) => ({ ...cur, matrix }))}
+                        bn={language === 'bn'}
+                        unit={editingItem.unit || 'Pcs'}
+                      />
+                      <div className="text-xs" style={{ color: 'var(--text-muted)', marginTop: '6px' }}>
+                        {language === 'bn' ? 'বদলে নিচে "Save Changes" চাপুন।' : 'Then press Save Changes below.'}
                       </div>
                     </div>
                   ) : (
@@ -2496,9 +2413,20 @@ const Inventory = () => {
                           type="button"
                           className="text-sm"
                           style={{ color: 'var(--primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
-                          onClick={() => setSplitRows(parseVariantText(editingItem.variant) || [])}
+                          onClick={() => setEditingItem((cur) => {
+                            const rows = [{
+                              code: cur.product_code || cur.id,
+                              size: looksLikeVariantList(cur.variant) ? '' : (cur.variant || ''),
+                              color: cur.color || '',
+                              stock: Number(cur.initialStock ?? cur.stock) || 0,
+                            }];
+                            return {
+                              ...cur, isGroup: true, variants: [cur], groupOriginal: cur,
+                              matrixRows: rows, matrix: matrixFromRows(rows, cur.colors),
+                            };
+                          })}
                         >
-                          {language === 'bn' ? 'সাইজে ভাগ করুন' : 'Divide into sizes'}
+                          {language === 'bn' ? 'সাইজ/কালারে ভাগ করুন' : 'Divide by size / colour'}
                         </button>
                       )}
                     </div>
@@ -2541,7 +2469,7 @@ const Inventory = () => {
                     {!splitRows && looksLikeVariantList(editingItem.variant) && (
                       <div className="text-sm" style={{ marginTop: '0.35rem', color: 'var(--warning)' }}>
                         {language === 'bn'
-                          ? 'এটা শুধু লেবেল — স্টক ভাগ হয়নি। সাইজ অনুযায়ী আলাদা স্টক চাইলে "সাইজে ভাগ করুন" চাপুন।'
+                          ? 'এটা শুধু লেবেল — স্টক ভাগ হয়নি। সাইজ/কালার অনুযায়ী আলাদা স্টক চাইলে "সাইজ/কালারে ভাগ করুন" চাপুন।'
                           : 'This is only a label — the stock is not divided. Use "Divide into sizes" for separate stock.'}
                       </div>
                     )}
@@ -2687,16 +2615,6 @@ const Inventory = () => {
                       />
                     </div>
                   )}
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="text-muted text-sm block mb-1">
-                      {language === 'bn' ? 'কালার (ঐচ্ছিক)' : 'Colours (optional)'}
-                    </label>
-                    <ProductColorPicker
-                      value={editingItem.colors || []}
-                      onChange={(colors) => setEditingItem((cur) => ({ ...cur, colors }))}
-                      bn={language === 'bn'}
-                    />
-                  </div>
                   <div>
                     <label className="text-muted text-sm block mb-1">
                       {language === 'bn' ? 'MRP মূল্য (কাটা দেখাবে)' : 'MRP Price (Cut/Strikethrough)'} (BDT)

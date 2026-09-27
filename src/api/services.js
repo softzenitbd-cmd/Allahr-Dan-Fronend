@@ -26,6 +26,8 @@ export const ProductService = {
   updateGroup: (code, payload) => apiClient.post(ENDPOINTS.PRODUCT_UPDATE_GROUP(code), payload),
   // A product with all its sizes, deleted at once.
   removeGroup: (code) => apiClient.post(ENDPOINTS.PRODUCT_DELETE_GROUP(code)),
+  // The size x colour stock table of a product, saved in one go.
+  setMatrix: (code, payload) => apiClient.post(ENDPOINTS.PRODUCT_SET_MATRIX(code), payload),
   update: (code, payload) => apiClient.patch(ENDPOINTS.PRODUCT(code), payload),
   remove: (code) => apiClient.delete(ENDPOINTS.PRODUCT(code)),
   recordDamage: (payload) => apiClient.post(ENDPOINTS.PRODUCT_RECORD_DAMAGE, payload),

@@ -683,6 +683,16 @@ const useStore = create(
         }
       }),
 
+      setProductMatrix: (code, payload) => enqueue(async () => {
+        try {
+          const result = await ProductService.setMatrix(code, payload);
+          await get().refresh('inventory');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not save the sizes and colours.');
+        }
+      }),
+
       deleteProductGroup: (code) => enqueue(async () => {
         try {
           const result = await ProductService.removeGroup(code);
@@ -1459,6 +1469,8 @@ const useStore = create(
 
         const local =
           list.find((p) => String(p.id) === term) ||
+          // A product's one barcode, shared by all its sizes and colours.
+          list.find((p) => String(p.variant_of || '') === term) ||
           list.find((p) => (p.name || '').toLowerCase() === lower);
         if (local) return local;
 

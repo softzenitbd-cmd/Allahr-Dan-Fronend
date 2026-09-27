@@ -443,3 +443,46 @@
 .inv-size-qty { max-width: 80px; text-align: right; color: var(--text-main); }
 .inv-group-sizes tr.is-changed td { background: rgba(250, 204, 21, 0.12); }
 .inv-size-was { font-size: 0.68rem; color: var(--text-muted); }
+
+
+/* Size x colour stock table */
+.vme { display: flex; flex-direction: column; gap: 0.5rem; }
+.vme-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.vme-presets-label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); min-width: 48px; }
+.vme-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--bg-card); font-size: 0.72rem; font-weight: 600; color: var(--text-main);
+}
+.vme-chip:disabled { opacity: 0.35; cursor: default; }
+.vme-chip i, .vme-head i, .inv-chip-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2); flex: 0 0 auto;
+}
+.inv-chip-dot { margin-left: 5px; }
+.vme-chip-edit { cursor: default; padding-right: 3px; }
+.vme-chip-edit button { display: inline-flex; width: 15px; height: 15px; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 50%; background: rgba(220, 38, 38, 0.12); color: #dc2626; cursor: pointer; }
+.vme-manage { border-style: dashed; color: var(--primary); }
+.vme-manage.is-on { background: var(--primary); color: #fff; border-style: solid; }
+.vme-manage-add { display: inline-flex; gap: 4px; }
+.vme-manage-add input { width: 120px; padding: 2px 6px; font-size: 0.75rem; }
+.vme-add { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.vme-add input { width: 120px; padding: 4px 8px; font-size: 0.8rem; }
+.vme-empty { font-size: 0.8rem; color: var(--text-muted); padding: 0.75rem; border: 1px dashed var(--border-color); border-radius: 8px; }
+.vme-scroll { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
+.vme-table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+.vme-table th, .vme-table td { border-bottom: 1px solid var(--border-color); padding: 4px 6px; text-align: center; }
+.vme-table thead th { background: var(--bg-hover, #f8fafc); }
+.vme-table tbody th { text-align: left; background: var(--bg-hover, #f8fafc); }
+.vme-corner { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+.vme-head { display: flex; align-items: center; gap: 4px; justify-content: center; }
+.vme-head input { width: 70px; padding: 2px 5px; font-size: 0.78rem; font-weight: 700; border: 1px solid transparent; background: transparent; }
+.vme-head input:focus { border-color: var(--primary); background: var(--bg-card); }
+.vme-head button { display: inline-flex; padding: 1px; border: none; background: none; color: #dc2626; cursor: pointer; }
+.vme-head button:disabled { color: var(--text-muted); opacity: 0.4; cursor: not-allowed; }
+.vme-table td input { width: 58px; padding: 3px 5px; text-align: right; font-weight: 600; }
+.vme-table td.is-changed { background: rgba(250, 204, 21, 0.15); }
+.vme-was { font-size: 0.65rem; color: var(--text-muted); }
+.vme-total-col { font-weight: 700; white-space: nowrap; }
+.vme-table tfoot td, .vme-table tfoot th { font-weight: 700; border-bottom: none; }
+.vme-paste { display: flex; gap: 0.35rem; }
+.vme-paste input { flex: 1; }
+.vme-note { font-size: 0.72rem; color: var(--text-muted); }
