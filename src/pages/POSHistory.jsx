@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
+import { SaleService } from '../api/services';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import ThermalReceipt from '../components/ThermalReceipt';
@@ -90,64 +91,106 @@ const POSHistory = () => {
     }, 200);
   };
 
-  // The list comes from the store's `sales` slice, which the layout only loads
-  // for the routes that declare it. Ask for it on the way in so a direct link
-  // to this page is not an empty table.
+  // The invoices come a page at a time from the server (below); only the
+  // customers are needed from the store.
   useEffect(() => {
-    refresh('sales', 'customers');
+    refresh('customers');
   }, [refresh]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refresh('sales', 'customers', 'treasury');
+    await loadPage(page);
     setIsRefreshing(false);
   };
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return (sales || []).filter((s) => {
-      const day = String(s.date || '').split('T')[0];
-      if (startDate && day < startDate) return false;
-      if (endDate && day > endDate) return false;
-      if (paymentFilter !== 'All') {
-        if (paymentFilter === 'Mobile Banking') {
-          if (!s.paymentType?.startsWith('Mobile Banking') && !['bKash', 'Nagad', 'Rocket', 'Binimoy', 'Upay', 'Cellfin', 'Tap'].includes(s.paymentType)) {
-            return false;
-          }
-        } else if (!s.paymentType?.includes(paymentFilter)) {
-          return false;
-        }
+  // The table is read a page at a time from the server, filters and all;
+  // the totals above it are the server's, for every matching invoice.
+  const PAGE_SIZES = [5, 10, 20, 50, 100];
+  const [pageSize, setPageSize] = useState(() => {
+    try { return Number(localStorage.getItem('poshistory.pageSize')) || 20; } catch { return 20; }
+  });
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState({ results: [], count: 0, total_pages: 1, summary: null });
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [printRows, setPrintRows] = useState(null);
+
+  const filterParams = useCallback(() => {
+    const params = {};
+    if (search.trim()) params.search = search.trim();
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    if (paymentFilter !== 'All') params.payment = paymentFilter;
+    if (dueOnly) params.due_only = 'true';
+    return params;
+  }, [search, startDate, endDate, paymentFilter, dueOnly]);
+
+  const loadPage = useCallback(async (target) => {
+    setLoadingPage(true);
+    try {
+      const res = await SaleService.list({ ...filterParams(), page: target, page_size: pageSize });
+      if (res && Array.isArray(res.results)) {
+        setPageData(res);
+        setPage(res.current_page || target);
       }
-      if (dueOnly && outstandingOf(s) <= 0) return false;
-      if (!term) return true;
-      return (
-        String(s.id || '').toLowerCase().includes(term) ||
-        String(s.customerName || '').toLowerCase().includes(term) ||
-        String(s.customer_phone || '').toLowerCase().includes(term) ||
-        String(s.salesmanName || '').toLowerCase().includes(term) ||
-        (s.items || []).some((item) =>
-          String(item.name || '').toLowerCase().includes(term) ||
-          String(item.variant || '').toLowerCase().includes(term)
-        )
-      );
-    });
-  }, [sales, search, startDate, endDate, paymentFilter, dueOnly]);
+    } catch (err) {
+      // Asked past the last page (rows deleted since): go back to page 1.
+      if (target !== 1) loadPage(1);
+    } finally {
+      setLoadingPage(false);
+    }
+  }, [filterParams, pageSize]);
+
+  // A new filter or page size starts again from page 1 (typing is debounced).
+  useEffect(() => {
+    const timer = setTimeout(() => loadPage(1), search ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [search, startDate, endDate, paymentFilter, dueOnly, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A payment, a return or a delete refreshes the store's sales; follow it.
+  const firstSales = useRef(true);
+  useEffect(() => {
+    if (firstSales.current) { firstSales.current = false; return; }
+    loadPage(page);
+  }, [sales]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changePageSize = (n) => {
+    setPageSize(n);
+    try { localStorage.setItem('poshistory.pageSize', String(n)); } catch { /* ignore */ }
+  };
+
+  const filtered = pageData.results;
+  const totalPages = Math.max(1, pageData.total_pages || 1);
+  const pageNumbers = (() => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    if (page <= 4) return [1, 2, 3, 4, 5, '…', totalPages];
+    if (page >= totalPages - 3) return [1, '…', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    return [1, '…', page - 1, page, page + 1, '…', totalPages];
+  })();
+
+  /** The printed list is every matching invoice, not just this page. */
+  const handlePrintList = async () => {
+    try {
+      const all = await SaleService.list(filterParams());
+      setPrintRows(Array.isArray(all) ? all : (all?.results || filtered));
+    } catch {
+      setPrintRows(filtered);
+    }
+    setTimeout(() => printElement('printable-invoice-list', 'POS-History'), 200);
+  };
+  const printList = printRows || filtered;
 
   const stats = useMemo(() => {
-    const totals = filtered.reduce((acc, s) => {
-      acc.sales += Number(s.total) || 0;
-      acc.received += receivedOf(s);
-      acc.due += outstandingOf(s);
-      return acc;
-    }, { sales: 0, received: 0, due: 0 });
+    const sm = pageData.summary || {};
+    const totals = { sales: Number(sm.sales) || 0, received: Number(sm.received) || 0, due: Number(sm.due) || 0 };
 
     return [
-      { key: 'count', label: language === 'bn' ? 'চালান' : 'Invoices', value: filtered.length, colour: 'var(--info)', Icon: FileText },
+      { key: 'count', label: language === 'bn' ? 'চালান' : 'Invoices', value: pageData.summary?.count ?? pageData.count ?? 0, colour: 'var(--info)', Icon: FileText },
       { key: 'sales', label: language === 'bn' ? 'মোট বিক্রয়' : 'Total Sales', value: `৳${money(totals.sales)}`, colour: 'var(--primary)', Icon: Receipt },
       { key: 'received', label: language === 'bn' ? 'মোট আদায়' : 'Total Received', value: `৳${money(totals.received)}`, colour: 'var(--success)', Icon: Banknote },
       { key: 'due', label: language === 'bn' ? 'মোট বকেয়া' : 'Outstanding Due', value: `৳${money(totals.due)}`, colour: 'var(--danger)', Icon: AlertCircle },
     ];
-  }, [filtered, language]);
+  }, [pageData, language]);
 
   const clearFilters = () => {
     setSearch(''); setStartDate(''); setEndDate(''); setPaymentFilter('All'); setDueOnly(false);
@@ -240,7 +283,7 @@ const POSHistory = () => {
             <RefreshCcw size={16} className={isRefreshing ? 'animate-spin' : undefined} />
             {isRefreshing ? t(language, 'Loading...') : t(language, 'Refresh')}
           </button>
-          <button className="btn-primary flex-align-gap" onClick={() => printElement('printable-invoice-list', 'POS-History')}>
+          <button className="btn-primary flex-align-gap" onClick={handlePrintList}>
             <Printer size={16} /> {language === 'bn' ? 'তালিকা প্রিন্ট' : 'Print List'}
           </button>
         </div>
@@ -317,7 +360,24 @@ const POSHistory = () => {
       </div>
 
       <div className="card glass">
-        <div className="table-responsive">
+        <div className="poshistory-pagebar">
+          <label>
+            {language === 'bn' ? 'প্রতি পাতায়' : 'Show'}
+            <select value={pageSize} onChange={(e) => changePageSize(Number(e.target.value))}>
+              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            {language === 'bn' ? 'টি চালান' : 'invoices'}
+          </label>
+          <span className="text-muted">
+            {pageData.count
+              ? (language === 'bn'
+                ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, pageData.count)} / মোট ${pageData.count}`
+                : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, pageData.count)} of ${pageData.count}`)
+              : ''}
+            {loadingPage && ' …'}
+          </span>
+        </div>
+        <div className="table-responsive" style={{ opacity: loadingPage ? 0.6 : 1, transition: 'opacity 0.15s' }}>
           <table className="data-table">
             <thead>
               <tr>
@@ -466,6 +526,23 @@ const POSHistory = () => {
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div className="poshistory-pager">
+            <button type="button" disabled={page <= 1 || loadingPage} onClick={() => loadPage(page - 1)}>
+              ‹ {language === 'bn' ? 'আগের' : 'Prev'}
+            </button>
+            {pageNumbers.map((n, i) => (n === '…'
+              ? <span key={`gap${i}`} className="gap">…</span>
+              : (
+                <button type="button" key={n} className={n === page ? 'is-on' : ''} disabled={loadingPage} onClick={() => n !== page && loadPage(n)}>
+                  {n}
+                </button>
+              )))}
+            <button type="button" disabled={page >= totalPages || loadingPage} onClick={() => loadPage(page + 1)}>
+              {language === 'bn' ? 'পরের' : 'Next'} ›
+            </button>
+          </div>
+        )}
       </div>
 
       {/* The filtered list, laid out for paper. */}
@@ -491,7 +568,7 @@ const POSHistory = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => (
+              {printList.map((s) => (
                 <tr key={s.id}>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{formatDate(s.date)}</td>
                   <td style={{ border: '1px solid #ddd', padding: '0.4rem' }}>{s.id}</td>
@@ -509,9 +586,9 @@ const POSHistory = () => {
             </tbody>
           </table>
           <div style={{ textAlign: 'right', marginTop: '1rem', fontWeight: 700 }}>
-            Grand Total: ৳{money(filtered.reduce((acc, s) => acc + (Number(s.total) || 0), 0))}
+            Grand Total: ৳{money(printList.reduce((acc, s) => acc + (Number(s.total) || 0), 0))}
             {'  |  '}
-            Due: ৳{money(filtered.reduce((acc, s) => acc + outstandingOf(s), 0))}
+            Due: ৳{money(printList.reduce((acc, s) => acc + outstandingOf(s), 0))}
           </div>
         </div>
       </div>

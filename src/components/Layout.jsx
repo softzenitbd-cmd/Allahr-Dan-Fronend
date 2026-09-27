@@ -42,7 +42,7 @@ import ChangePasswordModal from './ChangePasswordModal';
 const ROUTE_SLICES = {
   '/': ['dashboard', 'sales', 'expenses', 'treasury', 'inventory', 'customers', 'suppliers', 'staff', 'payrolls'],
   '/pos': ['inventory', 'customers', 'drafts', 'staff', 'sales'],
-  '/pos-history': ['sales', 'customers', 'settlements', 'treasury'],
+  '/pos-history': ['customers', 'settlements', 'treasury'],
   // The day book fetches its own figures; the slices are for acting on rows.
   '/day-book': ['sales', 'customers', 'expenses'],
   '/inventory': ['categories', 'units'],

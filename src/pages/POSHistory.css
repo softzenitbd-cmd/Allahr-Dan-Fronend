@@ -195,3 +195,20 @@
 }
 .poshistory-product-profit.loss { color: var(--danger); }
 .poshistory-product-profit.unknown { color: var(--text-subtle); }
+
+
+/* Page size and pager */
+.poshistory-pagebar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;
+}
+.poshistory-pagebar label { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; }
+.poshistory-pagebar select { padding: 0.25rem 0.5rem; border-radius: 6px; }
+.poshistory-pager { display: flex; justify-content: center; align-items: center; gap: 0.3rem; flex-wrap: wrap; padding: 0.8rem; }
+.poshistory-pager button {
+  min-width: 34px; padding: 0.3rem 0.6rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-weight: 600;
+}
+.poshistory-pager button.is-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.poshistory-pager button:disabled { opacity: 0.45; cursor: default; }
+.poshistory-pager .gap { padding: 0 0.25rem; color: var(--text-muted); }
