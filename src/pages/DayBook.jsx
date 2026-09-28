@@ -45,6 +45,76 @@ const countDays = (sIso, eIso) => {
 };
 const pretty = (iso, bn) => formatLongDate(iso, bn, '—');
 
+/** Helper to resolve staff name for staff cost / salary expense records */
+const getStaffCostName = (row, expensesList = [], staffList = []) => {
+  if (!row || row.kind !== 'expense') return null;
+
+  // 1. Direct field on row from backend API
+  if (row.staff_name && typeof row.staff_name === 'string' && row.staff_name.trim()) {
+    return row.staff_name.trim();
+  }
+  if (row.staffName && typeof row.staffName === 'string' && row.staffName.trim()) {
+    return row.staffName.trim();
+  }
+
+  // 2. Staff ID or code on row
+  const rowStaffId = row.staff || row.staffId || row.staff_id;
+  if (rowStaffId && Array.isArray(staffList)) {
+    const found = staffList.find((s) => String(s.id) === String(rowStaffId) || s.staff_code === rowStaffId);
+    if (found?.name) return found.name;
+  }
+
+  // 3. Match against expenses slice in store by row.id
+  if (Array.isArray(expensesList) && row.id) {
+    const matchedExp = expensesList.find((e) => String(e.id) === String(row.id));
+    if (matchedExp) {
+      if (matchedExp.staffName) return matchedExp.staffName;
+      if (matchedExp.staff_name) return matchedExp.staff_name;
+      const sId = matchedExp.staff || matchedExp.staffId || matchedExp.staff_id;
+      if (sId && Array.isArray(staffList)) {
+        const found = staffList.find((s) => String(s.id) === String(sId) || s.staff_code === sId);
+        if (found?.name) return found.name;
+      }
+    }
+  }
+
+  // 4. Match against patterns in text / description / party
+  const text = `${row.title || ''} ${row.note || ''} ${row.party || ''}`;
+  if (/salary|বেতন|staff cost|স্টাফ খরচ|কর্মী/i.test(text) || row.party === 'Staff Cost' || row.party === 'স্টাফ খরচ') {
+    const salaryMatch = text.match(/Salary for\s+([^(]+)/i);
+    if (salaryMatch && salaryMatch[1]) {
+      return salaryMatch[1].trim();
+    }
+
+    const staffMatch = text.match(/(?:কর্মী|staff|employee)[:\s]+([^\s(,-]+)/i);
+    if (staffMatch && staffMatch[1]) {
+      return staffMatch[1].trim();
+    }
+
+    const bnMatch = text.match(/(?:বেতন পরিশোধ|স্টাফ খরচ).*?\(([^)]+)\)/);
+    if (bnMatch && bnMatch[1]) {
+      const cand = bnMatch[1].trim();
+      if (!cand.includes('Cost') && !cand.includes('Rent') && !cand.includes('Bill') && !cand.includes('Expense')) {
+        return cand;
+      }
+    }
+
+    if (Array.isArray(staffList) && staffList.length > 0) {
+      for (const s of staffList) {
+        if (s.name && s.name.trim().length > 1) {
+          const escaped = s.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`(?:^|[\\s(,:-])${escaped}(?:$|[\\s),:-])`, 'i');
+          if (regex.test(text)) {
+            return s.name.trim();
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 /** How each kind of row looks: icon, colour, label. */
 const KINDS = {
   sale: { icon: ShoppingCart, tone: 'success', en: 'Sale', bn: 'বিক্রি' },
@@ -120,6 +190,7 @@ const DayBook = () => {
     user, language, shopProfile, sales, customers, staff, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
     loans, fetchLoans, addLoan, payLoan, deleteLoan, deleteLoanPayment, importLocalLoans,
+    ensureLoaded,
   } = useStore();
   const navigate = useNavigate();
   const bn = language === 'bn';
@@ -149,6 +220,12 @@ const DayBook = () => {
   }, [startDate, endDate, fetchDayBook]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (typeof ensureLoaded === 'function') {
+      ensureLoaded('staff', 'expenses', 'sales', 'customers');
+    }
+  }, [ensureLoaded]);
 
   // A live day or range ending today keeps itself fresh while the page stays open.
   useEffect(() => {
@@ -191,9 +268,10 @@ const DayBook = () => {
         return false;
       }
       if (!q) return true;
-      return [row.id, row.party, row.title, row.by, row.method, row.partyPhone].some((v) => String(v || '').toLowerCase().includes(q));
+      const staffCostName = row.kind === 'expense' ? getStaffCostName(row, expenses, staff) : '';
+      return [row.id, row.party, row.title, row.by, row.method, row.partyPhone, staffCostName].some((v) => String(v || '').toLowerCase().includes(q));
     });
-  }, [data, filter, query]);
+  }, [data, filter, query, expenses, staff]);
 
   const filterCount = (f) => {
     if (!data) return 0;
@@ -232,16 +310,30 @@ const DayBook = () => {
     const amount = parseFloat(expenseForm.amount);
     if (!amount || amount <= 0) { toast.error(bn ? 'সঠিক পরিমাণ লিখুন' : 'Enter a valid amount'); return; }
     setSaving(true);
+    const selectedStaff = (staff || []).find((s) => String(s.id) === String(expenseForm.staffId));
+    let finalDesc = (expenseForm.description || '').trim();
+    if (!finalDesc && selectedStaff) {
+      finalDesc = `${expenseForm.category} (${selectedStaff.name})`;
+    } else if (!finalDesc) {
+      finalDesc = expenseForm.category;
+    }
     const res = await addExpense({
       date,
       category: expenseForm.category,
       amount,
       staff: expenseForm.staffId || undefined,
       staffId: expenseForm.staffId || undefined,
-      description: (expenseForm.description || '').trim() || expenseForm.category,
+      description: finalDesc,
     });
     setSaving(false);
-    if (res?.ok) { toast.success(bn ? 'খরচ লেখা হয়েছে' : 'Expense recorded'); setExpenseForm(null); load(true); }
+    if (res?.ok) {
+      toast.success(bn ? 'খরচ লেখা হয়েছে' : 'Expense recorded');
+      setExpenseForm(null);
+      load(true);
+      if (typeof ensureLoaded === 'function') {
+        ensureLoaded('expenses', 'staff');
+      }
+    }
   };
 
   const removeExpense = async (row) => {
@@ -1440,6 +1532,7 @@ const DayBook = () => {
                       {feed.map((row, idx) => {
                         const k = KINDS[row.kind] || KINDS.cash;
                         const Icon = k.icon;
+                        const staffCostName = row.kind === 'expense' ? getStaffCostName(row, expenses, staff) : null;
                         return (
                           <div key={`${row.kind}-${row.id}`} className={`db-row ${k.tone}`}>
                             <div className="db-row-sl">#{idx + 1}</div>
@@ -1449,6 +1542,26 @@ const DayBook = () => {
                               <div className="db-row-title">
                                 <span className="db-row-kind">{bn ? k.bn : k.en}</span>
                                 <strong>{row.party}</strong>
+                                {staffCostName && (
+                                  <span
+                                    className="badge"
+                                    style={{
+                                      backgroundColor: '#eff6ff',
+                                      color: '#1d4ed8',
+                                      border: '1px solid #bfdbfe',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      padding: '2px 8px',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 600,
+                                      borderRadius: '12px',
+                                    }}
+                                    title={bn ? `স্টাফ: ${staffCostName}` : `Staff: ${staffCostName}`}
+                                  >
+                                    👤 {staffCostName}
+                                  </span>
+                                )}
                                 {row.method && <span className={`badge ${row.method === 'Baki' ? 'bg-danger' : row.method === 'Partial' ? 'bg-warning' : 'bg-muted'}`}>{row.method}</span>}
                               </div>
                               <div className="db-row-sub">
@@ -1458,11 +1571,16 @@ const DayBook = () => {
                             </div>
                             {/* Who made the sale, in a column of its own so the
                                 day reads down the list rather than across it. */}
-                            <div className="db-row-by" title={row.by || ''}>
+                            <div className="db-row-by" title={row.by || staffCostName || ''}>
                               {row.by ? (
                                 <>
                                   <span className="l">{bn ? 'বিক্রেতা' : 'Salesman'}</span>
                                   <span className="v">{row.by}</span>
+                                </>
+                              ) : staffCostName ? (
+                                <>
+                                  <span className="l" style={{ color: '#2563eb' }}>{bn ? 'কর্মী' : 'Staff'}</span>
+                                  <span className="v" style={{ fontWeight: 600, color: '#1d4ed8' }}>{staffCostName}</span>
                                 </>
                               ) : <span className="v empty">—</span>}
                             </div>
@@ -1625,20 +1743,28 @@ const DayBook = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.feed.map((row, idx) => (
-                        <tr key={`${row.kind}-${row.id}`}>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.party}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.by || ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
-                        </tr>
-                      ))}
+                      {data.feed.map((row, idx) => {
+                        const rowStaffName = row.kind === 'expense' ? getStaffCostName(row, expenses, staff) : null;
+                        return (
+                          <tr key={`${row.kind}-${row.id}`}>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'center' }}>{idx + 1}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.time || ''}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{KINDS[row.kind]?.en || row.kind}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>
+                              {row.party}
+                              {rowStaffName ? ` (${rowStaffName})` : ''}
+                            </td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>
+                              {row.by || (rowStaffName ? `Staff: ${rowStaffName}` : '')}
+                            </td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px' }}>{row.title}{row.method ? ` (${row.method})` : ''}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px', fontSize: 9 }}>{row.id}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: row.due > 0 ? '#dc2626' : undefined }}>{row.due > 0 ? money(row.due) : ''}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', color: '#059669' }}>{row.paid !== undefined ? money(row.paid) : money(row.amount)}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '3px 6px', textAlign: 'right', fontWeight: 600 }}>{row.flow === 'out' ? '-' : ''}{money(row.amount)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
