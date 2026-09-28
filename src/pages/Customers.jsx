@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { Search, MessageSquare, Phone, Printer, Eye, Plus, Edit, Trash2, RotateCcw, History, Receipt, X, Tag, DollarSign } from 'lucide-react';
 import useStore from '../store/useStore';
 import { printElement } from '../utils/pdfGenerator';
@@ -10,6 +11,7 @@ import PrintablePayment from '../components/PrintablePayment';
 import { formatDate } from '../utils/date';
 
 const Customers = () => {
+  const navigate = useNavigate();
   const {
     customers,
     deletedCustomers,
@@ -1244,11 +1246,23 @@ const Customers = () => {
               })()}
             </div>
 
-            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
+            <div className="drawer-footer" style={{ justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <button className="btn-primary flex-align-gap" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem', borderRadius: '99px' }} onClick={() => {
                 printElement('printable-single-person', 'Customers');
               }}>
                 <Printer size={20} /> Print Document
+              </button>
+              <button
+                type="button"
+                className="btn-outline flex-align-gap"
+                style={{ padding: '0.75rem 1.8rem', fontSize: '0.9rem', borderRadius: '99px', color: '#1e40af', borderColor: '#93c5fd', background: '#eff6ff' }}
+                onClick={() => {
+                  const targetId = selectedPerson.customer_code || selectedPerson.supplier_code || selectedPerson.id;
+                  const isSup = Boolean(selectedPerson.supplier_code) || activeTab === 'Supplier';
+                  navigate(`/ledger?kind=${isSup ? 'supplier' : 'customer'}&id=${targetId}&tab=products`);
+                }}
+              >
+                <Eye size={18} /> {language === 'bn' ? 'লেজারে মালের বিস্তারিত হিসাব' : 'Ledger & Purchased Goods'}
               </button>
               {(selectedPerson.is_deleted || activeTab === 'Deleted') && (() => {
                 const isSelectedSupplier = activeTab === 'Supplier' || (activeTab === 'Deleted' && (deletedType === 'Supplier' || Boolean(selectedPerson.supplier_code)));

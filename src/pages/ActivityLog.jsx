@@ -38,7 +38,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { formatDate } from '../utils/date';
+import { formatDate, isoDate } from '../utils/date';
 
 const MODULE_OPTIONS = [
   { id: 'All', labelEn: 'All Modules', labelBn: 'সব মডিউল' },
@@ -341,27 +341,26 @@ const ActivityLog = () => {
   // Helper for quick date calculation
   const getFilterDates = useCallback(() => {
     const today = new Date();
-    const formatDate = (d) => d.toISOString().split('T')[0];
 
     if (dateFilter === 'today') {
-      const tStr = formatDate(today);
+      const tStr = isoDate(today);
       return { start: tStr, end: tStr };
     }
     if (dateFilter === 'yesterday') {
       const y = new Date(today);
       y.setDate(y.getDate() - 1);
-      const yStr = formatDate(y);
+      const yStr = isoDate(y);
       return { start: yStr, end: yStr };
     }
     if (dateFilter === '7days') {
       const d7 = new Date(today);
       d7.setDate(d7.getDate() - 6);
-      return { start: formatDate(d7), end: formatDate(today) };
+      return { start: isoDate(d7), end: isoDate(today) };
     }
     if (dateFilter === '30days') {
       const d30 = new Date(today);
       d30.setDate(d30.getDate() - 29);
-      return { start: formatDate(d30), end: formatDate(today) };
+      return { start: isoDate(d30), end: isoDate(today) };
     }
     if (dateFilter === 'custom') {
       return { start: startDate, end: endDate };

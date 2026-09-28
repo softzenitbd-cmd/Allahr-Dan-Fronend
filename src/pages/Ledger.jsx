@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Users, Truck, UserCheck, Search, Phone, MapPin, Calendar, Printer,
   Wallet, RefreshCcw, X, BookOpen, ChevronDown, ChevronLeft, ChevronRight,
-  CheckCircle2, Package, ChevronUp, Eye, FileText, Layers, Boxes,
+  CheckCircle2, Package, ChevronUp, Eye, FileText, Layers, Boxes, Tag,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useStore from '../store/useStore';
@@ -78,7 +78,7 @@ const Pager = ({ pager, bn }) => pager.total <= PAGE_SIZE ? (
 const Ledger = () => {
   const {
     customers, suppliers, staff, language, shopProfile,
-    expenses, payrolls, ensureLoaded,
+    expenses, payrolls, sales, ensureLoaded,
     fetchPartyLedger, payInvoiceDue, payAll, refresh, user,
   } = useStore();
   const bn = language === 'bn';
@@ -103,10 +103,11 @@ const Ledger = () => {
   const [saving, setSaving] = useState(false);
   const [expandedPurchases, setExpandedPurchases] = useState({});
   const [viewProductBills, setViewProductBills] = useState(null);
+  const [productSearch, setProductSearch] = useState('');
 
   useEffect(() => {
     refresh('customers', 'suppliers', 'staff');
-    if (ensureLoaded) ensureLoaded('expenses', 'payrolls');
+    if (ensureLoaded) ensureLoaded('expenses', 'payrolls', 'sales');
   }, [refresh, ensureLoaded]);
 
   // Close the picker when clicking anywhere else.
@@ -190,6 +191,9 @@ const Ledger = () => {
     if (res?.ok) setData(res.data);
     if (kind === 'salesman' && ensureLoaded) {
       ensureLoaded('expenses', 'payrolls', 'staff');
+    }
+    if (kind === 'customer' && ensureLoaded) {
+      ensureLoaded('sales');
     }
     setLoading(false);
   }, [fetchPartyLedger, kind, selectedId, startDate, endDate, ensureLoaded]);
@@ -465,6 +469,199 @@ const Ledger = () => {
   // ---------------------------------------------------------------- //
   // Rows for the active tab, paged
   // ---------------------------------------------------------------- //
+  // ---------------------------------------------------------------- //
+  // Customer Purchased Products
+  // Aggregates what products this customer purchased across their invoices
+  // ---------------------------------------------------------------- //
+  const customerProducts = useMemo(() => {
+    if (kind !== 'customer' || !data) return [];
+
+    // If backend provided products, use it
+    if (Array.isArray(data.products) && data.products.length > 0) {
+      return data.products;
+    }
+
+    const byProduct = {};
+
+    // 1. Check if invoices in data already have items / lines
+    const dataInvoices = data.invoices || [];
+    let hasDirectLines = false;
+
+    dataInvoices.forEach((inv) => {
+      const lines = inv.lines || inv.items_detail || inv.items || [];
+      if (Array.isArray(lines) && lines.length > 0 && typeof lines[0] === 'object') {
+        hasDirectLines = true;
+        const invDate = (inv.date || '').split('T')[0];
+        const invNum = inv.id || inv.invoice_number;
+
+        lines.forEach((item) => {
+          const code = item.product_code || item.id || '';
+          const name = item.name || item.product_name || (bn ? 'পণ্য' : 'Product');
+          const variant = item.variant || '';
+          const color = item.color || '';
+          const unit = item.unit || 'pcs';
+          const key = `${code}__${name}__${variant}__${color}`;
+
+          if (!byProduct[key]) {
+            byProduct[key] = {
+              code,
+              name,
+              variant,
+              color,
+              unit,
+              qty: 0,
+              amount: 0,
+              gifts: 0,
+              purchases: 0,
+              invoices: 0,
+              lastDate: null,
+              bills: [],
+            };
+          }
+
+          const qty = Number(item.quantity) || 1;
+          const total = Number(item.total ?? item.total_price ?? (Number(item.price) * qty)) || 0;
+          const isGift = Boolean(item.is_gift || item.isGift);
+
+          byProduct[key].qty += qty;
+          byProduct[key].amount += total;
+          if (isGift) byProduct[key].gifts += qty;
+          byProduct[key].purchases += 1;
+          byProduct[key].invoices += 1;
+
+          byProduct[key].bills.push({
+            id: invNum,
+            date: invDate,
+            quantity: qty,
+            unit,
+            price: Number(item.price) || 0,
+            total,
+            isGift,
+            salesmanName: inv.salesmanName || '',
+            paymentType: inv.paymentType || '',
+          });
+
+          if (!byProduct[key].lastDate || invDate > byProduct[key].lastDate) {
+            byProduct[key].lastDate = invDate;
+          }
+        });
+      }
+    });
+
+    if (hasDirectLines && Object.keys(byProduct).length > 0) {
+      return Object.values(byProduct)
+        .map((p) => ({
+          ...p,
+          avgPrice: p.qty > 0 ? p.amount / p.qty : 0,
+        }))
+        .sort((a, b) => b.amount - a.amount);
+    }
+
+    // 2. Match from sales in store
+    const invNumbers = new Set(dataInvoices.map((i) => String(i.id || i.invoice_number)));
+    const targetCustCode = String(selectedId || data.party?.id || '').toLowerCase();
+    const targetCustName = String(data.party?.name || '').trim().toLowerCase();
+    const targetCustPhone = String(data.party?.phone || '').trim();
+
+    const matchedSales = (sales || []).filter((s) => {
+      const num = String(s.invoice_number || s.id);
+      if (invNumbers.has(num)) return true;
+      const cCode = String(s.customerId || s.customer_id || s.customer?.customer_code || s.customer?.id || '').toLowerCase();
+      if (targetCustCode && cCode === targetCustCode) return true;
+      const cName = String(s.customerName || s.customer_name || s.customer?.name || '').trim().toLowerCase();
+      if (targetCustName && cName === targetCustName) return true;
+      const cPhone = String(s.customer_phone || s.customerPhone || s.customer?.phone || '').trim();
+      if (targetCustPhone && cPhone === targetCustPhone) return true;
+      return false;
+    });
+
+    const scopedSales = matchedSales.filter((s) => {
+      const d = (s.date || '').split('T')[0];
+      if (startDate && d < startDate) return false;
+      if (endDate && d > endDate) return false;
+      return true;
+    });
+
+    scopedSales.forEach((inv) => {
+      const invItems = inv.items || inv.cart_items || [];
+      const invDate = (inv.date || '').split('T')[0];
+      const invNum = inv.invoice_number || inv.id;
+
+      invItems.forEach((item) => {
+        const code = item.product_code || item.id || item.code || '';
+        const name = item.name || item.product_name || (bn ? 'পণ্য' : 'Product');
+        const variant = item.variant || '';
+        const color = item.color || '';
+        const unit = item.unit || 'pcs';
+        const key = `${code}__${name}__${variant}__${color}`;
+
+        if (!byProduct[key]) {
+          byProduct[key] = {
+            code,
+            name,
+            variant,
+            color,
+            unit,
+            qty: 0,
+            amount: 0,
+            gifts: 0,
+            purchases: 0,
+            invoices: 0,
+            lastDate: null,
+            bills: [],
+          };
+        }
+
+        const qty = Number(item.quantity) || 1;
+        const total = Number(item.total_price ?? item.total ?? (Number(item.price) * qty)) || 0;
+        const isGift = Boolean(item.is_gift || item.isGift);
+
+        byProduct[key].qty += qty;
+        byProduct[key].amount += total;
+        if (isGift) byProduct[key].gifts += qty;
+        byProduct[key].purchases += 1;
+        byProduct[key].invoices += 1;
+
+        byProduct[key].bills.push({
+          id: invNum,
+          date: invDate,
+          quantity: qty,
+          unit,
+          price: Number(item.price) || 0,
+          total,
+          isGift,
+          salesmanName: inv.salesmanName || inv.salesman_name || '',
+          paymentType: inv.paymentType || inv.payment_type || '',
+        });
+
+        if (!byProduct[key].lastDate || invDate > byProduct[key].lastDate) {
+          byProduct[key].lastDate = invDate;
+        }
+      });
+    });
+
+    return Object.values(byProduct)
+      .map((p) => ({
+        ...p,
+        avgPrice: p.qty > 0 ? p.amount / p.qty : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [kind, data, selectedId, sales, startDate, endDate, bn]);
+
+  const filteredCustomerProducts = useMemo(() => {
+    if (!productSearch.trim()) return customerProducts;
+    const term = productSearch.trim().toLowerCase();
+    return customerProducts.filter((p) =>
+      (p.name || '').toLowerCase().includes(term) ||
+      (p.code || '').toLowerCase().includes(term) ||
+      (p.variant || '').toLowerCase().includes(term) ||
+      (p.color || '').toLowerCase().includes(term)
+    );
+  }, [customerProducts, productSearch]);
+
+  // ---------------------------------------------------------------- //
+  // Rows for the active tab, paged
+  // ---------------------------------------------------------------- //
   const rowsForTab = useMemo(() => {
     if (!data) return [];
     switch (tab) {
@@ -480,18 +677,22 @@ const Ledger = () => {
       case 'primary': return kind === 'supplier' ? data.purchases : data.invoices;
       case 'payments': return data.payments;
       case 'statement': return data.statement;
-      case 'products': return data.products;
+      case 'products': {
+        if (kind === 'customer') return filteredCustomerProducts;
+        return data.products || [];
+      }
       case 'dues': return kind === 'supplier' ? data.duePurchases : data.dueInvoices;
       case 'recoveries': return data.recoveries;
       default: return [];
     }
-  }, [data, tab, kind, staffDueStatement, startDate, endDate]);
-  const pager = usePager(rowsForTab, `${selectedId}|${tab}|${startDate}|${endDate}`);
+  }, [data, tab, kind, staffDueStatement, startDate, endDate, filteredCustomerProducts]);
+  const pager = usePager(rowsForTab, `${selectedId}|${tab}|${startDate}|${endDate}|${productSearch}`);
 
   const tabs = useMemo(() => {
     if (!data) return [];
     if (kind === 'customer') return [
       { key: 'primary', l: bn ? 'চালান' : 'Invoices', n: data.invoices.length },
+      { key: 'products', l: bn ? '📦 ক্রয়কৃত পণ্য' : 'Purchased Items', n: customerProducts.length },
       { key: 'payments', l: bn ? 'পেমেন্ট' : 'Payments', n: data.payments.length },
       { key: 'statement', l: bn ? 'স্টেটমেন্ট' : 'Statement', n: data.statement.length },
       { key: 'dues', l: bn ? 'বকেয়া চালান' : 'Due Invoices', n: data.dueInvoices.length },
@@ -520,7 +721,7 @@ const Ledger = () => {
       salesmanTabs.push({ key: 'recoveries', l: bn ? 'আদায়' : 'Recoveries', n: (data.recoveries || []).length });
     }
     return salesmanTabs;
-  }, [data, kind, bn, isSalesmanAdmin, staffDueStatement.length]);
+  }, [data, kind, bn, isSalesmanAdmin, staffDueStatement.length, customerProducts.length]);
 
   // Lifetime tiles, then the same for the window when one is set.
   const tiles = useMemo(() => {
@@ -529,6 +730,7 @@ const Ledger = () => {
     if (kind === 'customer') return {
       life: [
         { l: bn ? 'চালান' : 'Invoices', v: t.invoices },
+        { l: bn ? 'মোট পণ্য আইটেম' : 'Distinct Items', v: `${t.productsDistinct || customerProducts.length} ${bn ? 'টি' : 'items'}` },
         { l: bn ? 'মোট কেনাকাটা' : 'Total Purchased', v: money(t.purchased) },
         { l: bn ? 'মোট পরিশোধ' : 'Total Paid', v: money(t.totalPaid), c: 'good' },
         { l: bn ? 'বকেয়া চালান' : 'Invoices with Due', v: t.dueInvoices, c: t.dueInvoices ? 'bad' : '' },
@@ -537,6 +739,7 @@ const Ledger = () => {
       ],
       period: [
         { l: bn ? 'চালান' : 'Invoices', v: p.invoices },
+        { l: bn ? 'আইটেম (এই সময়ে)' : 'Items in Period', v: `${filteredCustomerProducts.length} ${bn ? 'টি' : 'items'}` },
         { l: bn ? 'কেনাকাটা' : 'Purchased', v: money(p.purchased) },
         { l: bn ? 'কাউন্টারে পরিশোধ' : 'Paid at Sale', v: money(p.paidAtSale), c: 'good' },
         { l: bn ? 'বকেয়া আদায়' : 'Due Collected', v: money(p.paidLater), c: 'good' },
@@ -1248,7 +1451,228 @@ const Ledger = () => {
                 </table>
               )}
 
-              {tab === 'products' && kind === 'supplier' ? (
+              {tab === 'products' && kind === 'customer' ? (
+                <div>
+                  {/* Top Bar: Search and Summary Stats */}
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.75rem',
+                    marginBottom: '1rem',
+                    padding: '0.85rem 1rem',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                  }}>
+                    {/* Search Input */}
+                    <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: '420px' }}>
+                      <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                      <input
+                        type="text"
+                        placeholder={bn ? 'পণ্যের নাম, বারকোড, সাইজ বা কালার দিয়ে খুঁজুন…' : 'Search by item name, barcode, size, color…'}
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          paddingLeft: '32px',
+                          paddingRight: productSearch ? '30px' : '10px',
+                          height: '36px',
+                          fontSize: '0.84rem',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#fff',
+                        }}
+                      />
+                      {productSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setProductSearch('')}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: '#94a3b8',
+                            padding: '2px',
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Summary Quick Stats Chips */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem' }}>
+                      <span className="badge" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '0.35rem 0.65rem' }}>
+                        📦 {bn ? 'মোট বিভিন্ন আইটেম:' : 'Items:'} <strong>{customerProducts.length} {bn ? 'টি' : ''}</strong>
+                      </span>
+                      <span className="badge" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '0.35rem 0.65rem' }}>
+                        🏷️ {bn ? 'মোট ক্রয়কৃত মাল:' : 'Units:'} <strong>{customerProducts.reduce((sum, p) => sum + (Number(p.qty) || 0), 0)} {bn ? 'পিস' : 'pcs'}</strong>
+                      </span>
+                      <span className="badge" style={{ background: '#fdf4ff', color: '#7e22ce', border: '1px solid #f0abfc', padding: '0.35rem 0.65rem' }}>
+                        💰 {bn ? 'মোট মূল্য:' : 'Total Value:'} <strong>{money(customerProducts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0))}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Products Table */}
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>{bn ? 'পণ্য ও বিবরণ' : 'Product & Description'}</th>
+                        <th>{bn ? 'আইডি / বারকোড' : 'Code / Barcode'}</th>
+                        <th className="num">{bn ? 'মোট ক্রয়কৃত পরিমাণ' : 'Total Units Bought'}</th>
+                        <th className="num">{bn ? 'চালান সংখ্যা' : 'Bills Count'}</th>
+                        <th className="num">{bn ? 'গড় বিক্রয়দর' : 'Avg Rate'}</th>
+                        <th className="num">{bn ? 'মোট ক্রয়ের টাকা' : 'Total Purchased Amount'}</th>
+                        <th>{bn ? 'সর্বশেষ ক্রয়' : 'Last Purchased'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan="7" className="text-center text-muted" style={{ padding: '2.5rem 1rem' }}>
+                            <Package size={36} style={{ color: '#94a3b8', margin: '0 auto 0.5rem', display: 'block' }} />
+                            <div style={{ fontSize: '0.92rem', fontWeight: 600 }}>
+                              {productSearch ? (bn ? 'অনুসন্ধানের সাথে কোনো পণ্য মেলেনি।' : 'No products matched your search.') : (bn ? 'এই কাস্টমারের কোনো পণ্য ক্রয়ের রেকর্ড পাওয়া যায়নি।' : 'No purchased products found for this customer.')}
+                            </div>
+                            <div className="text-muted text-sm" style={{ marginTop: '4px' }}>
+                              {productSearch ? (bn ? 'অন্য নাম বা বারকোড দিয়ে চেষ্টা করুন।' : 'Try a different keyword or barcode.') : (bn ? 'কাস্টমার নতুন কোনো পণ্য কিনলে এখানে তালিকা দেখা যাবে।' : 'Items purchased by this customer will appear here.')}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {pager.slice.map((p) => {
+                        const billKey = `cust-${p.code}-${p.name}-${p.variant}-${p.color}`;
+                        const isBillsOpen = viewProductBills === billKey;
+                        return (
+                          <React.Fragment key={billKey}>
+                            <tr style={{ verticalAlign: 'middle' }}>
+                              <td>
+                                <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem' }}>
+                                  {p.name}
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
+                                  {p.variant ? (
+                                    <span style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                      {bn ? 'সাইজ/ভেরিয়েন্ট' : 'Variant'}: <strong>{p.variant}</strong>
+                                    </span>
+                                  ) : null}
+                                  {p.color ? (
+                                    <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                                      {bn ? 'কালার' : 'Color'}: <strong>{p.color}</strong>
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="badge" style={{ background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                                  {p.code || '—'}
+                                </span>
+                              </td>
+                              <td className="num">
+                                <span className="badge" style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', fontWeight: 700, fontSize: '0.85rem' }}>
+                                  {p.qty} {p.unit || (bn ? 'পিস' : 'pcs')}
+                                </span>
+                                {p.gifts > 0 && (
+                                  <div style={{ marginTop: '2px' }}>
+                                    <span className="badge" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #ffedd5', fontSize: '0.7rem' }}>
+                                      🎁 {p.gifts} {bn ? 'উপহার' : 'gift'}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="num">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewProductBills(isBillsOpen ? null : billKey)}
+                                  className="btn-link"
+                                  style={{
+                                    background: isBillsOpen ? '#dbeafe' : 'none',
+                                    border: isBillsOpen ? '1px solid #bfdbfe' : 'none',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    cursor: 'pointer',
+                                    color: '#2563eb',
+                                    fontWeight: 600,
+                                    fontSize: '0.82rem',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                  title={bn ? 'চালানের বিস্তারিত দেখতে ক্লিক করুন' : 'Click to view invoice details'}
+                                >
+                                  {p.purchases || p.invoices || (p.bills || []).length} {bn ? 'টি চালানে' : 'bills'}
+                                  {isBillsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                </button>
+                              </td>
+                              <td className="num" style={{ fontWeight: 600, color: '#334155' }}>
+                                {money(p.avgPrice)}
+                              </td>
+                              <td className="num" style={{ fontWeight: 700, color: 'var(--primary-dark, #1e40af)', fontSize: '0.92rem' }}>
+                                {money(p.amount)}
+                              </td>
+                              <td style={{ fontSize: '0.84rem', color: '#475569' }}>
+                                {p.lastDate ? day(p.lastDate) : '—'}
+                              </td>
+                            </tr>
+                            {isBillsOpen && p.bills && p.bills.length > 0 && (
+                              <tr style={{ background: '#f8fafc' }}>
+                                <td colSpan="7" style={{ padding: '0.75rem 1.25rem', borderTop: 'none', borderBottom: '1.5px solid #cbd5e1' }}>
+                                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    <FileText size={15} style={{ color: '#2563eb' }} />
+                                    <span>{bn ? `"${p.name}" যেসব চালানে কেনা হয়েছে:` : `Invoices containing "${p.name}":`}</span>
+                                  </div>
+                                  <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                                    <table style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'collapse' }}>
+                                      <thead>
+                                        <tr style={{ background: '#f1f5f9', color: '#475569', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                                          <th style={{ padding: '6px 10px' }}>{bn ? 'চালান নং' : 'Invoice #'}</th>
+                                          <th style={{ padding: '6px 10px' }}>{bn ? 'তারিখ' : 'Date'}</th>
+                                          <th style={{ padding: '6px 10px', textAlign: 'right' }}>{bn ? 'পরিমাণ' : 'Quantity'}</th>
+                                          <th style={{ padding: '6px 10px', textAlign: 'right' }}>{bn ? 'দর' : 'Unit Price'}</th>
+                                          <th style={{ padding: '6px 10px', textAlign: 'right' }}>{bn ? 'মোট টাকা' : 'Line Total'}</th>
+                                          <th style={{ padding: '6px 10px' }}>{bn ? 'পেমেন্ট' : 'Payment'}</th>
+                                          <th style={{ padding: '6px 10px' }}>{bn ? 'বিক্রেতা' : 'Salesman'}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {p.bills.map((b, bIdx) => (
+                                          <tr key={`${b.id}-${bIdx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            <td style={{ padding: '6px 10px', fontWeight: 600, color: '#1e40af', fontFamily: 'monospace' }}>
+                                              {b.id}
+                                            </td>
+                                            <td style={{ padding: '6px 10px' }}>{day(b.date)}</td>
+                                            <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#047857' }}>
+                                              {b.quantity} {b.unit || p.unit || (bn ? 'পিস' : 'pcs')}
+                                              {b.isGift && <span style={{ color: '#d97706', marginLeft: 4 }}>(🎁 {bn ? 'গিফট' : 'Gift'})</span>}
+                                            </td>
+                                            <td style={{ padding: '6px 10px', textAlign: 'right' }}>{money(b.price)}</td>
+                                            <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{money(b.total)}</td>
+                                            <td style={{ padding: '6px 10px' }}>
+                                              <span className="badge" style={{ fontSize: '0.7rem' }}>{b.paymentType || '—'}</span>
+                                            </td>
+                                            <td style={{ padding: '6px 10px', color: '#64748b' }}>{b.salesmanName || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : tab === 'products' && kind === 'supplier' ? (
                 <table className="data-table">
                   <thead>
                     <tr>
