@@ -824,3 +824,7 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
 .amend-received input { width: 110px; }
 .amend-received small { width: 100%; color: #d97706; font-weight: 600; }
 .amend-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+
+/* Optional customer birthday in the checkout */
+.pos-birth-hint { display: block; font-size: 0.68rem; color: var(--text-subtle); margin-top: -2px; }

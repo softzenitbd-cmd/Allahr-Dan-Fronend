@@ -6,7 +6,7 @@ import {
   Search, Plus, Minus, Trash2, Gift, Database, List, Printer, Eye,
   FilePlus, Edit, Wallet, ShoppingCart, User, UserCheck, Phone,
   MapPin, Sparkles, Banknote, CreditCard, FileText, Check, X, Smartphone, Download,
-  RefreshCw, Wifi, WifiOff
+  RefreshCw, Wifi, WifiOff, Cake
 } from 'lucide-react';
 import { printElement, downloadElementAsPDF } from '../utils/pdfGenerator';
 import InvoiceDocument, { fromCompletedSale, fromApiInvoice } from '../components/InvoiceDocument';
@@ -150,7 +150,8 @@ const POS = () => {
       customerCode: c.customer_code,
       name: c.name,
       phone: c.phone || '',
-      location: c.location || ''
+      location: c.location || '',
+      birthDate: c.birthdate || '',
     });
     setShowCustomerDropdown(false);
     setShowPhoneDropdown(false);
@@ -1818,6 +1819,21 @@ const POS = () => {
                         onChange={e => setCustomerInfo(prev => ({ ...prev, location: e.target.value }))}
                       />
                     </div>
+                    <div className="input-with-icon" title={language === 'bn' ? 'জন্মদিন (ঐচ্ছিক)' : 'Birthday (optional)'}>
+                      <Cake size={13} />
+                      <input
+                        id="pos-customer-birthdate"
+                        type="date"
+                        max={new Date().toISOString().slice(0, 10)}
+                        value={customerInfo.birthDate || ''}
+                        onChange={e => setCustomerInfo(prev => ({ ...prev, birthDate: e.target.value }))}
+                        aria-label={language === 'bn' ? 'জন্মদিন (ঐচ্ছিক)' : 'Birthday (optional)'}
+                        style={{ color: customerInfo.birthDate ? undefined : 'var(--text-muted)' }}
+                      />
+                    </div>
+                    <small className="pos-birth-hint">
+                      {language === 'bn' ? 'জন্মদিন (ঐচ্ছিক) — দিলে কাস্টমারের তথ্যে সেভ হবে' : "Birthday (optional) — saved on the customer's record"}
+                    </small>
                   </div>
                 </div>
 
