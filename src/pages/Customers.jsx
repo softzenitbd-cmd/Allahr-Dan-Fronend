@@ -49,7 +49,7 @@ const Customers = () => {
   // Add/Edit Customer Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPerson, setEditingPerson] = useState(null);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', notes: '' });
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', location: '', notes: '', birthdate: '' });
 
   const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
 
@@ -282,13 +282,14 @@ const Customers = () => {
       name: newCustomer.name.trim(),
       phone: (newCustomer.phone || '').trim(),
       location: (newCustomer.location || '').trim(),
+      birthdate: newCustomer.birthdate || null,
       notes: (newCustomer.notes || '').trim(),
       due: 0,
       opening_due: 0,
     };
     const res = await addCustomer(customerToSave);
     if (res?.ok) {
-      setNewCustomer({ name: '', phone: '', location: '', notes: '' });
+      setNewCustomer({ name: '', phone: '', location: '', notes: '', birthdate: '' });
       setShowAddModal(false);
       showSuccessAlert(language === 'bn' ? 'কাস্টমার সফলভাবে যুক্ত হয়েছে!' : 'Customer added successfully!');
     }
@@ -306,6 +307,8 @@ const Customers = () => {
       phone: (editingPerson.phone || '').trim(),
       location: (editingPerson.location || '').trim(),
       company: (editingPerson.company || '').trim(),
+      birthdate: editingPerson.birthdate || null,
+      notes: (editingPerson.notes || '').trim(),
       due: Number(editingPerson.due) || 0,
     };
     const res = activeTab === 'Customer'
@@ -485,11 +488,18 @@ const Customers = () => {
                     <tr key={person.id}>
                       <td>{person.id}</td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>{person.name}</span>
-                          {activeTab === 'Deleted' && (
-                            <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>
-                              {isSupplierRow ? (language === 'bn' ? 'মুছে ফেলা সাপ্লায়ার' : 'Deleted Supplier') : (language === 'bn' ? 'মুছে ফেলা কাস্টমার' : 'Deleted Customer')}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 600 }}>{person.name}</span>
+                            {activeTab === 'Deleted' && (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>
+                                {isSupplierRow ? (language === 'bn' ? 'মুছে ফেলা সাপ্লায়ার' : 'Deleted Supplier') : (language === 'bn' ? 'মুছে ফেলা কাস্টমার' : 'Deleted Customer')}
+                              </span>
+                            )}
+                          </div>
+                          {person.birthdate && (
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title={language === 'bn' ? `জন্মদিন: ${formatDate(person.birthdate)}` : `Birthday: ${formatDate(person.birthdate)}`}>
+                              🎂 {formatDate(person.birthdate)}
                             </span>
                           )}
                         </div>
@@ -981,6 +991,17 @@ const Customers = () => {
                     />
                   </div>
                   <div>
+                    <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                      {language === 'bn' ? 'জন্মদিন (ঐচ্ছিক)' : 'Date of Birth / Birthday (Optional)'}
+                    </label>
+                    <input
+                      type="date"
+                      value={newCustomer.birthdate || ''}
+                      onChange={e => setNewCustomer({ ...newCustomer, birthdate: e.target.value })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
                     <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>Notes / Remarks</label>
                     <textarea
                       value={newCustomer.notes}
@@ -1041,6 +1062,19 @@ const Customers = () => {
                         type="text"
                         value={editingPerson.location || ''}
                         onChange={e => setEditingPerson({ ...editingPerson, location: e.target.value })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  )}
+                  {activeTab === 'Customer' && (
+                    <div>
+                      <label className="text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                        {language === 'bn' ? 'জন্মদিন (ঐচ্ছিক)' : 'Date of Birth / Birthday (Optional)'}
+                      </label>
+                      <input
+                        type="date"
+                        value={editingPerson.birthdate || ''}
+                        onChange={e => setEditingPerson({ ...editingPerson, birthdate: e.target.value })}
                         style={{ width: '100%' }}
                       />
                     </div>
