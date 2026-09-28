@@ -934,6 +934,18 @@ const useStore = create(
         }
       }),
 
+      /** Edit an older invoice: removed pieces become today's return, added
+       *  ones today's add-on invoice. `preview` only works out the figures. */
+      amendSale: async (saleId, payload) => {
+        try {
+          const result = await SaleService.amend(saleId, payload);
+          if (!payload.preview) await get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard', 'returns');
+          return { ok: true, result };
+        } catch (error) {
+          return fail(error, 'Could not update the invoice.');
+        }
+      },
+
       deleteSale: (saleId) => enqueue(async () => {
         try {
           await SaleService.remove(saleId);

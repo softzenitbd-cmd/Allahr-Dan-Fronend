@@ -41,7 +41,7 @@ const POS = () => {
   const navigate = useNavigate();
   const {
     cart, inventory, staff, user, addToCart, removeFromCart, updateCartItem, clearCart, setCart,
-    loadDummyData, processSale, deleteSale, lookupProduct, refresh, saveDraft, deleteDraft,
+    loadDummyData, processSale, deleteSale, amendSale, lookupProduct, refresh, saveDraft, deleteDraft,
     drafts, sales, customers, language, shopProfile,
     offlineSalesQueue, isOnline, isSyncing, syncOfflineSales,
     posSalesmanId, setPosSalesmanId
@@ -418,11 +418,64 @@ const POS = () => {
 
   // Both conditions the checkout enforces, in one place, so the button and the
   // hint under it can never disagree about why it is disabled.
-  const canCheckout = cart.length > 0 && Boolean(customerInfo.name?.trim());
+  // An invoice from an earlier day is not rewritten: what changes goes on
+  // today's books (removed pieces a return today, added ones an add-on sale).
+  const localDay = (d) => {
+    const x = new Date(d);
+    return Number.isNaN(x.getTime()) ? '' : `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`;
+  };
+  const isPastEdit = Boolean(editingSale && editingSale.date && localDay(editingSale.date) !== localDay(new Date()));
+  const [amend, setAmend] = useState(null); // { loading, preview, received, saving }
+
+  const canCheckout = (cart.length > 0 || isPastEdit) && Boolean(customerInfo.name?.trim());
+
+  const openAmend = async () => {
+    const id = editingSale.invoice_number || editingSale.id;
+    setAmend({ loading: true, preview: null, received: '', saving: false });
+    const res = await amendSale(id, { cartItems: cart, received: 0, preview: true });
+    if (!res?.ok) { setAmend(null); return; }
+    const pv = res.result;
+    setAmend({ loading: false, preview: pv, received: String(Math.max(0, pv.suggestedReceived)), saving: false });
+  };
+
+  const confirmAmend = async () => {
+    const id = editingSale.invoice_number || editingSale.id;
+    const pv = amend.preview;
+    // Customer pays the difference, or (negative) the shop hands money back.
+    const received = pv.suggestedReceived < 0 ? pv.suggestedReceived : (Number(amend.received) || 0);
+    setAmend((a) => ({ ...a, saving: true }));
+    const selectedStaff = staff.find((s) => s.id === selectedSalesmanId);
+    const res = await amendSale(id, {
+      cartItems: cart,
+      received,
+      salesman: selectedStaff ? { id: selectedStaff.id, name: selectedStaff.name } : undefined,
+    });
+    if (!res?.ok) { setAmend((a) => ({ ...a, saving: false })); return; }
+    const r = res.result;
+    setAmend(null);
+    clearCart();
+    setCustomerInfo({ name: '', phone: '', location: '' });
+    setInvoiceDiscount(0);
+    setPaidAmount(0);
+    setCashReceived('');
+    setEditingSaleId(null);
+    setEditingSale(null);
+    const bits = [];
+    if (r.addonInvoice) bits.push(language === 'bn' ? `নতুন পণ্য ৳${r.addedTotal.toLocaleString()} → ${r.addonInvoice}` : `added ৳${r.addedTotal.toLocaleString()} → ${r.addonInvoice}`);
+    if (r.returnCode) bits.push(language === 'bn' ? `ফেরত ৳${r.returnedValue.toLocaleString()} (রিটার্ন)` : `returned ৳${r.returnedValue.toLocaleString()}`);
+    const cashText = r.netCashToday >= 0
+      ? (language === 'bn' ? `আজ ক্যাশে +৳${r.netCashToday.toLocaleString()}` : `cash today +৳${r.netCashToday.toLocaleString()}`)
+      : (language === 'bn' ? `আজ ক্যাশ থেকে ফেরত ৳${(-r.netCashToday).toLocaleString()}` : `refunded today ৳${(-r.netCashToday).toLocaleString()}`);
+    toast.success(`${r.invoice}: ${bits.join(', ')} · ${cashText}`, { autoClose: 7000 });
+  };
 
   const handleCheckout = async () => {
     if (!customerInfo.name?.trim()) {
       toast.error(language === 'bn' ? 'কাস্টমারের নাম আবশ্যক!' : 'Customer Name is explicitly required for all sales!');
+      return;
+    }
+    if (isPastEdit) {
+      openAmend();
       return;
     }
 
@@ -806,6 +859,7 @@ const POS = () => {
       product_code: item.product_code || item.id,
       name: item.name || 'Product',
       variant: item.variant || '',
+      color: item.color || '',
       unit: item.unit || 'pcs',
       mrp: item.mrp ? Number(item.mrp) : undefined,
       price: Number(item.price) || 0,
@@ -945,7 +999,11 @@ const POS = () => {
                     </span>
                   </div>
                   <div style={{ fontSize: '12.5px', color: '#1e40af', marginTop: '3px' }}>
-                    {language === 'bn' ? 'কাস্টমার:' : 'Customer:'} <strong>{customerInfo.name || editingSale.customerName || 'N/A'}</strong> | {language === 'bn' ? 'প্রয়োজনমতো পণ্য যোগ করুন বা বাদ দিন, মূল্য ও পরিশোধের হিসাব স্বয়ংক্রিয়ভাবে সামঞ্জস্য হবে।' : 'Add or remove products as needed; totals and balances will auto-adjust.'}
+                    {language === 'bn' ? 'কাস্টমার:' : 'Customer:'} <strong>{customerInfo.name || editingSale.customerName || 'N/A'}</strong> | {isPastEdit
+                      ? (language === 'bn'
+                        ? `আগের দিনের চালান (${formatDate(editingSale.date)}) — সেদিনের হিসাব বদলাবে না। বাদ দেওয়া পণ্য আজকের রিটার্ন, নতুন পণ্য আজকের সংযোজন চালান হবে; টাকার পার্থক্য আজকের ক্যাশে।`
+                        : `Invoice from ${formatDate(editingSale.date)} — that day stays as it is. Removed items become today's return, added items today's add-on invoice; the money difference goes in today's cash.`)
+                      : (language === 'bn' ? 'প্রয়োজনমতো পণ্য যোগ করুন বা বাদ দিন, মূল্য ও পরিশোধের হিসাব স্বয়ংক্রিয়ভাবে সামঞ্জস্য হবে।' : 'Add or remove products as needed; totals and balances will auto-adjust.')}
                   </div>
                 </div>
               </div>
@@ -1066,6 +1124,91 @@ const POS = () => {
                     </button>
                   </div>
                 </div>
+
+                {amend && createPortal(
+                  <div className="sku-pick-overlay">
+                    <div className="sku-pick amend-box">
+                      <div className="sku-pick-head">
+                        <div>
+                          <div className="sku-pick-name">
+                            {language === 'bn' ? 'চালান আপডেট — আজকের হিসাবে' : "Update — on today's books"} · #{editingSale?.invoice_number || editingSale?.id}
+                          </div>
+                          <div className="sku-pick-sub">
+                            {language === 'bn'
+                              ? `${formatDate(editingSale?.date)}-এর হিসাব যেমন আছে থাকবে`
+                              : `${formatDate(editingSale?.date)} stays as it was`}
+                          </div>
+                        </div>
+                        <button type="button" className="sku-pick-close" onClick={() => setAmend(null)} disabled={amend.saving}><X size={18} /></button>
+                      </div>
+                      {amend.loading || !amend.preview ? (
+                        <div className="text-muted" style={{ padding: '1rem 0' }}>{language === 'bn' ? 'হিসাব করা হচ্ছে…' : 'Working it out…'}</div>
+                      ) : (() => {
+                        const pv = amend.preview;
+                        const label = (x) => `${x.name}${x.variant ? ` (${x.variant}${x.color ? ` · ${x.color}` : ''})` : (x.color ? ` (${x.color})` : '')} ×${x.quantity}`;
+                        const owes = pv.suggestedReceived;
+                        return (
+                          <div className="amend-body">
+                            {pv.added.length > 0 && (
+                              <div className="amend-block is-add">
+                                <b>{language === 'bn' ? 'নতুন যোগ (আজকের সংযোজন চালান)' : "Added (today's add-on invoice)"}</b>
+                                {pv.added.map((x, i) => <div key={i} className="amend-line"><span>{label(x)}</span><span>৳{x.value.toLocaleString()}</span></div>)}
+                                <div className="amend-line total"><span>{language === 'bn' ? 'মোট' : 'Total'}</span><span>৳{pv.addedTotal.toLocaleString()}</span></div>
+                              </div>
+                            )}
+                            {pv.removed.length > 0 && (
+                              <div className="amend-block is-remove">
+                                <b>{language === 'bn' ? 'বাদ (আজকের রিটার্ন — স্টকে ফেরত)' : "Removed (today's return — back to stock)"}</b>
+                                {pv.removed.map((x, i) => <div key={i} className="amend-line"><span>{label(x)}</span></div>)}
+                                <div className="amend-line total"><span>{language === 'bn' ? 'মূল্য' : 'Value'}</span><span>৳{pv.returnedValue.toLocaleString()}</span></div>
+                                {pv.dueWrittenOff > 0 && (
+                                  <div className="amend-line"><span>{language === 'bn' ? 'চালানের বকেয়া থেকে কাটা' : 'Taken off the invoice due'}</span><span>৳{pv.dueWrittenOff.toLocaleString()}</span></div>
+                                )}
+                                {pv.refund > 0 && (
+                                  <div className="amend-line"><span>{language === 'bn' ? 'কাস্টমার ফেরত পাবে' : 'Due back to the customer'}</span><span>৳{pv.refund.toLocaleString()}</span></div>
+                                )}
+                              </div>
+                            )}
+                            <div className={`amend-net ${owes < 0 ? 'is-out' : ''}`}>
+                              {owes > 0
+                                ? (language === 'bn' ? `আজ কাস্টমার দেবে ৳${owes.toLocaleString()}` : `Customer pays today ৳${owes.toLocaleString()}`)
+                                : owes < 0
+                                  ? (language === 'bn' ? `আজ কাস্টমারকে ফেরত দিন ৳${(-owes).toLocaleString()}` : `Give back today ৳${(-owes).toLocaleString()}`)
+                                  : (language === 'bn' ? 'আজ কোনো টাকা লেনদেন নেই' : 'No money changes hands today')}
+                            </div>
+                            {owes > 0 && (
+                              <div className="amend-received">
+                                <label>{language === 'bn' ? 'আজ নেওয়া হলো ৳' : 'Received today ৳'}</label>
+                                <input type="number" min="0" value={amend.received}
+                                  onChange={(e) => setAmend((a) => ({ ...a, received: e.target.value }))} />
+                                <button type="button" className="btn-outline" onClick={() => setAmend((a) => ({ ...a, received: String(owes) }))}>
+                                  {language === 'bn' ? 'পুরো' : 'Full'}
+                                </button>
+                                <button type="button" className="btn-outline" onClick={() => setAmend((a) => ({ ...a, received: '0' }))}>
+                                  {language === 'bn' ? 'বাকি রাখুন' : 'Keep as due'}
+                                </button>
+                                {Number(amend.received || 0) < owes && (
+                                  <small>{language === 'bn'
+                                    ? `৳${(owes - (Number(amend.received) || 0)).toLocaleString()} কাস্টমারের বকেয়াতে যাবে`
+                                    : `৳${(owes - (Number(amend.received) || 0)).toLocaleString()} goes on the customer's due`}</small>
+                                )}
+                              </div>
+                            )}
+                            <div className="amend-actions">
+                              <button type="button" className="btn-outline" onClick={() => setAmend(null)} disabled={amend.saving}>
+                                {language === 'bn' ? 'বাতিল' : 'Cancel'}
+                              </button>
+                              <button type="button" className="btn-primary" onClick={confirmAmend} disabled={amend.saving}>
+                                {amend.saving ? '…' : (language === 'bn' ? 'নিশ্চিত — আজকের হিসাবে সেভ' : "Confirm — save on today's books")}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>,
+                  document.body
+                )}
 
                 {skuPick && createPortal(
                   (() => {
@@ -1857,6 +2000,8 @@ const POS = () => {
                         type="number"
                         value={invoiceDiscount || ''}
                         onChange={e => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
+                        disabled={isPastEdit}
+                        title={isPastEdit ? (language === 'bn' ? 'আগের দিনের চালানের ডিসকাউন্ট এখান থেকে বদলানো যায় না' : "An earlier day's discount is not changed here") : undefined}
                         min="0"
                         placeholder="0"
                       />
@@ -2268,7 +2413,9 @@ const POS = () => {
                 >
                   <span className="pb-label">
                     <Printer size={17} />
-                    {editingSaleId ? t(language, 'Update Sale & Print') : t(language, 'Process Sale & Print')}
+                    {isPastEdit
+                      ? (language === 'bn' ? 'আজকের হিসাবে আপডেট' : "Update on today's books")
+                      : (editingSaleId ? t(language, 'Update Sale & Print') : t(language, 'Process Sale & Print'))}
                   </span>
                   <span className="pb-amount">৳{total.toLocaleString()}</span>
                 </button>

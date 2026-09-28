@@ -807,3 +807,20 @@ body.dark-mode .proceed-btn .pb-amount { background: rgba(0, 0, 0, 0.18); }
 .sku-pick-back { margin-top: 0.8rem; background: none; border: none; color: var(--primary); font-weight: 600; cursor: pointer; }
 .sr-size-dots { display: inline-flex; gap: 2px; margin-left: 2px; }
 .cl-sku-color { display: inline-flex; align-items: center; gap: 3px; }
+
+
+/* Editing an earlier day's invoice: what goes on today's books */
+.amend-box { width: min(560px, 100%); }
+.amend-body { display: flex; flex-direction: column; gap: 0.7rem; }
+.amend-block { border: 1px solid var(--border-color); border-radius: 10px; padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 3px; }
+.amend-block.is-add { border-color: rgba(5, 150, 105, 0.35); background: rgba(5, 150, 105, 0.05); }
+.amend-block.is-remove { border-color: rgba(220, 38, 38, 0.3); background: rgba(220, 38, 38, 0.04); }
+.amend-block b { font-size: 0.8rem; margin-bottom: 2px; }
+.amend-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; }
+.amend-line.total { font-weight: 700; border-top: 1px dashed var(--border-color); padding-top: 3px; margin-top: 2px; }
+.amend-net { font-weight: 800; font-size: 1.05rem; text-align: center; padding: 0.6rem; border-radius: 10px; background: rgba(5, 150, 105, 0.1); color: #047857; }
+.amend-net.is-out { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.amend-received { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.amend-received input { width: 110px; }
+.amend-received small { width: 100%; color: #d97706; font-weight: 600; }
+.amend-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
