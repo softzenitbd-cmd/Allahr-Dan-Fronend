@@ -178,6 +178,51 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
     }
     set({ colors: list });
   };
+  const handleAddSizes = (text) => {
+    const raw = String(text || '').trim();
+    if (!raw) return;
+    const items = /[,;\n]+/.test(raw)
+      ? raw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean)
+      : [raw];
+
+    let currentSizes = [...value.sizes];
+    for (const item of items) {
+      const back = currentSizes.find((x) => x.removed && lc(x.name) === lc(item));
+      if (back) {
+        currentSizes = currentSizes.map((x) => (x === back ? { ...x, removed: false, name: item } : x));
+      } else if (!currentSizes.filter((x) => !x.removed).some((x) => lc(x.name) === lc(item))) {
+        currentSizes.push({ id: newId('ns'), orig: null, name: item });
+      }
+    }
+    currentSizes.sort((a, b) => compareSizes(a.name, b.name));
+    set({ sizes: currentSizes });
+    setNewSize('');
+  };
+
+  const handleAddColors = (text) => {
+    const raw = String(text || '').trim();
+    if (!raw) return;
+    const items = splitColors(raw);
+    if (!items.length) return;
+
+    let currentColors = [...value.colors];
+    for (const item of items) {
+      const back = currentColors.find((x) => x.removed && lc(x.name) === lc(item));
+      if (back) {
+        currentColors = currentColors.map((x) => (x === back ? { ...x, removed: false, name: item } : x));
+      } else if (!currentColors.filter((x) => !x.removed).some((x) => lc(x.name) === lc(item))) {
+        const plain = currentColors.filter((x) => !x.removed).length === 1 && !currentColors[0].name.trim() ? currentColors[0] : null;
+        if (plain && !rows.some((r) => !r.color)
+          && active(value.sizes).every((s) => !String(value.cells[key(s.id, plain.id)] ?? '').trim())) {
+          currentColors = currentColors.filter((x) => x !== plain);
+        }
+        currentColors.push({ id: newId('nc'), orig: null, name: item });
+      }
+    }
+    set({ colors: currentColors });
+    setNewColor('');
+  };
+
   const lineTotal = (list, pick) => list.reduce((n, x) => n + (parseInt(value.cells[pick(x)], 10) || 0), 0);
   const canRemoveSize = (s) => colors.every((c) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
   const canRemoveColor = (c) => sizes.every((s) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
@@ -225,13 +270,13 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
         onSave={saveColorPresets} bn={bn} swatch />
       <div className="vme-add">
         <input value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder={bn ? 'অন্য সাইজ' : 'Other size'}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); splitColors(newSize).forEach(addSize); setNewSize(''); } }} />
-        <button type="button" className="btn-outline" disabled={!newSize.trim()} onClick={() => { splitColors(newSize).forEach(addSize); setNewSize(''); }}>
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSizes(newSize); } }} />
+        <button type="button" className="btn-outline" disabled={!newSize.trim()} onClick={() => handleAddSizes(newSize)}>
           <Plus size={13} /> {bn ? 'সাইজ' : 'Size'}
         </button>
         <input value={newColor} onChange={(e) => setNewColor(e.target.value)} placeholder={bn ? 'অন্য কালার' : 'Other colour'}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); splitColors(newColor).forEach(addColor); setNewColor(''); } }} />
-        <button type="button" className="btn-outline" disabled={!newColor.trim()} onClick={() => { splitColors(newColor).forEach(addColor); setNewColor(''); }}>
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddColors(newColor); } }} />
+        <button type="button" className="btn-outline" disabled={!newColor.trim()} onClick={() => handleAddColors(newColor)}>
           <Plus size={13} /> {bn ? 'কালার' : 'Colour'}
         </button>
         {!usedSizes.includes('') && (
