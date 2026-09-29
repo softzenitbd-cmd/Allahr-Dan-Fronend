@@ -70,6 +70,21 @@ export const matrixToPayload = (value, rows = []) => {
   const gone = new Set();
   value.sizes.filter((s) => s.removed && s.orig !== null).forEach((s) => rows.filter((r) => (r.size || '') === s.orig).forEach((r) => gone.add(r.code)));
   value.colors.filter((c) => c.removed && c.orig !== null).forEach((c) => rows.filter((r) => lc(r.color) === lc(c.orig)).forEach((r) => gone.add(r.code)));
+
+  // For any server row being removed, instruct the server to set stock to 0 first so the server's validation (which checks that row stock is 0 before deleting) passes.
+  const cellKey = (size, color) => `${(size || '').trim().toLowerCase()}|${(color || '').trim().toLowerCase()}`;
+  const seenCellKeys = new Set(cells.map((c) => cellKey(c.size, c.color)));
+
+  rows.forEach((r) => {
+    if (gone.has(r.code)) {
+      const k = cellKey(r.size, r.color);
+      if (!seenCellKeys.has(k)) {
+        seenCellKeys.add(k);
+        cells.push({ size: r.size || '', color: r.color || '', stock: 0 });
+      }
+    }
+  });
+
   return {
     cells,
     renameSizes,
@@ -247,21 +262,45 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
   };
 
   const lineTotal = (list, pick) => list.reduce((n, x) => n + (parseInt(value.cells[pick(x)], 10) || 0), 0);
-  const canRemoveSize = (s) => colors.every((c) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
-  const canRemoveColor = (c) => {
-    if (colors.length === 1 && !c.name.trim()) return false;
-    if (c.orig !== null) {
-      return sizes.every((s) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
+  const removeSize = (s) => {
+    const hasStock = colors.some((c) => parseInt(value.cells[key(s.id, c.id)], 10) > 0);
+    if (hasStock) {
+      const ok = window.confirm(
+        bn
+          ? `সাইজ "${s.name || 'সাইজ ছাড়া'}" এ স্টক আছে। সাইজ বাদ দিলে স্টক ০ হয়ে যাবে, বাদ দিতে চান?`
+          : `Size "${s.name || 'No size'}" still has stock. Removing it will set stock to 0. Continue?`
+      );
+      if (!ok) return;
     }
-    return true;
+    const newCells = { ...value.cells };
+    colors.forEach((c) => {
+      newCells[key(s.id, c.id)] = '0';
+    });
+    set({
+      sizes: s.orig === null ? value.sizes.filter((x) => x !== s) : value.sizes.map((x) => (x === s ? { ...x, removed: true } : x)),
+      cells: newCells,
+    });
   };
-  const removeSize = (s) => set({
-    sizes: s.orig === null ? value.sizes.filter((x) => x !== s) : value.sizes.map((x) => (x === s ? { ...x, removed: true } : x)),
-  });
+
   const removeColor = (c) => {
+    if (colors.length === 1 && !c.name.trim()) return;
+    const hasStock = sizes.some((s) => parseInt(value.cells[key(s.id, c.id)], 10) > 0);
+    if (hasStock) {
+      const ok = window.confirm(
+        bn
+          ? `কালার "${c.name || 'কালার ছাড়া'}" এ স্টক আছে। কালার বাদ দিলে স্টক ০ হয়ে যাবে, বাদ দিতে চান?`
+          : `Color "${c.name || 'No colour'}" still has stock. Removing it will set stock to 0. Continue?`
+      );
+      if (!ok) return;
+    }
     let nextColors = c.orig === null
       ? value.colors.filter((x) => x !== c)
       : value.colors.map((x) => (x === c ? { ...x, removed: true } : x));
+
+    const newCells = { ...value.cells };
+    sizes.forEach((s) => {
+      newCells[key(s.id, c.id)] = '0';
+    });
 
     // If no active colors remain, restore the default plain ("No colour / Pieces") column
     const activeRemaining = nextColors.filter((x) => !x.removed);
@@ -275,7 +314,6 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
       }
 
       const targetId = existingPlain ? existingPlain.id : plainId;
-      const newCells = { ...value.cells };
       sizes.forEach((s) => {
         const val = value.cells[key(s.id, c.id)];
         if (val !== undefined && val !== '') {
@@ -286,7 +324,7 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
       return;
     }
 
-    set({ colors: nextColors });
+    set({ colors: nextColors, cells: newCells });
   };
   const rename = (listName, item, name) => set({ [listName]: value[listName].map((x) => (x === item ? { ...x, name } : x)) });
 
@@ -360,8 +398,8 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
                       <input value={c.name} placeholder={colors.length > 1 ? (bn ? 'কালার ছাড়া' : 'No colour') : (bn ? 'পিস' : 'Pieces')}
                         onChange={(e) => rename('colors', c, e.target.value)} />
                       {(colors.length > 1 || c.name.trim()) && (
-                        <button type="button" disabled={!canRemoveColor(c)} onClick={() => removeColor(c)}
-                          title={canRemoveColor(c) ? (bn ? 'কলাম বাদ দিন' : 'Remove column') : (bn ? 'আগে পিস ০ করুন' : 'Make the pieces 0 first')}>
+                        <button type="button" onClick={() => removeColor(c)}
+                          title={bn ? 'কলাম বাদ দিন' : 'Remove column'}>
                           <X size={11} />
                         </button>
                       )}
@@ -377,8 +415,8 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
                   <th>
                     <div className="vme-head">
                       <input value={s.name} placeholder={bn ? 'সাইজ ছাড়া' : 'No size'} onChange={(e) => rename('sizes', s, e.target.value)} />
-                      <button type="button" disabled={!canRemoveSize(s)} onClick={() => removeSize(s)}
-                        title={canRemoveSize(s) ? (bn ? 'সারি বাদ দিন' : 'Remove row') : (bn ? 'আগে পিস ০ করুন' : 'Make the pieces 0 first')}>
+                      <button type="button" onClick={() => removeSize(s)}
+                        title={bn ? 'সাইজ বাদ দিন' : 'Remove size'}>
                         <X size={11} />
                       </button>
                     </div>
