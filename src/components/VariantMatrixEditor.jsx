@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, X, Settings2, Wand2 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { sortSizes, compareSizes } from '../utils/sizes';
@@ -82,15 +82,19 @@ export const matrixToPayload = (value, rows = []) => {
 /** For a new product: one row per filled cell. */
 export const matrixToVariants = (value) => {
   const out = [];
-  active(value.sizes).forEach((s) => active(value.colors).forEach((c) => {
+  const activeCols = active(value.colors).length > 0 ? active(value.colors) : [{ id: 'fallback_col', name: '' }];
+  active(value.sizes).forEach((s) => activeCols.forEach((c) => {
     const v = value.cells[key(s.id, c.id)];
     if (v !== undefined && v !== '') out.push({ name: s.name.trim(), color: c.name.trim(), stock: parseInt(v, 10) || 0 });
   }));
   return out;
 };
 
-export const matrixTotal = (value) => active(value.sizes).reduce((sum, s) => sum + active(value.colors)
-  .reduce((n, c) => n + (parseInt(value.cells[key(s.id, c.id)], 10) || 0), 0), 0);
+export const matrixTotal = (value) => {
+  const activeCols = active(value.colors).length > 0 ? active(value.colors) : [{ id: 'fallback_col', name: '' }];
+  return active(value.sizes).reduce((sum, s) => sum + activeCols
+    .reduce((n, c) => n + (parseInt(value.cells[key(s.id, c.id)], 10) || 0), 0), 0);
+};
 
 /** Quick-add buttons for a shop-wide list, with its own manage mode. */
 const PresetRow = ({ label, presets, used, onPick, onSave, bn, swatch }) => {
@@ -142,7 +146,26 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
   const [pasteError, setPasteError] = useState('');
 
   const sizes = active(value.sizes);
-  const colors = active(value.colors);
+  const activeCols = active(value.colors);
+  const colors = activeCols.length > 0 ? activeCols : [{ id: 'fallback_col', orig: null, name: '' }];
+
+  // Self-heal: ensure value.colors always has at least one active column if it gets empty
+  useEffect(() => {
+    if (!value.colors || active(value.colors).length === 0) {
+      const existingPlain = (value.colors || []).find((x) => x.removed && !x.name.trim());
+      if (existingPlain) {
+        onChange({
+          ...value,
+          colors: value.colors.map((x) => (x === existingPlain ? { ...x, removed: false } : x)),
+        });
+      } else {
+        onChange({
+          ...value,
+          colors: [...(value.colors || []), { id: newId('nc'), orig: null, name: '' }],
+        });
+      }
+    }
+  }, [value.colors]);
   const origStock = (sid, cid) => {
     const s = value.sizes.find((x) => x.id === sid);
     const c = value.colors.find((x) => x.id === cid);
@@ -225,13 +248,46 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
 
   const lineTotal = (list, pick) => list.reduce((n, x) => n + (parseInt(value.cells[pick(x)], 10) || 0), 0);
   const canRemoveSize = (s) => colors.every((c) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
-  const canRemoveColor = (c) => sizes.every((s) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
+  const canRemoveColor = (c) => {
+    if (colors.length === 1 && !c.name.trim()) return false;
+    if (c.orig !== null) {
+      return sizes.every((s) => !(parseInt(value.cells[key(s.id, c.id)], 10) > 0));
+    }
+    return true;
+  };
   const removeSize = (s) => set({
     sizes: s.orig === null ? value.sizes.filter((x) => x !== s) : value.sizes.map((x) => (x === s ? { ...x, removed: true } : x)),
   });
-  const removeColor = (c) => set({
-    colors: c.orig === null ? value.colors.filter((x) => x !== c) : value.colors.map((x) => (x === c ? { ...x, removed: true } : x)),
-  });
+  const removeColor = (c) => {
+    let nextColors = c.orig === null
+      ? value.colors.filter((x) => x !== c)
+      : value.colors.map((x) => (x === c ? { ...x, removed: true } : x));
+
+    // If no active colors remain, restore the default plain ("No colour / Pieces") column
+    const activeRemaining = nextColors.filter((x) => !x.removed);
+    if (activeRemaining.length === 0) {
+      const plainId = newId('nc');
+      const existingPlain = nextColors.find((x) => x.removed && !x.name.trim());
+      if (existingPlain) {
+        nextColors = nextColors.map((x) => (x === existingPlain ? { ...x, removed: false } : x));
+      } else {
+        nextColors = [...nextColors, { id: plainId, orig: null, name: '' }];
+      }
+
+      const targetId = existingPlain ? existingPlain.id : plainId;
+      const newCells = { ...value.cells };
+      sizes.forEach((s) => {
+        const val = value.cells[key(s.id, c.id)];
+        if (val !== undefined && val !== '') {
+          newCells[key(s.id, targetId)] = val;
+        }
+      });
+      set({ colors: nextColors, cells: newCells });
+      return;
+    }
+
+    set({ colors: nextColors });
+  };
   const rename = (listName, item, name) => set({ [listName]: value[listName].map((x) => (x === item ? { ...x, name } : x)) });
 
   // "XL4, L10" fills the first colour column, adding sizes as needed.
@@ -282,7 +338,7 @@ const VariantMatrixEditor = ({ value, onChange, rows = [], bn, unit = 'Pcs' }) =
         {!usedSizes.includes('') && (
           <button type="button" className="vme-chip" onClick={() => addSize('')}>+ {bn ? 'সাইজ ছাড়া' : 'No size'}</button>
         )}
-        {!usedColors.includes('') && colors.length > 0 && (
+        {!usedColors.includes('') && (
           <button type="button" className="vme-chip" onClick={() => addColor('')}>+ {bn ? 'কালার ছাড়া' : 'No colour'}</button>
         )}
       </div>
