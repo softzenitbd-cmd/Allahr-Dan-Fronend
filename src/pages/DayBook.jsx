@@ -934,7 +934,7 @@ const DayBook = () => {
         account: l.account || 'Cash',
         amount: Number(l.amount) || 0,
         rawLoan: l,
-        timestamp: new Date(l.date || today).getTime(),
+        timestamp: `${l.date || today}|${l.createdAt || ''}`,
       });
 
       (l.payments || []).forEach((p) => {
@@ -948,12 +948,13 @@ const DayBook = () => {
           amount: Number(p.amount) || 0,
           rawLoan: l,
           rawPayment: p,
-          timestamp: new Date(p.date || today).getTime(),
+          timestamp: `${p.date || today}|${p.created_at || ''}`,
         });
       });
     });
 
-    entries.sort((a, b) => a.timestamp - b.timestamp);
+    // By day, then by when it was entered (a repayment never above its loan).
+    entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
     let running = 0;
     return entries.map((e) => {
