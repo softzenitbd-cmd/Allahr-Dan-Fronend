@@ -488,7 +488,9 @@ const POS = () => {
     const effectiveDue = Math.max(0, total - effectivePaid);
 
     let effectiveMethodName;
-    if (isSplit) {
+    if (total <= 0) {
+      effectiveMethodName = language === 'bn' ? 'গিফট (৳০ — বাকি নয়)' : 'Gift (৳0 — not due)';
+    } else if (isSplit) {
       effectiveMethodName = language === 'bn'
         ? `ক্যাশ ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()}`
         : `Cash ৳${cashVal.toLocaleString()} + ${mfsProvider} ৳${mfsVal.toLocaleString()}`;
@@ -613,7 +615,12 @@ const POS = () => {
     let autoPaidAmount;
     let autoDueAmount;
 
-    if (isSplit) {
+    if (total <= 0) {
+      // Only gifts in the cart: nothing to pay, nothing owed.
+      autoPaymentType = 'Gift';
+      autoPaidAmount = 0;
+      autoDueAmount = 0;
+    } else if (isSplit) {
       if (rec >= total && total > 0) {
         autoPaymentType = `Split (Cash + ${mfsProvider})`;
         autoPaidAmount = total;
