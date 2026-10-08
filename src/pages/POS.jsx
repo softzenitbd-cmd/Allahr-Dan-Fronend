@@ -703,15 +703,9 @@ const POS = () => {
       saleData.date = originalDate;
     }
 
-    if (editingSaleId) {
-      const delRes = await deleteSale(editingSaleId);
-      if (!delRes?.ok) {
-        toast.error(language === 'bn' ? 'পূর্বের চালান আপডেট প্রক্রিয়াকরণে সমস্যা হয়েছে।' : 'Failed to unwind previous sale for edit.');
-        return;
-      }
-    }
-
-    const res = await processSale(saleData);
+    // Today's invoice, edited: the server undoes the old one and saves this
+    // one together (salesmen may edit; only an Admin may delete).
+    const res = await processSale(editingSaleId ? { ...saleData, replaceId: editingSaleId } : saleData);
     if (res?.ok) {
       const completedObj = {
         ...saleData,
@@ -2642,15 +2636,26 @@ const POS = () => {
                         <button className="btn-icon" title="View & Print" onClick={() => setSelectedInvoice(s)}>
                           <Eye size={16} />
                         </button>
+                        <button
+                          className="btn-icon text-info"
+                          title="Edit Sale"
+                          onClick={() => {
+                            // Re-ringing it would put returned goods back on the shelf twice.
+                            if (s.returnStatus && s.returnStatus !== 'none') {
+                              toast.error(language === 'bn'
+                                ? 'এই চালানে রিটার্ন আছে। আগে Returns → History থেকে রিটার্নটা মুছুন, তারপর এডিট করুন।'
+                                : 'This invoice has returns against it. Delete them in Returns → History first, then edit.');
+                              return;
+                            }
+                            handleEditSale(s);
+                          }}
+                        >
+                          <Edit size={16} />
+                        </button>
                         {isAdmin && (
-                          <>
-                            <button className="btn-icon text-info" title="Edit Sale" onClick={() => handleEditSale(s)}>
-                              <Edit size={16} />
-                            </button>
-                            <button className="btn-icon text-danger" title="Delete Sale" onClick={() => handleDeleteSale(s.id)}>
-                              <Trash2 size={16} />
-                            </button>
-                          </>
+                          <button className="btn-icon text-danger" title="Delete Sale" onClick={() => handleDeleteSale(s.id)}>
+                            <Trash2 size={16} />
+                          </button>
                         )}
                       </div>
                     </td>

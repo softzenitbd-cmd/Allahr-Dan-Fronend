@@ -42,6 +42,7 @@ export const ENDPOINTS = {
   INVOICES: '/sales/invoices/',
   INVOICE: (id) => `/sales/invoices/${encodeURIComponent(id)}/`,
   INVOICE_AMEND: (id) => `/sales/invoices/${encodeURIComponent(id)}/amend/`,
+  INVOICE_REPLACE: (id) => `/sales/invoices/${encodeURIComponent(id)}/replace/`,
   INVOICE_PAY_DUE: (id) => `/sales/invoices/${encodeURIComponent(id)}/pay-due/`,
   DRAFTS: '/sales/drafts/',
   DRAFT: (code) => `/sales/drafts/${encodeURIComponent(code)}/`,

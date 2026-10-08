@@ -487,15 +487,13 @@ const POSHistory = () => {
                         >
                           <Eye size={16} />
                         </button>
-                        {isAdmin && (
-                          <button
-                            className="btn-icon text-info"
-                            title={language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
-                            onClick={() => handleEditInvoice(s)}
-                          >
-                            <Edit size={16} />
-                          </button>
-                        )}
+                        <button
+                          className="btn-icon text-info"
+                          title={language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
+                          onClick={() => handleEditInvoice(s)}
+                        >
+                          <Edit size={16} />
+                        </button>
                         {remaining > 0 && (
                           <button
                             className="btn-icon"
@@ -669,19 +667,17 @@ const POSHistory = () => {
                 >
                   <Download size={16} /> {language === 'bn' ? 'A4 PDF ডাউনলোড' : 'A4 Download PDF'}
                 </button>
-                {isAdmin && (
-                  <button
-                    className="btn-outline flex-align-gap text-info"
-                    style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                    onClick={() => {
-                      const saleToEdit = selected;
-                      setSelected(null);
-                      handleEditInvoice(saleToEdit);
-                    }}
-                  >
-                    <Edit size={16} /> {language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
-                  </button>
-                )}
+                <button
+                  className="btn-outline flex-align-gap text-info"
+                  style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                  onClick={() => {
+                    const saleToEdit = selected;
+                    setSelected(null);
+                    handleEditInvoice(saleToEdit);
+                  }}
+                >
+                  <Edit size={16} /> {language === 'bn' ? 'চালান এডিট করুন' : 'Edit Invoice'}
+                </button>
               </div>
             </div>
           </div>

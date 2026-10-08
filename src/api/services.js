@@ -78,6 +78,8 @@ export const SaleService = {
   remove: (id) => apiClient.delete(ENDPOINTS.INVOICE(id)),
   // Edit an invoice from an earlier day: the change goes on today's books.
   amend: (id, payload) => apiClient.post(ENDPOINTS.INVOICE_AMEND(id), payload),
+  // Today's invoice, edited: old undone and new saved in one step.
+  replace: (id, payload) => apiClient.post(ENDPOINTS.INVOICE_REPLACE(id), payload),
   // Money collected later against one invoice sold on Baki or Partial.
   payDue: (id, payload) => apiClient.post(ENDPOINTS.INVOICE_PAY_DUE(id), payload),
 };

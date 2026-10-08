@@ -727,7 +727,7 @@ const useStore = create(
       // ---------------------------------------------------------------- //
       // Sales
       // ---------------------------------------------------------------- //
-      processSale: ({ id, invoiceId, date, cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount, notes, account, isSplit, cashPaid, mfsPaid, mfsProvider, mfsTrxId }) =>
+      processSale: ({ id, invoiceId, date, cartItems, paymentType, customerInfo, invoiceDiscount, salesman, paidAmount, notes, account, isSplit, cashPaid, mfsPaid, mfsProvider, mfsTrxId, replaceId }) =>
         enqueue(async () => {
           const salePayload = {
             id: id || invoiceId,
@@ -843,13 +843,21 @@ const useStore = create(
             return { ok: true, invoice: offlineInvoice, isOffline: true };
           };
 
+          // An edit replaces an invoice on the server; it cannot wait offline.
+          if (replaceId && typeof navigator !== 'undefined' && !navigator.onLine) {
+            set({ cart: cartItems || [] });
+            return fail(new Error('offline'), 'Editing an invoice needs the internet. Try again when online.');
+          }
+
           // If navigator explicitly reports offline, don't wait for server timeout
           if (typeof navigator !== 'undefined' && !navigator.onLine) {
             return createOfflineRecord();
           }
 
           try {
-            const invoice = await SaleService.create(salePayload);
+            const invoice = replaceId
+              ? await SaleService.replace(replaceId, salePayload)
+              : await SaleService.create(salePayload);
             set({ isOnline: true });
             // The sale is saved: hand the receipt back now. Stock, the sales list
             // and the dashboard catch up in the background instead of holding
@@ -858,7 +866,7 @@ const useStore = create(
             get().refresh('sales', 'inventory', 'customers', 'treasury', 'dashboard');
             return { ok: true, invoice, isOffline: false };
           } catch (error) {
-            if (isOfflineNetwork(error)) {
+            if (isOfflineNetwork(error) && !replaceId) {
               return createOfflineRecord();
             }
             // The cart is cleared by the page optimistically, so put it back
