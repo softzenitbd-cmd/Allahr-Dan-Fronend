@@ -1025,7 +1025,9 @@ const ActivityLog = () => {
     );
   };
 
-  if (user?.role !== 'Admin') {
+  const isAdmin = user?.role === 'Admin';
+  const hasAccess = isAdmin || hasMenuAccess(user, '/activity-log', rolePermissions);
+  if (!hasAccess) {
     return (
       <div className="card text-center mt-8" style={{ padding: '3rem 1rem' }}>
         <h2 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>
@@ -1033,8 +1035,8 @@ const ActivityLog = () => {
         </h2>
         <p className="text-muted">
           {language === 'bn'
-            ? 'শুধুমাত্র এডমিন এই অ্যাক্টিভিটি লগ দেখতে পারবেন।'
-            : 'Only Admins are permitted to view the Activity Log.'}
+            ? 'শুধুমাত্র অনুমোদিত ব্যবহারকারী এই অ্যাক্টিভিটি লগ দেখতে পারবেন।'
+            : 'Only authorized users are permitted to view the Activity Log.'}
         </p>
       </div>
     );

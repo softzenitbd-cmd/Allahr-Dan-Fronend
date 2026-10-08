@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import useStore from '../store/useStore';
 import { Send, MessageSquare, Users, Search } from 'lucide-react';
 import { t } from '../utils/i18n';
+import { hasMenuAccess } from '../utils/navigationConfig';
 
 const SMS = () => {
   const { customers, user, smsBalance, sendSms, language } = useStore();
@@ -21,12 +22,13 @@ const SMS = () => {
     (c.phone && c.phone.includes(searchTerm))
   );
 
-  // Only Admin can send SMS based on the requirement
-  if (user?.role !== 'Admin') {
+  const isAdmin = user?.role === 'Admin';
+  const hasAccess = isAdmin || hasMenuAccess(user, '/sms', rolePermissions);
+  if (!hasAccess) {
     return (
       <div className="card text-center" style={{ marginTop: '2rem' }}>
         <h2 className="text-danger">{t(language, 'Access Denied')}</h2>
-        <p className="text-muted">{language === 'bn' ? 'শুধুমাত্র এডমিন এসএমএস সিস্টেম অ্যাক্সেস করতে পারেন।' : 'Only Admins can access the SMS system.'}</p>
+        <p className="text-muted">{language === 'bn' ? 'শুধুমাত্র অনুমোদিত ব্যবহারকারী এসএমএস সিস্টেম অ্যাক্সেস করতে পারেন।' : 'Access Denied'}</p>
       </div>
     );
   }

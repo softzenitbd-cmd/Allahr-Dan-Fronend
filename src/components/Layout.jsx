@@ -35,7 +35,7 @@ import {
 import { useState, useEffect } from 'react';
 import './Layout.css';
 import logo from '../assets/allah_dan.jpeg';
-import { hasMenuAccess } from '../utils/navigationConfig';
+import { hasMenuAccess, getEffectivePermissions } from '../utils/navigationConfig';
 import ChangePasswordModal from './ChangePasswordModal';
 
 // Route-to-Data requirements mapping for lazy-loading
@@ -166,7 +166,16 @@ const Layout = () => {
 
   const isSalesman = String(user?.role || '').toLowerCase() === 'salesman';
 
-  const isOnlyPersonalLedger = isSalesman && !rolePermissions?.Salesman?.some((p) => ['/accounts', '/balance-sheet', '/reports', '/hr', '/settings'].includes(p));
+  const effectivePerms = getEffectivePermissions(rolePermissions);
+  const salesmanRoleKey = Object.keys(effectivePerms).find(
+    (k) => k.toLowerCase() === 'salesman'
+  ) || 'Salesman';
+  const salesmanAllowedPaths = effectivePerms[salesmanRoleKey] || [];
+  const isOnlyPersonalLedger =
+    isSalesman &&
+    !salesmanAllowedPaths.some((p) =>
+      ['/accounts', '/balance-sheet', '/reports', '/hr', '/settings'].includes(p)
+    );
 
   const adminServices = [
     { name: language === 'bn' ? 'হিসাব' : 'Accounts', icon: Landmark, path: '/accounts' },

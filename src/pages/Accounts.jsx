@@ -4,9 +4,10 @@ import { printElement } from '../utils/pdfGenerator';
 import { Wallet, Home, ArrowRightLeft, History, Plus, Printer } from 'lucide-react';
 import { t } from '../utils/i18n';
 import { toast } from 'react-toastify';
+import { hasMenuAccess } from '../utils/navigationConfig';
 
 const Accounts = () => {
-  const { cashBalance, bankBalance, accountTransactions, transferFunds, addManualEntry, user, language } = useStore();
+  const { cashBalance, bankBalance, accountTransactions, transferFunds, addManualEntry, user, language, rolePermissions } = useStore();
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [transferForm, setTransferForm] = useState({ from: 'Cash', to: 'Bank', amount: '' });
   const [entryForm, setEntryForm] = useState({ accountId: 'Cash', type: 'In', amount: '', description: '' });
@@ -53,11 +54,14 @@ const Accounts = () => {
     }
   };
 
-  if (user?.role !== 'Admin') {
+  const isAdmin = user?.role === 'Admin';
+  const hasAccess = isAdmin || hasMenuAccess(user, '/accounts', rolePermissions);
+
+  if (!hasAccess) {
     return (
       <div className="card text-center mt-8">
         <h2 className="text-danger">{t(language, 'Access Denied')}</h2>
-        <p className="text-muted">{language === 'bn' ? 'শুধুমাত্র এডমিন একাউন্টস দেখতে পারবেন।' : 'Only Admins can access Accounts.'}</p>
+        <p className="text-muted">{language === 'bn' ? 'শুধুমাত্র অনুমোদিত ব্যবহারকারী একাউন্টস দেখতে পারবেন।' : 'Only authorized users can access Accounts.'}</p>
       </div>
     );
   }
@@ -76,9 +80,11 @@ const Accounts = () => {
           <button className={`type-btn ${activeTab === 'Dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('Dashboard')}>
             <Wallet size={16} className="inline mr-2" /> {language === 'bn' ? 'ব্যালেন্স ও সমন্বয়' : 'Balances'}
           </button>
-          <button className={`type-btn ${activeTab === 'Transfer' ? 'active' : ''}`} onClick={() => setActiveTab('Transfer')}>
-            <ArrowRightLeft size={16} className="inline mr-2" /> {language === 'bn' ? 'বাসায় ক্যাশ স্থানান্তর' : 'Home Transaction'}
-          </button>
+          {isAdmin && (
+            <button className={`type-btn ${activeTab === 'Transfer' ? 'active' : ''}`} onClick={() => setActiveTab('Transfer')}>
+              <ArrowRightLeft size={16} className="inline mr-2" /> {language === 'bn' ? 'বাসায় ক্যাশ স্থানান্তর' : 'Home Transaction'}
+            </button>
+          )}
           <button className={`type-btn ${activeTab === 'History' ? 'active' : ''}`} onClick={() => setActiveTab('History')}>
             <History size={16} className="inline mr-2" /> {language === 'bn' ? 'লেনদেনের বিবরণী' : 'Transactions'}
           </button>
