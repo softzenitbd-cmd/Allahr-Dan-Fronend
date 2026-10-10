@@ -63,13 +63,27 @@ function App() {
 
   // A reload keeps the session but not the data, so pull everything back from
   // the server once the persisted user is known.
+  // Menu permissions, shop colours and the like are set by the Admin from
+  // another device; an open session picks them up when the tab is looked at
+  // again, and once a minute while it is in view, without logging out.
   useEffect(() => {
     if (user) hydrate();
     const onFocus = () => {
       if (user) hydrate();
     };
+    const onVisible = () => {
+      if (user && document.visibilityState === 'visible') hydrate();
+    };
+    const timer = setInterval(() => {
+      if (user && document.visibilityState === 'visible') hydrate();
+    }, 60 * 1000);
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(timer);
+    };
   }, [user, hydrate]);
 
   useEffect(() => {
