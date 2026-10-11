@@ -24,7 +24,7 @@ import {
   TreasuryService,
 } from '../api/services';
 import { DEFAULT_ROLE_PERMISSIONS, ALL_MENU_PATHS } from '../utils/navigationConfig';
-import { DEFAULT_SHOP_NAME, DEFAULT_SHOP_NAME_BN, DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
+import { DEFAULT_SHOP_NAME, DEFAULT_SHOP_NAME_BN, DEFAULT_SHOP_ADDRESS, DEFAULT_SHOP_PHONE } from '../utils/shopConfig';
 
 /**
  * The single bridge between the pages and the API.
@@ -420,7 +420,10 @@ const useStore = create(
             } : {}),
             _cacheTimestamps: { ...(state._cacheTimestamps || {}), _shopProfile: Date.now() },
           }));
-        } catch {}
+        } catch (error) {
+          // Menu permissions ride on this: never fail here without a trace.
+          console.warn('[shop profile] could not load:', error);
+        }
 
         // Settings: only fetch if missing or older than 10 minutes
         if (!settingsLast || (now - settingsLast) > 10 * 60 * 1000) {

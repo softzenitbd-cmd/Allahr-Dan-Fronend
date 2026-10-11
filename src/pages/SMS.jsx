@@ -5,7 +5,7 @@ import { t } from '../utils/i18n';
 import { hasMenuAccess } from '../utils/navigationConfig';
 
 const SMS = () => {
-  const { customers, user, smsBalance, sendSms, language } = useStore();
+  const { customers, user, smsBalance, sendSms, language, rolePermissions } = useStore();
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('');

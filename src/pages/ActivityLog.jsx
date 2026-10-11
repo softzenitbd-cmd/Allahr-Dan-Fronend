@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { formatDate, isoDate } from '../utils/date';
+import { hasMenuAccess } from '../utils/navigationConfig';
 
 const MODULE_OPTIONS = [
   { id: 'All', labelEn: 'All Modules', labelBn: 'সব মডিউল' },
@@ -311,7 +312,7 @@ const getLogActorInfo = (log, salesList = [], staffList = []) => {
 };
 
 const ActivityLog = () => {
-  const { user, language, staff, expenses, sales, ensureLoaded } = useStore();
+  const { user, language, staff, expenses, sales, ensureLoaded, rolePermissions } = useStore();
 
   useEffect(() => {
     if (typeof ensureLoaded === 'function') {
