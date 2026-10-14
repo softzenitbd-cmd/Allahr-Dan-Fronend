@@ -73,19 +73,22 @@ const SaleReturnForm = ({ bn, initialInvoice = '', onDone }) => {
     setInvoice(null); setQuery(''); setQty({}); setReason(''); setDate(isoDate());
   };
 
+  const lineKey = (l) => (l.itemId ? `item-${l.itemId}` : `${l.productId || l.name}_${l.variant || ''}_${l.color || ''}`);
+
   const lines = invoice?.lines || [];
-  const value = lines.reduce((sum, l) => sum + (Number(qty[l.productId]) || 0) * (l.isGift ? 0 : l.unitPrice), 0);
+  const value = lines.reduce((sum, l) => sum + (Number(qty[lineKey(l)]) || 0) * (l.isGift ? 0 : l.unitPrice), 0);
   const units = Object.values(qty).reduce((a, b) => a + (Number(b) || 0), 0);
   const dueOff = Math.min(value, Number(invoice?.dueRemaining) || 0);
   const refund = Math.max(0, value - dueOff);
   const nothingLeft = lines.length > 0 && lines.every((l) => l.returnable <= 0);
 
   const setLineQty = (line, next) => {
+    const k = lineKey(line);
     const n = Math.max(0, Math.min(line.returnable, parseInt(next, 10) || 0));
-    setQty((q) => ({ ...q, [line.productId]: n }));
+    setQty((q) => ({ ...q, [k]: n }));
   };
 
-  const returnAll = () => setQty(Object.fromEntries(lines.map((l) => [l.productId, l.returnable])));
+  const returnAll = () => setQty(Object.fromEntries(lines.map((l) => [lineKey(l), l.returnable])));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -96,7 +99,15 @@ const SaleReturnForm = ({ bn, initialInvoice = '', onDone }) => {
     setSaving(true);
     const res = await processSaleReturn({
       invoiceId: invoice.invoice,
-      items: lines.filter((l) => qty[l.productId] > 0).map((l) => ({ productId: l.productId, quantity: qty[l.productId] })),
+      items: lines
+        .filter((l) => (Number(qty[lineKey(l)]) || 0) > 0)
+        .map((l) => ({
+          itemId: l.itemId,
+          productId: l.productId,
+          variant: l.variant || '',
+          color: l.color || '',
+          quantity: Number(qty[lineKey(l)]),
+        })),
       reason: reason.trim(),
       date,
     });
@@ -185,12 +196,17 @@ const SaleReturnForm = ({ bn, initialInvoice = '', onDone }) => {
                   </thead>
                   <tbody>
                     {lines.map((l) => {
-                      const n = Number(qty[l.productId]) || 0;
+                      const k = lineKey(l);
+                      const n = Number(qty[k]) || 0;
                       const done = l.returnable <= 0;
                       return (
-                        <tr key={l.productId || l.name} className={done ? 'is-done' : n > 0 ? 'is-picked' : ''}>
+                        <tr key={k} className={done ? 'is-done' : n > 0 ? 'is-picked' : ''}>
                           <td>
-                            <div style={{ fontWeight: 600 }}>{l.name}{l.variant ? <span className="text-muted"> ({l.variant})</span> : null}</div>
+                            <div style={{ fontWeight: 600 }}>
+                              {l.name}
+                              {l.variant ? <span className="text-muted"> ({l.variant})</span> : null}
+                              {l.color ? <span className="text-muted" style={{ marginLeft: '4px' }}>· {l.color}</span> : null}
+                            </div>
                             {l.isGift && <span className="badge bg-info">{bn ? 'গিফট' : 'Gift'}</span>}
                           </td>
                           <td className="num">{l.sold}</td>

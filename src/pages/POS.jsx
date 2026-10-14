@@ -461,6 +461,7 @@ const POS = () => {
     setCashReceived('');
     setEditingSaleId(null);
     setEditingSale(null);
+    await refresh('inventory', 'sales');
     const bits = [];
     if (r.addonInvoice) bits.push(language === 'bn' ? `নতুন পণ্য ৳${r.addedTotal.toLocaleString()} → ${r.addonInvoice}` : `added ৳${r.addedTotal.toLocaleString()} → ${r.addonInvoice}`);
     if (r.returnCode) bits.push(language === 'bn' ? `ফেরত ৳${r.returnedValue.toLocaleString()} (রিটার্ন)` : `returned ৳${r.returnedValue.toLocaleString()}`);
