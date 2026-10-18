@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useStore from '../store/useStore';
-import { Send, MessageSquare, Users, Search } from 'lucide-react';
+import { Send, MessageSquare, Users, Search, PlusCircle } from 'lucide-react';
 import { t } from '../utils/i18n';
 import { hasMenuAccess } from '../utils/navigationConfig';
 
 const SMS = () => {
-  const { customers, user, smsBalance, sendSms, language, rolePermissions } = useStore();
+  const { customers, user, smsBalance, sendSms, language, rolePermissions, purchaseSms, refresh } = useStore();
+  // Credits bought from the SMS provider are recorded here, so the shop's
+  // count matches the provider and sending is not refused at zero.
+  const [topUp, setTopUp] = useState(null); // { credits, cost, fromCash, saving }
+  useEffect(() => { refresh('sms'); }, [refresh]);
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('');
@@ -84,10 +88,68 @@ const SMS = () => {
           <Send size={18} className="text-primary" />
           <span style={{ fontWeight: 600, fontSize: '1rem' }}>{t(language, 'Send SMS' || 'Send SMS')}</span>
         </div>
-        <div style={{ fontWeight: 'bold' }}>
-          {language === 'bn' ? 'বর্তমান এসএমএস ব্যালেন্স' : 'Current SMS Balance'}: <span className="text-primary" style={{ fontSize: '1.15rem' }}>{smsBalance} {t(language, 'SMS')}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 'bold' }}>
+            {language === 'bn' ? 'বর্তমান এসএমএস ব্যালেন্স' : 'Current SMS Balance'}: <span className="text-primary" style={{ fontSize: '1.15rem' }}>{smsBalance} {t(language, 'SMS')}</span>
+          </div>
+          {isAdmin && !topUp && (
+            <button type="button" className="btn-outline flex-align-gap" onClick={() => setTopUp({ credits: '', cost: '', fromCash: true, saving: false })}>
+              <PlusCircle size={15} /> {language === 'bn' ? 'এসএমএস ব্যালেন্স যোগ করুন' : 'Add SMS balance'}
+            </button>
+          )}
         </div>
       </div>
+
+      {isAdmin && topUp && (
+        <div className="card mb-4" style={{ padding: '1rem 1.25rem', border: '1px solid var(--primary)' }}>
+          <h3 style={{ marginBottom: '0.35rem' }}>{language === 'bn' ? 'কেনা এসএমএস যোগ করুন' : 'Add purchased SMS'}</h3>
+          <p className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
+            {language === 'bn'
+              ? 'এসএমএস কোম্পানি (GreenWeb) থেকে যত এসএমএস কিনেছেন সেটা এখানে লিখুন — তাহলে এখানকার ব্যালেন্স কোম্পানির সাথে মিলবে, আর এসএমএস পাঠানো যাবে।'
+              : 'Enter the SMS you bought from the provider (GreenWeb), so the balance here matches it and sending is allowed.'}
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div>
+              <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'কত এসএমএস' : 'Number of SMS'} *</label>
+              <input type="number" min="1" value={topUp.credits} placeholder="e.g. 1000"
+                onChange={(e) => setTopUp({ ...topUp, credits: e.target.value })} style={{ width: '140px' }} />
+            </div>
+            <div>
+              <label className="text-muted text-sm block mb-1">{language === 'bn' ? 'দাম (৳)' : 'Price (৳)'}</label>
+              <input type="number" min="0" value={topUp.cost} placeholder="e.g. 350"
+                onChange={(e) => setTopUp({ ...topUp, cost: e.target.value })} style={{ width: '140px' }} />
+            </div>
+            <label className="flex-align-gap text-sm" style={{ cursor: 'pointer', paddingBottom: '0.5rem' }}>
+              <input type="checkbox" checked={topUp.fromCash} onChange={(e) => setTopUp({ ...topUp, fromCash: e.target.checked })} />
+              {language === 'bn' ? 'দাম দোকানের ক্যাশ থেকে দেওয়া হয়েছে (হিসাবে খরচ উঠবে)' : "Paid from the shop's cash (shows in the cash book)"}
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
+            <button type="button" className="btn-primary" disabled={topUp.saving}
+              onClick={async () => {
+                const credits = parseInt(topUp.credits, 10);
+                if (!credits || credits <= 0) {
+                  setStatus(language === 'bn' ? 'এসএমএস-এর সংখ্যা লিখুন।' : 'Enter the number of SMS.');
+                  return;
+                }
+                const cost = topUp.fromCash ? (parseFloat(topUp.cost) || 0) : 0;
+                setTopUp({ ...topUp, saving: true });
+                const res = await purchaseSms(credits, cost);
+                if (res?.ok) {
+                  setTopUp(null);
+                  setStatus(language === 'bn' ? `${credits} এসএমএস ব্যালেন্সে যোগ হয়েছে।` : `${credits} SMS added to the balance.`);
+                } else {
+                  setTopUp((cur) => (cur ? { ...cur, saving: false } : cur));
+                }
+              }}>
+              {topUp.saving ? '…' : (language === 'bn' ? 'যোগ করুন' : 'Add')}
+            </button>
+            <button type="button" className="btn-outline" onClick={() => setTopUp(null)} disabled={topUp.saving}>
+              {language === 'bn' ? 'বাতিল' : 'Cancel'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid responsive-grid-2">
         <div className="card">
