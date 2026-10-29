@@ -684,6 +684,36 @@ const Settings = () => {
               })}
             </div>
           </div>
+
+          <div className="permission-section" style={{ marginTop: 'var(--sp-2)' }}>
+            <div className="permission-group-title">
+              <span>{bn ? 'বিশেষ অনুমতি' : 'Special permissions'}</span>
+            </div>
+            <div className="permission-grid">
+              {SYSTEM_MENUS.filter((m) => m.group === 'perm').map((menu) => {
+                const isChecked = selectedRole === 'Admin' || selectedMenuPaths.includes(menu.path);
+                const Icon = menu.icon;
+                return (
+                  <div
+                    key={menu.id}
+                    className={`permission-card ${isChecked ? 'active' : ''} ${selectedRole === 'Admin' ? 'disabled' : ''}`}
+                    onClick={() => handleToggleMenu(menu.path)}
+                  >
+                    <div className="permission-icon">
+                      <Icon size={16} />
+                    </div>
+                    <div className="permission-details">
+                      <span className="permission-label">{bn ? menu.nameBn : menu.nameEn}</span>
+                      <span className="permission-path">{bn ? 'স্টকে আসল (ক্রয়) দাম দেখা ও লেখা' : 'See and enter the buying price in Inventory'}</span>
+                    </div>
+                    <div className="permission-check-box">
+                      {isChecked && <Check size={12} strokeWidth={3} />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 

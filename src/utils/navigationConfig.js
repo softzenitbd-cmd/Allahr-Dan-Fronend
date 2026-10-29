@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Settings,
   Activity,
+  BadgeDollarSign,
 } from 'lucide-react';
 
 export const SYSTEM_MENUS = [
@@ -174,6 +175,15 @@ export const SYSTEM_MENUS = [
     nameBn: 'সেটিংস',
     group: 'admin',
     icon: Settings,
+  },
+  // Not a menu: rights the Admin can give a role (shown under "Special").
+  {
+    id: 'cost-price',
+    path: '/perm/cost-price',
+    nameEn: 'Cost price (see & set)',
+    nameBn: 'আসল দাম দেখা ও দেওয়া',
+    group: 'perm',
+    icon: BadgeDollarSign,
   },
 ];
 

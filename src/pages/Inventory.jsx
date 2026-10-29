@@ -21,6 +21,7 @@ import { formatDate, formatTime } from '../utils/date';
 import { discountInfo } from '../utils/discount';
 import VariantMatrixEditor, { matrixFromRows, matrixToPayload, matrixToVariants, matrixProblem, matrixTotal } from '../components/VariantMatrixEditor';
 import { colorSwatch } from '../utils/colors';
+import { hasMenuAccess } from '../utils/navigationConfig';
 import VariantStockEditor, { looksLikeVariantList, parseVariantText } from '../components/VariantStockEditor';
 
 const getProductImageUrl = (img) => {
@@ -34,7 +35,7 @@ const getProductImageUrl = (img) => {
 const Inventory = () => {
   const {
     inventory, categories, units, addInventoryItem, updateInventoryItem, addProductWithVariants, splitProductIntoVariants, updateProductGroup, deleteProductGroup, setProductMatrix,
-    deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user,
+    deleteInventoryItem, recordProductDamage, fetchStockLogs, language, shopProfile, refresh, user, rolePermissions,
   } = useStore();
   // The original/buying price is confidential to the business owner/admin.
   // The server only returns cost_price for authenticated admins;
@@ -49,6 +50,9 @@ const Inventory = () => {
       user.role === 'SuperAdmin'
     )
   );
+  // Cost (buying) price: the Admin, or a role the Admin gave that right in
+  // Settings. The server applies the same rule.
+  const canCost = isAdmin || hasMenuAccess(user, '/perm/cost-price', rolePermissions);
 
   // Server-side pagination & filter states
   const [paginatedProducts, setPaginatedProducts] = useState([]);
@@ -751,7 +755,7 @@ const Inventory = () => {
       price: sale,
       min_stock: minVal,
       minStock: minVal,
-      ...(isAdmin ? { cost_price: Number(base.cost_price ?? base.costPrice) || 0 } : {}),
+      ...(canCost ? { cost_price: Number(base.cost_price ?? base.costPrice) || 0 } : {}),
       colors: base.colors || [],
       variants: rows,
     });
@@ -788,7 +792,7 @@ const Inventory = () => {
         price: saleVal,
         min_stock: minVal,
         minStock: minVal,
-        ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
+        ...(canCost ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
         colors: editingItem.colors || [],
       };
       const problem = editingItem.matrix ? matrixProblem(editingItem.matrix, language === 'bn') : '';
@@ -835,7 +839,7 @@ const Inventory = () => {
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
-      if (isAdmin) formData.append('cost_price', parseFloat(editingItem.cost_price) || 0);
+      if (canCost) formData.append('cost_price', parseFloat(editingItem.cost_price) || 0);
       formData.append('colors', JSON.stringify(editingItem.colors || []));
       formData.append('image', editProductImage);
       res = await updateInventoryItem(editingItem.id, formData);
@@ -849,7 +853,7 @@ const Inventory = () => {
         stock: parseInt(editingItem.stock) || 0,
         min_stock: minVal,
         minStock: minVal,
-        ...(isAdmin ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
+        ...(canCost ? { cost_price: parseFloat(editingItem.cost_price) || 0 } : {}),
       };
       // If user removed the existing image by clicking "X":
       if (!editProductImagePreview && editingItem.image) {
@@ -950,7 +954,7 @@ const Inventory = () => {
       price: saleVal,
       min_stock: minVal,
       minStock: minVal,
-      ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+      ...(canCost ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
       colors: [...new Set(rows.map((r) => r.color).filter(Boolean))],
     };
 
@@ -1024,7 +1028,7 @@ const Inventory = () => {
         formData.append('mrp', mrpVal || existingProduct.mrp || saleVal);
         formData.append('discount_price', discVal || existingProduct.discount_price || saleVal);
         formData.append('price', saleVal || existingProduct.price);
-        if (isAdmin && newProduct.cost_price) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
+        if (canCost && newProduct.cost_price) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
         if (newProduct.colors?.length) formData.append('colors', JSON.stringify(newProduct.colors));
         formData.append('image', newProductImage);
         updateRes = await updateInventoryItem(existingProduct.id, formData);
@@ -1040,7 +1044,7 @@ const Inventory = () => {
           stock: newTotalStock,
           min_stock: minVal,
           minStock: minVal,
-          ...(isAdmin && newProduct.cost_price ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+          ...(canCost && newProduct.cost_price ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
           ...(newProduct.colors?.length ? { colors: newProduct.colors } : {}),
         };
         updateRes = await updateInventoryItem(existingProduct.id, payload);
@@ -1078,7 +1082,7 @@ const Inventory = () => {
       formData.append('mrp', mrpVal || saleVal);
       formData.append('discount_price', discVal || saleVal);
       formData.append('price', saleVal);
-      if (isAdmin) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
+      if (canCost) formData.append('cost_price', parseFloat(newProduct.cost_price) || 0);
       formData.append('colors', JSON.stringify(newProduct.colors || []));
       formData.append('image', newProductImage);
       res = await addInventoryItem(formData);
@@ -1094,7 +1098,7 @@ const Inventory = () => {
         stock: parseInt(newProduct.stock) || 0,
         min_stock: minVal,
         minStock: minVal,
-        ...(isAdmin ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
+        ...(canCost ? { cost_price: parseFloat(newProduct.cost_price) || 0 } : {}),
       };
       res = await addInventoryItem(payload);
     }
@@ -1274,7 +1278,7 @@ const Inventory = () => {
                         </span>
                       )}
                     </td>
-                    {isAdmin && (
+                    {canCost && (
                       <td>
                         <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: '#059669' }}>
                           {Number(item.cost_price ?? item.costPrice) > 0
@@ -1346,7 +1350,7 @@ const Inventory = () => {
           <button className="btn-outline flex-align-gap" onClick={handlePrintInventoryList}>
             <Printer size={18} /> {t(language, 'Print List' || 'Print')}
           </button>
-          {isAdmin && (
+          {canCost && (
             <button
               className="btn-outline flex-align-gap"
               onClick={handleDownloadValuation}
@@ -1388,7 +1392,7 @@ const Inventory = () => {
       {/* Inventory Stat Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(${isAdmin ? '200px' : '230px'}, 1fr))`,
+        gridTemplateColumns: `repeat(auto-fit, minmax(${canCost ? '200px' : '230px'}, 1fr))`,
         gap: '1rem',
         marginBottom: '1.25rem'
       }}>
@@ -1467,7 +1471,7 @@ const Inventory = () => {
           </div>
         </div>
 
-        {isAdmin && (
+        {canCost && (
           <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', margin: 0, borderLeft: '4px solid #059669' }}>
             <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(5, 150, 105, 0.12)', color: '#059669' }}>
               <ShieldCheck size={24} />
@@ -1659,7 +1663,7 @@ const Inventory = () => {
                 <th>{t(language, 'Unit')}</th>
                 <th>{language === 'bn' ? 'স্টক ও এলার্ট' : 'Stock & Alert'}</th>
                 <th>{t(language, 'Price')} (BDT)</th>
-                {isAdmin && (
+                {canCost && (
                   <th style={{ whiteSpace: 'nowrap', color: '#059669' }}>
                     {language === 'bn' ? 'আসল দাম (Original)' : 'Original Price'}
                   </th>
@@ -1670,7 +1674,7 @@ const Inventory = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--primary)' }}>
+                  <td colSpan={canCost ? 10 : 9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--primary)' }}>
                     <div className="flex-align-gap" style={{ justifyContent: 'center' }}>
                       <Loader2 size={20} className="animate-spin" />
                       <span>{language === 'bn' ? 'পণ্য লোড হচ্ছে...' : 'Loading products...'}</span>
@@ -1679,7 +1683,7 @@ const Inventory = () => {
                 </tr>
               ) : paginatedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={canCost ? 10 : 9} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
                     {language === 'bn' ? 'এই ফিল্টারে কোনো পণ্য পাওয়া যায়নি।' : 'No products found matching the filter criteria.'}
                   </td>
                 </tr>
@@ -1788,7 +1792,7 @@ const Inventory = () => {
       </div>
 
       {/* Hidden Printable Inventory List (Excel Style) */}
-      {isAdmin && (
+      {canCost && (
         <div style={{ display: 'none' }}>
           <div id="printable-valuation" style={{ padding: '1.25rem', background: '#fff', color: '#111827', fontSize: '12px' }}>
             <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
@@ -1881,7 +1885,7 @@ const Inventory = () => {
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'left' }}>Variant</th>
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Stock</th>
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>Unit</th>
-                {isAdmin && <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669' }}>Original Price</th>}
+                {canCost && <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', color: '#059669' }}>Original Price</th>}
                 <th style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right' }}>Price (BDT)</th>
               </tr>
             </thead>
@@ -1894,7 +1898,7 @@ const Inventory = () => {
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem' }}>{item.variant || '-'}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center', fontWeight: 'bold' }}>{item.stock}</td>
                   <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'center' }}>{item.unit}</td>
-                  {isAdmin && (
+                  {canCost && (
                     <td style={{ border: '1px solid #ccc', padding: '0.4rem', textAlign: 'right', fontWeight: 600, color: '#059669' }}>
                       {Number(item.cost_price ?? item.costPrice) > 0 ? `৳${Number(item.cost_price ?? item.costPrice).toLocaleString()}` : '—'}
                     </td>
@@ -1912,7 +1916,7 @@ const Inventory = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center' }}>No items found.</td>
+                  <td colSpan={canCost ? 8 : 7} style={{ border: '1px solid #ccc', padding: '1rem', textAlign: 'center' }}>No items found.</td>
                 </tr>
               )}
             </tbody>
@@ -1921,7 +1925,7 @@ const Inventory = () => {
                 <td colSpan="4" style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>Totals:</td>
                 <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center' }}>{totalItems}</td>
                 <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'center' }}>-</td>
-                {isAdmin && (
+                {canCost && (
                   <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right', color: '#059669' }}>৳{valuation.costValue.toLocaleString()}</td>
                 )}
                 <td style={{ border: '1px solid #ccc', padding: '0.5rem', textAlign: 'right' }}>৳{totalValue.toLocaleString()}</td>
@@ -2194,10 +2198,10 @@ const Inventory = () => {
                       {language === 'bn' ? 'স্টক এই পরিমাণের সমান বা নিচে নামলে এলার্ট দেখাবে।' : 'Alerts when stock is at or below this quantity.'}
                     </span>
                   </div>
-                  {isAdmin && (
+                  {canCost && (
                     <div>
                       <label className="text-muted text-sm block mb-1">
-                        {language === 'bn' ? 'ক্রয় মূল্য (শুধু এডমিন)' : 'Original / Cost Price (admin only)'} (BDT)
+                        {language === 'bn' ? 'ক্রয় মূল্য (আসল দাম)' : 'Original / Cost Price'} (BDT)
                       </label>
                       <input
                         type="number"
@@ -2599,10 +2603,10 @@ const Inventory = () => {
                       {language === 'bn' ? 'স্টক এই পরিমাণের সমান বা নিচে নামলে এলার্ট দেখাবে।' : 'Alerts when stock is at or below this quantity.'}
                     </span>
                   </div>
-                  {isAdmin && (
+                  {canCost && (
                     <div>
                       <label className="text-muted text-sm block mb-1">
-                        {language === 'bn' ? 'ক্রয় মূল্য (শুধু এডমিন)' : 'Original / Cost Price (admin only)'} (BDT)
+                        {language === 'bn' ? 'ক্রয় মূল্য (আসল দাম)' : 'Original / Cost Price'} (BDT)
                       </label>
                       <input
                         type="number"

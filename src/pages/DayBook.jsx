@@ -16,6 +16,7 @@ import InvoiceDocument, { fromApiInvoice } from '../components/InvoiceDocument';
 import { DEFAULT_SHOP_ADDRESS } from '../utils/shopConfig';
 import './DayBook.css';
 import { formatDate, formatLongDate } from '../utils/date';
+import { hasMenuAccess } from '../utils/navigationConfig';
 
 /**
  * The day book: one date, everything that happened on it.
@@ -190,11 +191,14 @@ const DayBook = () => {
     user, language, shopProfile, sales, customers, staff, expenseCategories, expenses,
     fetchDayBook, addExpense, deleteExpense, payInvoiceDue, refresh,
     loans, fetchLoans, addLoan, payLoan, deleteLoan, deleteLoanPayment, importLocalLoans,
-    ensureLoaded,
+    ensureLoaded, rolePermissions,
   } = useStore();
   const navigate = useNavigate();
   const bn = language === 'bn';
   const isAdmin = user?.role === 'Admin';
+  // Cash in hand, cash movement and loans: anyone the Admin gave the Day Book.
+  // Profit, cost and purchases stay the Admin's (the server agrees).
+  const canBooks = isAdmin || hasMenuAccess(user, '/day-book', rolePermissions);
 
   const today = isoLocal(new Date());
   const [preset, setPreset] = useState('today'); // 'today' | 'yesterday' | '7days' | 'this_month' | '30days' | 'custom'
@@ -357,8 +361,9 @@ const DayBook = () => {
   // The loan book lives on the server. Anything an older build left in this
   // browser is moved across once, then forgotten here.
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canBooks) return;
     (async () => {
+      if (!isAdmin) { fetchLoans(); return; }
       let stale = [];
       try { stale = JSON.parse(localStorage.getItem('allahr_dan_daybook_loans') || '[]'); } catch { stale = []; }
       if (Array.isArray(stale) && stale.length) {
@@ -371,7 +376,7 @@ const DayBook = () => {
       }
       fetchLoans();
     })();
-  }, [isAdmin, fetchLoans, importLocalLoans, bn]);
+  }, [isAdmin, canBooks, fetchLoans, importLocalLoans, bn]);
 
   const [loanDrawer, setLoanDrawer] = useState(false);
   const [loanAdjustDrawer, setLoanAdjustDrawer] = useState(false);
@@ -986,6 +991,8 @@ const DayBook = () => {
   const s = data?.sales;
   const p = data?.profit;
   const cf = data?.cashflow;
+  // Only when the server sent the cash figures (it decides who may see them).
+  const showCash = canBooks && Boolean(cf) && Boolean(data?.position);
   const cmp = data?.compare || {};
   const dayCount = data?.dayCount || countDays(startDate, endDate);
   const dayLabel = !isRange
@@ -1473,7 +1480,7 @@ const DayBook = () => {
                     sub={`${bn ? 'মোট লাভ' : 'gross'} ${money(p.grossProfit)} (${p.grossMargin}%) − ${bn ? 'খরচ' : 'expenses'} ${money(p.operatingExpenses)}`}
                     compare={cmp.netProfit} />
                 )}
-                {isAdmin && (
+                {canBooks && (
                   <Kpi bn={bn} icon={Handshake} tone={todayLoans.count > 0 ? (todayLoans.out > 0 ? 'warning' : 'info') : ''} isRange={isRange}
                     label={bn ? (isRange ? 'কর্জ / ঋণ (সময়কালীন)' : 'কর্জ / ঋণ (আজকের)') : (isRange ? 'Loans in Period' : 'Loans Today')}
                     value={todayLoans.out > 0 ? -todayLoans.out : todayLoans.in}
@@ -1482,7 +1489,7 @@ const DayBook = () => {
                       : (bn ? (isRange ? 'এই সময়ে কোনো কর্জ লেনদেন নেই' : 'আজ কোনো কর্জ লেনদেন নেই') : (isRange ? 'No loan activity in period' : 'No loan activity today'))}
                   />
                 )}
-                {isAdmin && (
+                {showCash && (
                   <Kpi bn={bn} icon={Landmark} tone="info"
                     label={bn ? 'ক্যাশে আছে' : 'Cash in hand'} value={cf.closingCash}
                     sub={`${bn ? 'শুরুতে' : 'opened'} ${money(cf.openingCash)} · ${bn ? 'বাসায়' : 'home'} ${money(cf.closingBank)}`} />
@@ -1662,7 +1669,7 @@ const DayBook = () => {
                     ))}
                   </div>
 
-                  {isAdmin && (
+                  {canBooks && (
                     <div className="card db-panel">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <h3 style={{ margin: 0 }}>{bn ? (isRange ? 'কর্জ / ঋণ হিসাব (সময়কালীন)' : 'কর্জ / ঋণ হিসাব (আজ)') : (isRange ? 'Period Loan Summary' : "Today's Loan Summary")}</h3>
@@ -1695,7 +1702,7 @@ const DayBook = () => {
                     </div>
                   )}
 
-                  {isAdmin && (
+                  {showCash && (
                     <div className="card db-panel">
                       <h3>{bn ? 'ক্যাশ চলাচল' : 'Cash movement'}</h3>
                       <div className="db-line"><span>{bn ? (isRange ? 'সময়ের শুরুতে' : 'দিনের শুরুতে') : (isRange ? 'Period Opening' : 'Opening')}</span><span className="num">{money(cf.openingTotal)}</span></div>
@@ -1708,7 +1715,7 @@ const DayBook = () => {
                     </div>
                   )}
 
-                  {isAdmin && (
+                  {showCash && (
                     <div className="card db-panel">
                       <h3>{bn ? 'মোট বকেয়া (আজ পর্যন্ত)' : 'Outstanding (as of now)'}</h3>
                       <div className="db-line"><span>{bn ? 'কাস্টমারের কাছে পাওনা' : 'Customers owe'}</span><span className="num text-success">{money(data.position.assets.customerDue)}</span></div>
