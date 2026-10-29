@@ -610,3 +610,42 @@ body.dark-mode .swal2-html-container { color: var(--text-muted) !important; }
   border: 1px solid var(--border-color); background: transparent; font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
 }
 .cl-colors button.is-on { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+
+
+/* Supplier book (Suppliers > আলাদা খাতা) */
+.sbook { width: 100%; }
+.sbook-layout { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 860px) { .sbook-layout { grid-template-columns: 1fr; } }
+.sbook-list { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+.sbook-search { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+.sbook-search input { flex: 1; border: none; background: transparent; outline: none; }
+.sbook-owed { padding: 6px 10px; font-size: 0.78rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+.sbook-owed b { color: #dc2626; }
+.sbook-items { max-height: 60vh; overflow-y: auto; }
+.sbook-item { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: none; border-bottom: 1px solid var(--border-color); background: transparent; cursor: pointer; text-align: left; }
+.sbook-item:hover { background: var(--bg-hover, #f8fafc); }
+.sbook-item.is-on { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.sbook-name { display: flex; flex-direction: column; font-weight: 600; font-size: 0.88rem; }
+.sbook-name small { font-weight: 400; color: var(--text-muted); font-size: 0.72rem; }
+.sbook-bal { font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.sbook-bal.is-owed { color: #dc2626; }
+.sbook-detail { min-width: 0; }
+.sbook-empty { padding: 3rem 1rem; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: 10px; }
+.sbook-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.sbook-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.sbook-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 0.75rem; }
+.sbook-totals > div { display: flex; flex-direction: column; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px; }
+.sbook-totals span { font-size: 0.72rem; color: var(--text-muted); }
+.sbook-totals b { font-size: 1.05rem; }
+.sbook-form { border: 1px solid var(--border-color); border-radius: 10px; padding: 0.75rem; margin-bottom: 0.75rem; }
+.sbook-form.is-goods { border-color: rgba(37, 99, 235, 0.4); background: rgba(37, 99, 235, 0.04); }
+.sbook-form.is-pay { border-color: rgba(5, 150, 105, 0.4); background: rgba(5, 150, 105, 0.04); }
+.sbook-form-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.sbook-form-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.6rem; }
+.sbook-form-row label { display: flex; flex-direction: column; gap: 3px; font-size: 0.75rem; color: var(--text-muted); }
+.sbook-form-row label input { width: 140px; }
+.sbook-form-row label.grow { flex: 1; min-width: 180px; }
+.sbook-form-row label.grow input { width: 100%; }
+.sbook-kind { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+.sbook-kind.is-goods { background: rgba(37, 99, 235, 0.12); color: #1d4ed8; }
+.sbook-kind.is-pay { background: rgba(5, 150, 105, 0.12); color: #047857; }

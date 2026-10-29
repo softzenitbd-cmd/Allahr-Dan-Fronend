@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import { showConfirmDialog, showSuccessAlert } from '../utils/alert';
 import PrintablePayment from '../components/PrintablePayment';
 import { formatDate } from '../utils/date';
+import SupplierBook from '../components/SupplierBook';
 
 const Suppliers = () => {
   const navigate = useNavigate();
@@ -400,6 +401,12 @@ const Suppliers = () => {
             >
               {language === 'bn' ? 'বকেয়া' : 'Due'} ({dueSuppliers.length})
             </button>
+            <button
+              className={activeTab === 'Book' ? 'active' : ''}
+              onClick={() => setActiveTab('Book')}
+            >
+              {language === 'bn' ? 'আলাদা খাতা' : 'Supplier Book'}
+            </button>
             {!isSalesman && (
               <button
                 className={activeTab === 'Deleted' ? 'active' : ''}
@@ -412,6 +419,7 @@ const Suppliers = () => {
             )}
           </div>
 
+          {activeTab !== 'Book' && (<>
           <div className="search-bar">
             <Search size={18} className="text-muted" />
             <input
@@ -431,7 +439,9 @@ const Suppliers = () => {
               <Printer size={16} /> {language === 'bn' ? 'তালিকা প্রিন্ট' : 'Print List'}
             </button>
           </div>
+          </>)}
         </div>
+        {activeTab === 'Book' ? <SupplierBook bn={language === 'bn'} /> : (<>
 
         {activeTab === 'Due' && (
           <div className="due-summary">
@@ -551,6 +561,7 @@ const Suppliers = () => {
             </tbody>
           </table>
         </div>
+        </>)}
       </div>
 
       {/* Add Supplier Drawer */}

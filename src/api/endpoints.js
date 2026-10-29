@@ -34,6 +34,8 @@ export const ENDPOINTS = {
   CUSTOMER_RESTORE: (code) => `/contacts/customers/${encodeURIComponent(code)}/restore/`,
   CUSTOMER_HARD_DELETE: (code) => `/contacts/customers/${encodeURIComponent(code)}/hard-delete/`,
   SUPPLIERS: '/contacts/suppliers/',
+  SUPPLIER_BOOK: '/contacts/supplier-book/',
+  SUPPLIER_BOOK_ENTRY: (code) => `/contacts/supplier-book/${encodeURIComponent(code)}/`,
   SUPPLIER: (code) => `/contacts/suppliers/${encodeURIComponent(code)}/`,
   SUPPLIER_RESTORE: (code) => `/contacts/suppliers/${encodeURIComponent(code)}/restore/`,
   SUPPLIER_HARD_DELETE: (code) => `/contacts/suppliers/${encodeURIComponent(code)}/hard-delete/`,

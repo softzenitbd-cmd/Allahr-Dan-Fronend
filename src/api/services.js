@@ -204,3 +204,12 @@ export const ActivityLogService = {
   logCustom: (payload) => apiClient.post(ENDPOINTS.LOG_CUSTOM_ACTIVITY, payload),
 };
 
+
+// The supplier book: goods received and money paid per supplier, kept apart
+// from the shop's cash, purchases and stock.
+export const SupplierBookService = {
+  summary: () => apiClient.get(ENDPOINTS.SUPPLIER_BOOK),
+  entries: (supplierCode) => apiClient.get(ENDPOINTS.SUPPLIER_BOOK, { params: { supplier: supplierCode } }),
+  add: (payload) => apiClient.post(ENDPOINTS.SUPPLIER_BOOK, payload),
+  remove: (code) => apiClient.delete(ENDPOINTS.SUPPLIER_BOOK_ENTRY(code)),
+};
