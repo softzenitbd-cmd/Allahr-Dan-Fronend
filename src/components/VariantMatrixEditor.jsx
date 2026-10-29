@@ -61,10 +61,23 @@ export const matrixToPayload = (value, rows = []) => {
   const renameColors = {};
   active(value.sizes).forEach((s) => { if (s.orig !== null && s.name.trim() !== s.orig) renameSizes[s.orig] = s.name.trim(); });
   active(value.colors).forEach((c) => { if (c.orig !== null && c.name.trim() !== c.orig) renameColors[c.orig] = c.name.trim(); });
+  // Only cells changed on screen are sent, each with what it was when the
+  // screen opened: the server applies the difference, so a sale made in the
+  // meantime is not overwritten by an old count.
   const cells = [];
   active(value.sizes).forEach((s) => active(value.colors).forEach((c) => {
     const v = value.cells[key(s.id, c.id)];
-    if (v !== undefined && v !== '') cells.push({ size: s.name.trim(), color: c.name.trim(), stock: parseInt(v, 10) || 0 });
+    if (v === undefined || v === '') return;
+    const stock = parseInt(v, 10) || 0;
+    const row = s.orig !== null && c.orig !== null
+      ? rows.find((r) => (r.size || '') === s.orig && lc(r.color) === lc(c.orig))
+      : null;
+    if (row) {
+      const was = Number(row.stock) || 0;
+      if (stock !== was) cells.push({ size: s.name.trim(), color: c.name.trim(), stock, was });
+    } else if (stock > 0) {
+      cells.push({ size: s.name.trim(), color: c.name.trim(), stock });
+    }
   }));
   // Taken off the table: those rows go (the server checks they are empty).
   const gone = new Set();
